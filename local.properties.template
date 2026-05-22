@@ -1,0 +1,16 @@
+﻿# Copy this file to local.properties and fill in values appropriate for your environment.
+# Gradle ignores this file by default, but keep it out of version control if it contains secrets.
+
+## Android SDK location
+sdk.dir=xxx
+
+## AI API configuration
+api.url=https://integrate.api.nvidia.com/v1/chat/completions
+api.key=YOUR_API_KEY
+api.model=deepseek-ai/deepseek-v3.1
+
+## Release signing configuration
+signing.storeFile=../keystore/release.jks
+signing.storePassword=your_store_password
+signing.keyAlias=your_key_alias
+signing.keyPassword=your_key_password

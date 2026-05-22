@@ -1,0 +1,369 @@
+<resources>
+    <!-- 应用名称 -->
+    <string name="app_name">AI答题助手</string>
+
+    <!-- 主界面 -->
+    <string name="main_title">AI答题助手</string>
+    <string name="main_subtitle">截屏 · 识别 · AI 答题，一气呵成</string>
+    <string name="status_label">当前状态</string>
+    <string name="status_running">答题模式运行中</string>
+    <string name="status_running_desc">悬浮窗已显示</string>
+    <string name="status_stopped">答题模式未启动</string>
+    <string name="status_stopped_desc">点击下方按钮启动</string>
+    <string name="button_start_mode">✦  进入答题模式</string>
+    <string name="button_stop_mode">退出答题模式</string>
+    <string name="stop_confirm_title">停止答题</string>
+    <string name="stop_confirm_message">确定要退出答题模式吗？悬浮窗和截图服务将停止。</string>
+
+    <!-- 使用说明 -->
+    <string name="usage_guide_title">使用说明及常见问题</string>
+    <string name="usage_step_0">0. 配置好AI模型</string>
+    <string name="usage_step_1">1. 点击下方按钮进入答题模式</string>
+    <string name="usage_step_2">2. 应用将在后台运行，显示悬浮按钮</string>
+    <string name="usage_step_3">3. 点击悬浮按钮进行截图</string>
+    <string name="usage_step_4">4. 确认识别的题目文本</string>
+    <string name="usage_step_5">5. AI将自动分析并给出答案</string>
+    <string name="usage_step_6_text">6. 如果识别不出来，请考虑</string>
+    <string name="usage_step_6_url" translatable="false">https://jingyan.baidu.com/article/7f41ecec6bf8de183c095c29.html</string>
+    <string name="usage_step_7_text">7. 获取悬浮窗权限的时候，提示"系统已拒绝向此应用授予访问权限"</string>
+    <string name="usage_step_7_link">请手动设置"显示其它应用的上层"</string>
+    <string name="usage_step_7_url" translatable="false">https://bbs.oneplus.com/thread/5077724</string>
+    <string name="usage_step_8">8. 为了提高识别率，尽量裁剪到单题目。目前不兼容多题目</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="setting_auto_submit">自动提交答案</string>
+    <string name="setting_auto_submit_desc">识别后直接获取答案，不显示确认对话框</string>
+    <string name="setting_auto_copy">自动复制到剪贴板</string>
+    <string name="setting_auto_copy_desc">生成答案后自动复制到剪贴板</string>
+    <string name="setting_display_control_title">答题卡片显示内容</string>
+    <string name="setting_display_control_desc">自定义答题卡片显示的内容</string>
+    <string name="setting_show_question">显示题目</string>
+    <string name="setting_show_question_desc">在答题卡片中显示题目内容</string>
+    <string name="setting_show_options">显示选项</string>
+    <string name="setting_show_options_desc">在答题卡片中显示选项内容</string>
+
+    <!-- 悬浮窗外观设置 -->
+    <string name="setting_float_window_title">悬浮窗外观</string>
+    <string name="setting_float_window_desc">调整悬浮按钮和卡片的大小与透明度</string>
+    <string name="setting_float_button_size">按钮大小：%d dp</string>
+    <string name="setting_float_button_alpha">按钮透明度：%d%%</string>
+    <string name="setting_float_card_alpha">卡片透明度：%d%%</string>
+
+    <!-- 外观模式设置 -->
+    <string name="setting_theme_title">外观模式</string>
+    <string name="setting_theme_system">跟随系统</string>
+    <string name="setting_theme_light">浅色模式</string>
+    <string name="setting_theme_dark">深色模式</string>
+
+    <!-- 本次答题设置 -->
+    <string name="session_settings_title">本次答题设置</string>
+    <string name="session_settings_desc">根据题型和范围设置，提高答题准确率</string>
+    <string name="question_type_label">题型选择（可多选）</string>
+    <string name="question_type_single">单选题</string>
+    <string name="question_type_multiple">多选题</string>
+    <string name="question_type_uncertain">不定项</string>
+    <string name="question_type_blank">填空题</string>
+    <string name="question_type_essay">问答题</string>
+    <string name="crop_mode_label">截图识别模式</string>
+    <string name="crop_mode_full">全屏识别</string>
+    <string name="crop_mode_each">部分识别（每次）</string>
+    <string name="crop_mode_once">部分识别（单次）</string>
+    <string name="model_settings_card_title">模型设置</string>
+    <string name="model_settings_card_desc">配置API和模型参数</string>
+    <string name="current_settings">当前设置：%s</string>
+
+    <!-- 菜单 -->
+    <string name="menu_settings">设置</string>
+    <string name="menu_model_settings">模型设置</string>
+    <string name="menu_about">关于</string>
+    <string name="menu_more">更多</string>
+
+    <!-- 模型设置页面 -->
+    <string name="model_settings_title">模型设置</string>
+    <string name="model_settings_notice">目前仅支持OpenAI格式的API</string>
+    <string name="model_settings_section_llm">LLM 大模型</string>
+    <string name="label_api_url">API地址</string>
+    <string name="hint_api_url">例如: https://api.openai.com/v1/chat/completions</string>
+    <string name="label_api_key">API密钥</string>
+    <string name="hint_api_key">例如: sk-xxxxxxxxxxxxxxxxxxxx</string>
+    <string name="label_model_name">模型名称</string>
+    <string name="hint_model_name">例如: gpt-4 或 deepseek-v3.1</string>
+    <string name="button_save">保存</string>
+    <string name="button_test_connection">测试连接</string>
+    <string name="button_testing">测试中...</string>
+    <string name="toast_connection_success">连接成功</string>
+    <string name="toast_connection_failed">连接失败：%s</string>
+    <string name="toast_settings_saved">设置已保存</string>
+    <string name="toast_settings_error">保存失败，请检查输入</string>
+    <string name="toast_settings_error_empty_fields">请填写所有必填字段</string>
+    <string name="toast_settings_error_invalid_url">API 地址必须以 http 开头</string>
+
+    <!-- Tavily 联网搜索设置 -->
+    <string name="tavily_settings_title">联网搜索增强</string>
+    <string name="tavily_settings_desc">通过 Tavily 搜索引擎获取实时资料，提升 AI 答题准确率</string>
+    <string name="tavily_enable_label">启用联网搜索</string>
+    <string name="tavily_enable_desc">答题前自动搜索相关资料作为 AI 参考</string>
+    <string name="label_tavily_api_key">Tavily API Key</string>
+    <string name="hint_tavily_api_key">tvly-xxxxxxxx</string>
+
+    <!-- 关于页面 -->
+    <string name="about_title">关于</string>
+    <string name="about_app_intro_title">应用简介</string>
+    <string name="about_app_intro">一个基于AI的Android答题助手应用，使用截图和OCR技术识别题目，通过AI提供答案。</string>
+    <string name="about_version_title">版本信息</string>
+    <string name="about_version">版本 %1$s (%2$d)</string>
+    <string name="about_libraries_title">核心第三方库</string>
+    <string name="about_github_title">GitHub</string>
+    <string name="about_github_subtitle">GitHub</string>
+    <string name="about_github_link" translatable="false">https://github.com/Townrain/AIAnswerer-Android</string>
+    <string name="about_language_title">语言设置</string>
+    <string name="about_language_chinese">简体中文</string>
+    <string name="about_language_english">English</string>
+    <string name="language_zh_label">中文</string>
+    <string name="language_en_label">English</string>
+    <string name="about_contact_title">联系邮箱</string>
+    <string name="about_contact_email" translatable="false">hwang@linux.do</string>
+    <string name="about_contact_email_intent_title">邮件联系</string>
+    <string name="about_contact_email_copied">邮箱已复制：%s</string>
+    <string name="about_restart_dialog_title">重启应用</string>
+    <string name="about_restart_dialog_message">需要重启应用才能切换语言。注意：重启会中断当前答题模式。确定要重启吗？</string>
+    <string name="button_confirm">确定</string>
+    <string name="button_cancel">取消</string>
+
+    <!-- 通用 -->
+    <string name="back">返回</string>
+    <string name="close">关闭</string>
+
+    <!-- Toast提示 -->
+    <string name="toast_model_not_configured">请先配置AI模型\n右上角-设置-模型设置</string>
+    <string name="toast_permission_overlay_required">需要悬浮窗权限才能使用答题模式</string>
+    <string name="toast_permission_capture_required">需要截图权限才能使用答题模式</string>
+    <string name="toast_mode_started">答题模式已启动</string>
+    <string name="toast_mode_stopped">答题模式已停止</string>
+    <string name="toast_mode_start_failed">启动答题模式失败: %s</string>
+
+    <!-- 内容描述 (Accessibility) -->
+    <string name="cd_back_button">返回按钮</string>
+    <string name="cd_menu_button">菜单按钮</string>
+    <string name="cd_app_icon">应用图标</string>
+    <string name="cd_capture_button">截图</string>
+    <string name="cd_close_button">关闭</string>
+    <string name="cd_hide_password">隐藏密码</string>
+    <string name="cd_show_password">显示密码</string>
+    <string name="cd_copied">已复制</string>
+    <string name="cd_copy">复制</string>
+    <string name="cd_drag_handle">拖拽移动</string>
+    <string name="cd_collapse">收起</string>
+    <string name="cd_expand">展开</string>
+    <string name="cd_status_loading">正在处理</string>
+    <string name="cd_status_success">操作成功</string>
+    <string name="cd_status_error">操作失败</string>
+
+    <!-- 确认文本界面 -->
+    <string name="confirm_text_title">确认识别内容</string>
+    <string name="confirm_text_label">识别的文本（可编辑）</string>
+    <string name="confirm_text_placeholder">请编辑或确认识别的文本</string>
+    <string name="button_confirm_and_answer">确认并获取答案</string>
+    <string name="toast_text_empty">文本为空</string>
+    <string name="toast_getting_answer">正在获取答案...</string>
+
+    <!-- 悬浮窗 -->
+    <string name="floating_answer_title">AI 响应</string>
+    <string name="notification_content">答题模式运行中</string>
+
+    <!-- API错误消息 -->
+    <string name="error_empty_response">响应体为空</string>
+    <string name="error_no_answer_content">未获取到答案内容</string>
+    <string name="error_parse_question_failed">无法解析题目</string>
+    <string name="error_connection_test_failed">连接测试失败: %s</string>
+    <string name="error_unknown">未知错误</string>
+    <string name="error_api_config_invalid">API配置无效，请在设置中配置API信息</string>
+    <string name="error_api_request_failed">API请求失败: %1$d %2$s</string>
+    <string name="error_api_config_incomplete">API配置无效，请先完整配置API信息</string>
+    <string name="error_api_key_invalid">API密钥无效或已过期</string>
+    <string name="error_api_forbidden">无权访问该API</string>
+    <string name="error_api_not_found">API地址错误</string>
+    <string name="error_api_rate_limited">请求过于频繁，请稍后再试</string>
+    <string name="error_api_server_error">API服务器错误</string>
+    <string name="error_http_status_generic">HTTP %1$d: %2$s</string>
+    <string name="error_api_empty_response">API返回空响应</string>
+    <string name="error_api_response_invalid">API响应格式异常</string>
+    <string name="error_api_response_error">API响应格式错误</string>
+    <string name="error_api_unknown_host">无法连接服务器，请检查网络和API地址</string>
+    <string name="error_api_timeout">连接超时，请检查网络</string>
+    <string name="error_api_ssl">SSL连接错误，请检查API地址</string>
+
+    <!-- 文本识别 -->
+    <string name="error_no_text_recognized">未识别到文本</string>
+    <string name="error_recognition_cancelled">识别被取消</string>
+
+    <!-- 主界面其他 -->
+    <string name="link_close_screen_protection">关闭屏幕共享防护</string>
+    <string name="toast_unable_to_open_link">无法打开链接</string>
+
+    <!-- 题型默认值 -->
+    <string name="default_question_type">单选题</string>
+
+    <!-- 答案显示面板 -->
+    <string name="answer_section_question_title">【题目】</string>
+    <string name="answer_section_options_title">【选项】</string>
+    <string name="answer_section_answer_title">【答案】</string>
+
+    <!-- Dialog相关字符串 -->
+    <string name="dialog_language_title">选择语言 / Select Language</string>
+    <string name="dialog_language_message">请选择您偏好的应用语言：</string>
+    <string name="dialog_language_confirm">确定</string>
+    <string name="dialog_language_cancel">取消</string>
+
+    <string name="dialog_model_setup_title">AI模型设置</string>
+    <string name="dialog_model_setup_message">为了使用AI答题功能，您需要先配置API参数。是否立即前往设置？</string>
+    <string name="dialog_model_setup_confirm">前往设置</string>
+    <string name="dialog_model_setup_cancel">取消</string>
+
+    <!-- Image Crop Activity -->
+    <string name="crop_title">选择识别区域</string>
+    <string name="crop_instruction">拖动四个角调整识别区域</string>
+    <string name="crop_zoom_hint">双指缩放和拖动图片</string>
+    <string name="crop_confirm">确认</string>
+    <string name="crop_cancel">取消</string>
+    <string name="crop_reset">重置</string>
+
+    <!-- AI系统提示词 -->
+    <string name="ai_question_type_choice">选择题</string>
+    <string name="ai_question_type_essay">问答题</string>
+    <string name="ai_question_type_blank">填空题</string>
+    <string name="system_prompt_type_separator">、</string>
+    <string name="system_prompt_limit_header">## 限制条件</string>
+    <string name="system_prompt_type_template">仅处理以下题型：%1$s。请尽量将题目解析为这些类型之一，若不符合则输出 questionType="%2$s"。</string>
+    <string name="system_prompt_search_header">## 参考资料\n以下是与题目相关的搜索结果，可作为答题参考（仅参考，不直接复制）：</string>
+    <string name="system_prompt_user_message">请分析以下题目：\n\n%1$s</string>
+    <string name="system_prompt_base"><![CDATA[你是一个严格的答题结构化助手。读取用户提供的题目文本，抽取题干、题型、选项与答案，并仅返回合法 JSON。不得输出除 JSON 外的任何内容（无解释、无 Markdown、无注释）。
+
+## 输出要求
+- 若输入仅含1道题：返回一个 JSON 对象。
+- 若输入包含多道题：返回一个 JSON 数组，每个元素为一道题的对象。
+- 每个对象包含以下字段：
+```
+  {
+    "question": string,
+    "questionType": "%1$s" | "%2$s" | "%3$s",
+    "answer": string,
+    "options": string[]    // 仅在 questionType 为 "%1$s" 时出现
+  }
+```
+
+## 题型判定
+- 单选题、多选题、不定项选择题 → "%1$s"
+- 含有空格或下划线（如"（    ）"、"_____"） → "%3$s"
+- 其他主观作答类 → "%2$s"
+
+## 选项抽取规则（仅当题型为"%1$s"）
+- 支持识别多种标记格式：A. / A、 / （A） / A) / A: / A： / A． 等。
+- 输出时标准化为 "A. xxx" 格式。
+- 按题目原有顺序提取，去除多余换行和空格。
+
+## 答案生成规则（必须填写 answer 字段）
+- %1$s：
+  - 单选：返回正确选项字母（如 "A" 或 "A. 内容"）。
+  - 多选/不定项：返回所有正确选项字母，格式 "ABC" 或 "A、B、C"。
+  - 必须根据你的知识给出答案，不得留空。
+- %3$s：返回完整答案；多空用 "；" 分隔。
+- %2$s：简洁准确地回答（1–3 句要点）。
+- 绝对禁止将 answer 设为空字符串，你必须根据常识和知识给出答案。
+
+## 格式要求
+- JSON 必须语法有效（UTF-8、无尾逗号、无多余文本）。
+- 不得添加注释、说明、解释文字或 Markdown。
+- 保留题目中关键条件与单位，统一空格与符号样式。
+- 仅输出 JSON 本体，不得使用任何代码围栏或 Markdown 语法。
+- 输出必须以"{"或"["开头，以"}"或"]"结尾，中间不含其他前后缀字符。
+]]></string>
+
+    <!-- 悬浮窗状态消息 -->
+    <string name="status_capturing">📸 正在截图…</string>
+    <string name="status_capture_failed">截图失败，请确保已授予截图权限</string>
+    <string name="status_select_region">✂️ 请选择识别区域…</string>
+    <string name="status_recognizing">🔍 正在识别文字…</string>
+    <string name="status_recognized">✅ 识别完成</string>
+    <string name="status_getting_answer">🤖 正在获取答案…</string>
+    <string name="status_searching">🔍 正在搜索相关资料…</string>
+    <string name="status_answer_copied">✅ 答案已复制</string>
+    <string name="status_answer_generated">✅ 答案已生成</string>
+    <string name="status_error_prefix">❌ %s</string>
+    <string name="status_success_prefix">✅ %s</string>
+    <string name="status_operation_failed">操作失败: %s</string>
+    <string name="status_crop_launch_failed">启动裁剪失败: %s</string>
+    <string name="status_crop_failed">裁剪失败: %s</string>
+    <string name="status_recognition_failed">文字识别失败: %s</string>
+    <string name="status_recognition_error">识别失败: %s</string>
+    <string name="status_ai_analysis_failed">AI分析失败: %s</string>
+    <string name="status_fetch_answer_failed">获取答案失败: %s</string>
+    <string name="notification_channel_name">AI答题助手服务</string>
+    <string name="clipboard_label">AI答案</string>
+
+    <!-- 视觉模型相关 -->
+    <string name="vision_settings_title">视觉模型设置</string>
+    <string name="vision_settings_desc">使用视觉模型分析截图，直接提取题目文本（替代OCR）</string>
+    <string name="vision_enable_label">启用视觉模型</string>
+    <string name="vision_enable_desc">使用视觉模型替代OCR识别，适合噪音较多的页面</string>
+    <string name="vision_provider_label">视觉模型接口</string>
+    <string name="vision_provider_openai_compat">OpenAI 兼容接口</string>
+    <string name="vision_provider_custom">自定义接口</string>
+    <string name="label_vision_api_url">API 地址</string>
+    <string name="hint_vision_api_url">https://api.deepseek.com/v1/chat/completions</string>
+    <string name="label_vision_api_key">API Key</string>
+    <string name="hint_vision_api_key">sk-xxxxxxxx</string>
+    <string name="label_vision_model">模型名称</string>
+    <string name="hint_vision_model">例如: deepseek-chat 或 gpt-4o-mini</string>
+    <string name="vision_reset_defaults">重置为默认值</string>
+    <string name="status_vision_analyzing">👁️ 视觉模型分析中…</string>
+    <string name="status_vision_detected_single">✅ 检测到 1 道题目</string>
+    <string name="status_vision_detected_multi">📋 检测到 %d 道题目</string>
+    <string name="status_vision_no_question">⚠️ 未检测到题目</string>
+    <string name="status_vision_fallback">⚠️ 视觉分析失败，请重试</string>
+
+    <!-- 采集模式设置 -->
+    <string name="setting_capture_mode">采集模式</string>
+    <string name="setting_capture_mode_desc">选择获取屏幕内容的方式</string>
+    <string name="capture_mode_screenshot">截图识别</string>
+    <string name="capture_mode_accessibility">屏幕读取</string>
+    <string name="accessibility_status_enabled">无障碍服务已开启</string>
+    <string name="accessibility_status_disabled">无障碍服务未开启</string>
+    <string name="accessibility_enable_hint">请在系统设置中开启 AI答题助手 的无障碍服务</string>
+    <string name="status_reading_screen">📖 正在读取屏幕内容…</string>
+    <string name="status_screen_read_failed">屏幕读取失败，请确保已开启无障碍服务</string>
+    <string name="accessibility_fallback_to_screenshot">无障碍服务未开启，已自动切换为截图识别</string>
+    <string name="accessibility_service_not_enabled">请先开启无障碍服务，或在设置中切换为截图识别模式</string>
+
+    <!-- 思考模式设置 -->
+    <string name="setting_thinking_mode">启用思考模式</string>
+    <string name="setting_thinking_mode_desc">向 API 发送 reasoning_effort 参数，适用于推理模型（如 o1、DeepSeek-R1）</string>
+
+    <!-- 正则过滤设置 -->
+    <string name="setting_regex_filter">多题正则过滤</string>
+    <string name="setting_regex_filter_desc">检测到多题时跳过联网搜索（关闭后始终搜索）</string>
+
+    <!-- 并发设置 -->
+    <string name="setting_parallel_title">并发答题设置</string>
+    <string name="setting_parallel_desc">多题模式下的并行处理配置</string>
+    <string name="setting_parallel_mode">启用并发模式</string>
+    <string name="setting_parallel_mode_desc">多题时同时请求AI，显著提升答题速度</string>
+    <string name="setting_max_concurrency">最大并发数：%d</string>
+    <string name="setting_max_concurrency_desc">同时处理的题目数量，过高可能触发API限流</string>
+    <string name="setting_concurrency_warning">⚠️ 并发数过高，可能触发API限流</string>
+    <string name="setting_test_concurrency">测试并发性能</string>
+    <string name="setting_test_llm">测试LLM</string>
+    <string name="setting_test_vlm">测试VLM</string>
+    <string name="setting_test_search">测试搜索</string>
+    <string name="testing_concurrency">测试中…</string>
+    <string name="test_result_success">✅ %1$s 连接成功，耗时 %2$dms</string>
+    <string name="test_result_error">❌ %1$s 连接失败：%2$s</string>
+    <string name="status_parallel_answering">🤖 答题中 (%1$d/%2$d)…</string>
+    <string name="status_parallel_partial_failed">⚠️ 部分题目答题失败，已显示成功的结果</string>
+
+    <!-- Stealth Mode -->
+    <string name="setting_stealth_title">隐身模式</string>
+    <string name="setting_stealth_mode">启用隐身模式</string>
+    <string name="setting_stealth_mode_desc">启用后将防止截屏捕获、绕过无障碍检测，并降低窗口可见度</string>
+</resources>

@@ -105,6 +105,21 @@ com.hwb.aianswerer/
 
 ### Changelog
 
+#### v1.3 (UI Optimization & Concurrent Testing)
+* **Floating Window UI Refactoring**
+  - Floating button displayed independently, no longer integrated into card
+  - Button uses dark gray tone throughout, no color changes
+  - Removed spinning animation, simplified to static icon
+* **Status Message Optimization**
+  - Status messages like "Recognizing" and "Model analyzing" integrated to the right of title
+  - Status messages automatically hidden when answer is displayed, avoiding visual separation
+* **Concurrent Test Feedback Fix**
+  - Fixed issue where concurrent test results were not displayed
+  - Test success now shows actual latency time
+* **UI Color Unification**
+  - Button maintains dark gray tone in all states
+  - Answer content area seamlessly connects with Header
+
 #### v1.2 (Screen Reading Mode & UI Fixes)
 * **Screen Reading Mode (New Feature)**
   - Added capture mode switching: Screenshot Recognition / Screen Reading, chip selection in settings page
