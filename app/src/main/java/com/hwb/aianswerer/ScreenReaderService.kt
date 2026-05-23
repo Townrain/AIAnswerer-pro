@@ -49,14 +49,19 @@ class ScreenReaderService : AccessibilityService() {
          */
         fun readScreenText(): String? {
             val service = instance ?: return null
+            // 使用局部变量避免竞态：rootInActiveWindow在检查后可能变为null
             val rootNode = service.rootInActiveWindow ?: return null
 
-            val textBuilder = StringBuilder()
-            collectText(rootNode, textBuilder)
-            rootNode.recycle()
+            try {
+                val textBuilder = StringBuilder()
+                collectText(rootNode, textBuilder)
 
-            val text = textBuilder.toString().trim()
-            return text.ifEmpty { null }
+                val text = textBuilder.toString().trim()
+                return text.ifEmpty { null }
+            } finally {
+                // 确保rootNode被回收，即使collectText抛出异常
+                rootNode.recycle()
+            }
         }
 
         /**
@@ -86,8 +91,12 @@ class ScreenReaderService : AccessibilityService() {
             // 递归子节点
             for (i in 0 until node.childCount) {
                 val child = node.getChild(i) ?: continue
-                collectText(child, builder)
-                child.recycle()
+                try {
+                    collectText(child, builder)
+                } finally {
+                    // 确保子节点被回收
+                    child.recycle()
+                }
             }
         }
     }

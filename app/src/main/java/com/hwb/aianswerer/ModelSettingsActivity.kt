@@ -425,7 +425,8 @@ fun ModelSettingsScreen(
                         coroutineScope.launch {
                             visionTestState = TestConnectionState.Testing
                             val config = OpenAIVisionConfig(baseUrl = visionApiUrl, apiKey = visionApiKey, modelName = visionModelName)
-                            val provider = OpenAIVisionProvider(config)
+                            // 使用getInstance复用实例，避免每次创建新的OkHttpClient
+                            val provider = OpenAIVisionProvider.getInstance(config)
                             val result = provider.testConnection()
                             result.onSuccess {
                                 visionTestState = TestConnectionState.Success()

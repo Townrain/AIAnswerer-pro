@@ -77,12 +77,14 @@ class ScreenCaptureManager(private val context: Context) {
      * 创建MediaProjection实例（只创建一次）
      */
     private fun createMediaProjection() {
-        if (savedResultCode == null || savedData == null) {
+        val resultCode = savedResultCode
+        val data = savedData
+        if (resultCode == null || data == null) {
             return
         }
 
         try {
-            val projection = projectionManager.getMediaProjection(savedResultCode!!, savedData!!)
+            val projection = projectionManager.getMediaProjection(resultCode, data)
             if (projection == null) {
                 AppLog.e("getMediaProjection 返回 null，权限可能已失效")
                 mediaProjection = null
@@ -145,6 +147,16 @@ class ScreenCaptureManager(private val context: Context) {
                     null,
                     null
                 )
+
+                // virtualDisplay创建失败时立即抛出异常，避免continuation永远等待
+                if (virtualDisplay == null) {
+                    imageReader?.close()
+                    imageReader = null
+                    if (!continuation.isCompleted) {
+                        continuation.resumeWithException(Exception("VirtualDisplay创建失败，MediaProjection可能已失效"))
+                    }
+                    return@suspendCancellableCoroutine
+                }
             }
 
             // 清除 ImageReader 缓冲区中的旧帧，避免 acquireLatestImage 返回过时画面
@@ -152,6 +164,9 @@ class ScreenCaptureManager(private val context: Context) {
                 val old = imageReader?.acquireLatestImage() ?: break
                 old.close()
             }
+
+            // 移除旧的listener，避免泄漏
+            imageReader?.setOnImageAvailableListener(null, null)
 
             // 设置图像可用监听器（每次截图都设置，确保回调正确）
             imageReader?.setOnImageAvailableListener({ reader ->
@@ -224,7 +239,14 @@ class ScreenCaptureManager(private val context: Context) {
 
     /**
      * 清理VirtualDisplay和ImageReader（保留MediaProjection）
+     * 使用captureMutex确保不会与captureScreen()并发执行
      */
+    private suspend fun cleanUpVirtualDisplaySafely() {
+        captureMutex.withLock {
+            cleanUpVirtualDisplay()
+        }
+    }
+
     private fun cleanUpVirtualDisplay() {
         virtualDisplay?.release()
         imageReader?.close()
@@ -234,6 +256,17 @@ class ScreenCaptureManager(private val context: Context) {
 
     /**
      * 释放所有资源（包括MediaProjection和保存的权限数据）
+     * 使用captureMutex确保不会与captureScreen()并发执行
+     */
+    suspend fun releaseSafely() {
+        captureMutex.withLock {
+            release()
+        }
+    }
+
+    /**
+     * 释放所有资源（包括MediaProjection和保存的权限数据）
+     * 注意：此方法无锁保护，仅在确保没有并发截图时调用
      */
     fun release() {
         cleanUpVirtualDisplay()

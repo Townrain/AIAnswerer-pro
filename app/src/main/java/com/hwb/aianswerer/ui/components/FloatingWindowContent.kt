@@ -1,19 +1,22 @@
 package com.hwb.aianswerer.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,6 +74,12 @@ private val MinCardHeight = 250.dp
 private val MaxCardHeight = 500.dp
 private val ProgressStrokeWidth = 2.5.dp
 
+// 长按触发时间（毫秒）
+private const val LONG_PRESS_DURATION_MS = 2000L
+
+// 小按钮大小
+private val QuickButtonSize = 40.dp
+
 // Apple-style spring specs — inline with proper types where used
 
 @Composable
@@ -78,7 +88,13 @@ fun FloatingWindowContent(
     buttonSize: Int = 56, buttonAlpha: Float = 1.0f, cardAlpha: Float = 1.0f,
     isLeftSide: Boolean = true, floatingStatus: FloatingStatus = FloatingStatus.Idle,
     onCaptureClick: () -> Unit, onCloseAnswer: () -> Unit, onCloseStatus: () -> Unit,
-    onCopyAnswer: (() -> Unit)? = null, onMove: (Float, Float) -> Unit, onDragEnd: () -> Unit = {}
+    onCopyAnswer: (() -> Unit)? = null, onMove: (Float, Float) -> Unit, onDragEnd: () -> Unit = {},
+    visionEnabled: Boolean = false,
+    searchEnabled: Boolean = false,
+    reasoningEnabled: Boolean = false,
+    onVisionToggle: (() -> Unit)? = null,
+    onSearchToggle: (() -> Unit)? = null,
+    onReasoningToggle: (() -> Unit)? = null
 ) {
     val viewConfig = androidx.compose.ui.platform.LocalViewConfiguration.current
     val touchSlop = viewConfig.touchSlop
@@ -91,46 +107,127 @@ fun FloatingWindowContent(
     val cardWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp * 0.82f).dp
         .coerceIn(MinCardWidth, MaxCardWidth)
 
-    // 判断是否有内容需要显示
     val hasContent = statusMessage != null || (showAnswer && answerText != null)
 
-    Box(modifier = Modifier.width(cardWidth)) {
-        val alignment = if (isLeftSide) Alignment.TopStart else Alignment.TopEnd
+    // 小按钮显示状态
+    var showQuickButtons by remember { mutableStateOf(false) }
 
-        // ═══════════════════════════════════════
-        //  Main container with button above card
-        // ═══════════════════════════════════════
+    // 有内容时自动收起快捷按钮
+    LaunchedEffect(hasContent) {
+        if (hasContent) showQuickButtons = false
+    }
+
+    // 使用Box作为根容器，fillMaxWidth让宽度等于窗口宽度
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // 主按钮 + 卡片的垂直布局
         Column(
-            modifier = Modifier.align(alignment),
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = if (isLeftSide) Alignment.Start else Alignment.End
         ) {
-            // ── 独立悬浮按钮 ──
-            FloatingButton(
-                buttonSize = buttonSize,
-                buttonAlpha = buttonAlpha,
-                floatingStatus = floatingStatus,
-                onCaptureClick = currentOnCaptureClick,
-                onMove = currentOnMove,
-                onDragEnd = currentOnDragEnd,
-                touchSlop = touchSlop
-            )
+            // 主按钮行 - 使用固定大小的Box，避免小按钮撑大布局
+            Box(modifier = Modifier.size(buttonSize.dp)) {
+                // 主按钮（始终在Box内）
+                FloatingButton(
+                    buttonSize = buttonSize,
+                    buttonAlpha = buttonAlpha,
+                    floatingStatus = floatingStatus,
+                    onCaptureClick = {
+                        // 如果小按钮展开，只收起小按钮，不触发截图
+                        if (showQuickButtons) {
+                            showQuickButtons = false
+                        } else {
+                            currentOnCaptureClick()
+                        }
+                    },
+                    onMove = { dx, dy ->
+                        if (showQuickButtons) showQuickButtons = false
+                        currentOnMove(dx, dy)
+                    },
+                    onDragEnd = currentOnDragEnd,
+                    touchSlop = touchSlop,
+                    onLongPress = { showQuickButtons = !showQuickButtons }
+                )
+            }
 
-            // ── 卡片内容 ──
+            // 卡片内容
             if (hasContent) {
                 Spacer(Modifier.height(Spacing.sm))
-                ContentCard(
-                    answerText = answerText,
-                    showAnswer = showAnswer,
-                    statusMessage = statusMessage,
-                    floatingStatus = floatingStatus,
-                    isDark = isDark,
-                    cardAlpha = cardAlpha,
-                    onCloseAnswer = onCloseAnswer,
-                    onCloseStatus = onCloseStatus,
-                    onCopyAnswer = onCopyAnswer
+                Box(modifier = Modifier.width(cardWidth)) {
+                    ContentCard(
+                        answerText = answerText,
+                        showAnswer = showAnswer,
+                        statusMessage = statusMessage,
+                        floatingStatus = floatingStatus,
+                        isDark = isDark,
+                        cardAlpha = cardAlpha,
+                        onCloseAnswer = onCloseAnswer,
+                        onCloseStatus = onCloseStatus,
+                        onCopyAnswer = onCopyAnswer
+                    )
+                }
+            }
+        }
+
+        // 小按钮展开层
+        if (showQuickButtons) {
+            Box(
+                modifier = Modifier
+                    .align(if (isLeftSide) Alignment.TopStart else Alignment.TopEnd)
+                    .offset(
+                        x = if (isLeftSide) {
+                            (buttonSize + 8).dp  // 左侧：主按钮右边
+                        } else {
+                            -(buttonSize + 8).dp  // 右侧：主按钮左边
+                        },
+                        y = ((buttonSize - QuickButtonSize.value) / 2).dp  // 垂直居中
+                    )
+            ) {
+                QuickButtonsRow(
+                    visionEnabled = visionEnabled,
+                    searchEnabled = searchEnabled,
+                    reasoningEnabled = reasoningEnabled,
+                    onVisionToggle = { onVisionToggle?.invoke() },
+                    onSearchToggle = { onSearchToggle?.invoke() },
+                    onReasoningToggle = { onReasoningToggle?.invoke() }
                 )
             }
         }
+    }
+}
+
+// ── 快捷按钮行 ──
+
+@Composable
+private fun QuickButtonsRow(
+    visionEnabled: Boolean,
+    searchEnabled: Boolean,
+    reasoningEnabled: Boolean,
+    onVisionToggle: (() -> Unit)?,
+    onSearchToggle: (() -> Unit)?,
+    onReasoningToggle: (() -> Unit)?
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        QuickToggleButton(
+            icon = LocalIcons.Vision,
+            enabled = visionEnabled,
+            contentDescription = stringResource(R.string.quick_toggle_vlm),
+            onClick = { onVisionToggle?.invoke() }  // 不再自动收起
+        )
+        QuickToggleButton(
+            icon = LocalIcons.Globe,
+            enabled = searchEnabled,
+            contentDescription = stringResource(R.string.quick_toggle_search),
+            onClick = { onSearchToggle?.invoke() }  // 不再自动收起
+        )
+        QuickToggleButton(
+            icon = LocalIcons.Lightbulb,
+            enabled = reasoningEnabled,
+            contentDescription = stringResource(R.string.quick_toggle_reasoning),
+            onClick = { onReasoningToggle?.invoke() }  // 不再自动收起
+        )
     }
 }
 
@@ -144,9 +241,11 @@ private fun FloatingButton(
     onCaptureClick: () -> Unit,
     onMove: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
-    touchSlop: Float
+    touchSlop: Float,
+    onLongPress: () -> Unit = {}
 ) {
     var pressed by remember { mutableStateOf(false) }
+    var longPressProgress by remember { mutableStateOf(0f) }
     val fabScale by animateFloatAsState(
         targetValue = if (pressed) 0.85f else 1f,
         animationSpec = spring(dampingRatio = 0.30f, stiffness = 500f),
@@ -161,6 +260,7 @@ private fun FloatingButton(
     }
 
     val shape = RoundedCornerShape(CardRadius)
+
     Box(
         modifier = Modifier
             .size(buttonSize.dp)
@@ -176,20 +276,52 @@ private fun FloatingButton(
                         val down = awaitFirstDown(requireUnconsumed = false)
                         down.consume()
                         var totalDx = 0f; var totalDy = 0f; var isDragging = false
+                        var longPressTriggered = false
+                        val startTime = System.currentTimeMillis()
+                        longPressProgress = 0f
+
                         while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull() ?: break
-                            if (!change.pressed) { change.consume(); break }
-                            val dx = change.positionChange().x; val dy = change.positionChange().y
-                            if (dx != 0f || dy != 0f) {
-                                totalDx += dx; totalDy += dy
-                                if (totalDx * totalDx + totalDy * totalDy > touchSlop * touchSlop)
-                                    isDragging = true
-                                if (isDragging) onMove(dx, dy); change.consume()
+                            val event = withTimeoutOrNull(16L) {
+                                awaitPointerEvent()
+                            }
+                            
+                            if (event != null) {
+                                val change = event.changes.firstOrNull()
+                                if (change == null || !change.pressed) {
+                                    change?.consume()
+                                    break
+                                }
+                                val dx = change.positionChange().x; val dy = change.positionChange().y
+                                if (dx != 0f || dy != 0f) {
+                                    totalDx += dx; totalDy += dy
+                                    if (!isDragging && totalDx * totalDx + totalDy * totalDy > touchSlop * touchSlop) {
+                                        isDragging = true
+                                        longPressProgress = 0f
+                                    }
+                                    if (isDragging) {
+                                        onMove(dx, dy)
+                                        change.consume()
+                                    }
+                                }
+                            }
+
+                            val elapsed = System.currentTimeMillis() - startTime
+                            if (!isDragging) {
+                                longPressProgress = (elapsed.toFloat() / LONG_PRESS_DURATION_MS).coerceIn(0f, 1f)
+                            }
+                            
+                            if (!isDragging && !longPressTriggered && elapsed >= LONG_PRESS_DURATION_MS) {
+                                longPressTriggered = true
+                                longPressProgress = 0f
+                                onLongPress()
                             }
                         }
-                        if (isDragging) onDragEnd()
-                        else {
+
+                        longPressProgress = 0f
+
+                        if (isDragging) {
+                            onDragEnd()
+                        } else if (!longPressTriggered) {
                             pressed = true
                             onCaptureClick()
                         }
@@ -199,12 +331,101 @@ private fun FloatingButton(
         contentAlignment = Alignment.Center
     ) {
         FloatingBtnBackground(floatingStatus = floatingStatus, shape = shape)
-        // 简化图标：只显示搜索图标
+        
+        // 长按进度条
+        if (longPressProgress > 0f) {
+            val progressColor = PremiumPrimary.copy(alpha = 0.6f)
+            Box(
+                modifier = Modifier
+                    .size(buttonSize.dp)
+                    .drawBehind {
+                        val strokeWidth = 3.dp.toPx()
+                        val radius = (size.minDimension - strokeWidth) / 2
+                        val center = Offset(size.width / 2, size.height / 2)
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.2f),
+                            radius = radius,
+                            center = center,
+                            style = Stroke(strokeWidth)
+                        )
+                        drawArc(
+                            color = progressColor,
+                            startAngle = -90f,
+                            sweepAngle = 360f * longPressProgress,
+                            useCenter = false,
+                            topLeft = Offset(center.x - radius, center.y - radius),
+                            size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                            style = Stroke(strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                        )
+                    }
+            )
+        }
+        
         Icon(
             imageVector = LocalIcons.Search,
             contentDescription = stringResource(R.string.cd_capture_button),
             modifier = Modifier.size(Spacing.xxl),
             tint = PremiumCardLight
+        )
+    }
+}
+
+// ── 快捷切换按钮 ──
+
+@Composable
+private fun QuickToggleButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    val isDark = LocalIsDarkMode.current
+    val scale by animateFloatAsState(
+        targetValue = if (enabled) 1.05f else 1f,
+        animationSpec = spring(dampingRatio = 0.35f, stiffness = 400f),
+        label = "quick_btn_scale"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(QuickButtonSize)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .background(
+                color = if (enabled) {
+                    // 启用状态：使用主按钮同款深灰色
+                    DarkAccent
+                } else {
+                    // 未启用状态：半透明
+                    if (isDark) GlassDark else GlassWhiteStrong
+                },
+                shape = CircleShape
+            )
+            .then(
+                if (enabled) {
+                    // 启用状态：白色边框
+                    Modifier.border(1.5.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                } else {
+                    // 未启用状态
+                    Modifier.border(
+                        0.5.dp,
+                        if (isDark) GlassDarkBorder else GlassWhiteBorder,
+                        CircleShape
+                    )
+                }
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(Spacing.lg),
+            tint = if (enabled) Color.White  // 启用时白色图标
+                   else if (isDark) TextDarkSecondary else TextSecondary
         )
     }
 }
@@ -223,8 +444,6 @@ private fun ContentCard(
     onCloseStatus: () -> Unit,
     onCopyAnswer: (() -> Unit)?
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current.density
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -315,31 +534,6 @@ private fun StatusDot(status: FloatingStatus) {
     )
 }
 
-// ── 状态指示器 ──
-
-@Composable
-private fun StatusIndicator(message: String, status: FloatingStatus, isDark: Boolean) {
-    val dotColor = when (status) {
-        FloatingStatus.Success -> SuccessGreen
-        FloatingStatus.Error -> ErrorRed
-        else -> PremiumPrimary
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(Spacing.xs)
-                .clip(CircleShape)
-                .background(dotColor)
-        )
-        Spacer(Modifier.width(Spacing.xs))
-        Text(
-            text = message,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isDark) TextDarkSecondary else TextTertiary
-        )
-    }
-}
-
 // ── 复制按钮 ──
 
 @Composable
@@ -426,12 +620,14 @@ private fun AnswerBody(text: String, isDark: Boolean) {
                 Spacer(Modifier.height(if (section.isAnswer) Spacing.sm else Spacing.xs))
 
                 // Section label
-                Text(
-                    text = section.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isDark) TextDarkSecondary else TextTertiary
-                )
-                Spacer(Modifier.height(Spacing.xs))
+                if (section.label.isNotBlank()) {
+                    Text(
+                        text = section.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) TextDarkSecondary else TextTertiary
+                    )
+                    Spacer(Modifier.height(Spacing.xs))
+                }
 
                 // Section content
                 if (section.isAnswer) {

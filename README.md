@@ -108,6 +108,55 @@ com.hwb.aianswerer/
 
 ### 更新说明
 
+#### v1.3.1 (Bug修复 & 稳定性提升)
+* **空安全修复**
+  - 修复 `attachBaseContext(newBase!!)` 强制断言导致的崩溃风险
+  - 修复 `screenCaptureResultCode!!` 强制解包导致的崩溃风险
+  - 修复 `bitmap!!` 强制断言导致的崩溃风险
+  - 修复 `savedResultCode!!` 强制断言导致的崩溃风险
+* **线程安全修复**
+  - 修复 `questionTypes` 使用非线程安全的 `mutableSetOf` 导致的潜在崩溃
+  - 修复 `savedCropRect` 可见性问题，添加 `@Volatile` 注解
+  - 修复 `fetchMutex` 作用域不一致导致的潜在死锁
+* **资源泄漏修复**
+  - 修复截屏 bitmap 在 crop 异常时未 recycle 导致的内存泄漏
+  - 修复 `TextRecognitionManager` 取消时 close 导致单例不可用的问题
+  - 修复临时文件残留问题，在 `MyApplication.onCreate()` 中清理
+  - 修复 `ScreenCaptureManager` listener 未移除导致的泄漏
+* **逻辑错误修复**
+  - 修复 `START_STICKY` 导致服务被 kill 后成为僵尸服务的问题
+  - 修复 `sanitizeJson()` 将中文引号全局替换破坏 JSON 字符串内容的问题
+  - 修复 `OpenAIVisionProvider` 单例缓存导致配置更新不生效的问题
+  - 修复 `OpenAIVisionProvider` JSON 解析失败时默认返回 `hasQuestions=true` 的问题
+  - 修复 `ScreenCaptureManager` virtualDisplay 创建失败后 continuation 永远不被唤醒的问题
+* **安全增强**
+  - 修复 `EncryptedSharedPreferences` 失败后 API 密钥静默降级为 MMKV 明文存储的问题
+  - 修复 Debug 日志可能泄露敏感信息的问题，日志级别从 BODY 改为 HEADERS
+  - 修复 `BuildConfig` fallback 可能泄露 API Key 的问题
+  - 修复 `allowBackup=true` 允许云备份包含 MMKV/缓存数据的问题
+* **构建优化**
+  - 修复无签名配置时 release 构建直接失败的问题，改为 fallback 到 debug 签名
+  - 修复 `abiFilters` 仅 arm64-v8a 导致模拟器和 32 位设备无法运行的问题
+  - 修复使用 AGP 内部 API `BaseVariantOutputImpl` 导致 AGP 升级即 break 的问题
+  - 修复 `AppConfig` 中 `mmkv` lateinit var 未初始化前调用导致崩溃的问题
+* **UI 修复**
+  - 修复 `parseSections` 中空标签导致 UI 显示空行的问题
+* **悬浮窗快捷开关**
+  - 新增长按主按钮展开快捷开关（VLM、联网搜索、深度思考）
+  - 快捷开关采用长条展开布局，支持左右两侧展开
+  - 点击快捷开关可即时切换状态，无需进入设置页
+  - 快捷开关颜色适配主题，启用状态显示深灰色背景
+  - 长按主按钮时显示环形进度条动画
+* **悬浮窗交互优化**
+  - 修复主按钮点击时跳动的问题，移除不必要的缩放动画
+  - 优化拖动流畅度，提高触摸事件处理频率
+  - 小按钮展开时点击主按钮只收起小按钮，不触发截图
+  - 拖动主按钮时自动收起小按钮
+* **窗口位置修复**
+  - 修复主按钮不贴屏幕边缘的问题
+  - 修复右侧展开时小按钮距离主按钮过远的问题
+  - 简化窗口位置计算逻辑
+
 #### v1.3 (UI 优化 & 并发测试)
 * **悬浮窗 UI 重构**
   - 悬浮按钮独立显示，不再集成到卡片中

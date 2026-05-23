@@ -107,10 +107,16 @@ class ImageCropActivity : BaseActivity() {
             null
         }
 
+        val currentBitmap = bitmap
+        if (currentBitmap == null) {
+            finish()
+            return
+        }
+
         setContent {
             AIAnswererTheme {
                 ImageCropScreen(
-                    bitmap = bitmap!!,
+                    bitmap = currentBitmap,
                     previousCropRect = previousCropRect,
                     onConfirm = { cropRect ->
                         // 通过广播返回裁剪坐标

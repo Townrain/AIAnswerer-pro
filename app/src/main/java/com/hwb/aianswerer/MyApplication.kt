@@ -23,8 +23,26 @@ class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // MMKV已在attachBaseContext中初始化
-        // 语言配置已在attachBaseContext中应用
+        // 清理残留的临时裁剪文件
+        cleanupTempFiles()
+    }
+
+    /**
+     * 清理缓存目录中的临时裁剪文件
+     */
+    private fun cleanupTempFiles() {
+        try {
+            val cacheDir = cacheDir
+            val tempFiles = cacheDir.listFiles { file -> file.name.startsWith("temp_crop_") }
+            tempFiles?.forEach { file ->
+                if (file.exists()) {
+                    file.delete()
+                    android.util.Log.d("MyApplication", "清理临时文件: ${file.name}")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MyApplication", "清理临时文件失败", e)
+        }
     }
 
     companion object {

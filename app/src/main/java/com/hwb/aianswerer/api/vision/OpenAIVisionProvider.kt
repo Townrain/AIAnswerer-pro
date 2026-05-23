@@ -332,17 +332,19 @@ class OpenAIVisionProvider(
                     gson.fromJson(extracted, VisionFilterResult::class.java)
                 } catch (e2: Exception) {
                     AppLog.w("Vision JSON二次解析失败: ${e2.message}")
+                    // 解析失败时返回hasQuestions=false，避免垃圾数据被当作有效答题处理
                     VisionFilterResult(
-                        hasQuestions = true,
-                        questionCount = 1,
-                        searchKeywords = jsonStr.take(200)
+                        hasQuestions = false,
+                        questionCount = 0,
+                        searchKeywords = ""
                     )
                 }
             } else {
+                // 无法提取JSON时返回hasQuestions=false
                 VisionFilterResult(
-                    hasQuestions = true,
-                    questionCount = 1,
-                    searchKeywords = jsonStr.take(200)
+                    hasQuestions = false,
+                    questionCount = 0,
+                    searchKeywords = ""
                 )
             }
         }
@@ -352,6 +354,9 @@ class OpenAIVisionProvider(
         @Volatile
         private var instance: OpenAIVisionProvider? = null
 
+        @Volatile
+        private var currentConfig: OpenAIVisionConfig? = null
+
         private val testClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
                 .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -359,13 +364,33 @@ class OpenAIVisionProvider(
                 .build()
         }
 
+        /**
+         * 获取单例实例，当config变化时自动重建实例
+         */
         fun getInstance(config: OpenAIVisionConfig): OpenAIVisionProvider {
-            return instance ?: synchronized(this) {
-                instance ?: OpenAIVisionProvider(config).also { instance = it }
+            // 检查是否需要重建实例：首次创建或配置变化
+            val existing = instance
+            if (existing != null && currentConfig == config) {
+                return existing
+            }
+            return synchronized(this) {
+                // 双重检查：再次比较配置
+                val existingInSync = instance
+                if (existingInSync != null && currentConfig == config) {
+                    existingInSync
+                } else {
+                    OpenAIVisionProvider(config).also {
+                        instance = it
+                        currentConfig = config
+                    }
+                }
             }
         }
 
-        fun clearInstance() { instance = null }
+        fun clearInstance() {
+            instance = null
+            currentConfig = null
+        }
 
         /**
          * 测试视觉模型API并发性能，返回响应时间（毫秒）

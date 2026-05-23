@@ -28,8 +28,8 @@ class TextRecognitionManager {
     suspend fun recognizeText(bitmap: Bitmap): Result<String> =
         suspendCancellableCoroutine { continuation ->
             continuation.invokeOnCancellation {
-                // 协程取消时关闭识别器以停止 ML Kit 任务
-                try { recognizer.close() } catch (_: Exception) {}
+                // 协程取消时不关闭recognizer（它是单例，close后不可用）
+                // ML Kit任务取消不需要关闭客户端，忽略结果即可
             }
             try {
                 val image = InputImage.fromBitmap(bitmap, 0)
@@ -55,7 +55,8 @@ class TextRecognitionManager {
                     }
                     .addOnFailureListener { e ->
                         if (!continuation.isCompleted) {
-                            continuation.resumeWithException(e)
+                            // 返回Result.failure而不是抛出异常，与函数签名一致
+                            continuation.resume(Result.failure(e))
                         }
                     }
                     .addOnCanceledListener {
@@ -73,7 +74,8 @@ class TextRecognitionManager {
                 throw e
             } catch (e: Exception) {
                 if (!continuation.isCompleted) {
-                    continuation.resumeWithException(e)
+                    // 返回Result.failure而不是抛出异常，与函数签名一致
+                    continuation.resume(Result.failure(e))
                 }
             }
         }

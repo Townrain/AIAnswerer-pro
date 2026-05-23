@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.widget.Toast
 import com.hwb.aianswerer.ui.theme.AIAnswererTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,6 +58,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
@@ -104,12 +106,21 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var showAnswer = mutableStateOf(false)
     private var statusMessage = mutableStateOf<String?>(null)
     private var floatingStatus = mutableStateOf(FloatingStatus.Idle)
-    private var questionTypes = mutableSetOf<String>()
+    // 使用线程安全的Set，因为onStartCommand可能在不同线程调用
+    private var questionTypes: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private var cropMode = AppConfig.CROP_MODE_FULL
     // savedCropRect: 单次模式(once)首次裁剪后缓存，后续截图直接复用
     // savedCropRectEach: 每次模式(each)缓存上一次坐标，作为裁剪 UI 的初始位置
+    // 使用@Volatile确保在主线程和广播接收器之间的可见性
+    @Volatile
     private var savedCropRect: CropRect? = null
+    @Volatile
     private var savedCropRectEach: CropRect? = null
+
+    // 快捷开关状态（从AppConfig读取初始值）
+    private var visionEnabled = mutableStateOf(AppConfig.isVisionEnabled())
+    private var searchEnabled = mutableStateOf(AppConfig.getTavilyEnabled())
+    private var reasoningEnabled = mutableStateOf(AppConfig.getReasoningEffort() != null)
 
     // 当前进行中的网络请求 Job，用于在 onDestroy 时取消
     private var currentFetchJob: Job? = null
@@ -188,7 +199,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     override fun attachBaseContext(newBase: android.content.Context?) {
-        super.attachBaseContext(com.hwb.aianswerer.utils.LanguageUtil.attachBaseContext(newBase!!))
+        super.attachBaseContext(
+            if (newBase != null) com.hwb.aianswerer.utils.LanguageUtil.attachBaseContext(newBase)
+            else newBase
+        )
     }
 
     override fun onCreate() {
@@ -252,8 +266,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             savedCropRect = null
             savedCropRectEach = null
         }
-        // START_STICKY: Service被系统杀死后会尝试重建，但intent为null
-        return START_STICKY
+        // START_NOT_STICKY: Service被系统杀死后不自动重建
+        // 因为MediaProjection权限数据随进程死亡失效，重启会成为僵尸服务
+        return START_NOT_STICKY
     }
 
     // 悬浮窗内部偏移量（按钮中心的屏幕坐标）
@@ -266,24 +281,28 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val screenH = metrics.heightPixels.toFloat()
         val buttonSizePx = AppConfig.getFloatButtonSize() * metrics.density
         val buttonHalf = buttonSizePx / 2f
-        val cardWidthPx = 300 * metrics.density
 
-        // 初始位置：按钮中心在屏幕右侧
+        // 初始位置：右侧贴边
         floatOffsetX.value = screenW - buttonHalf
 
         fun isLeftSide() = floatOffsetX.value < screenW / 2f
 
+        // 窗口位置计算：让主按钮贴屏幕边缘
+        // 窗口宽度固定为卡片宽度，主按钮在窗口内通过alignment对齐
+        val windowWidthPx = 360 * metrics.density  // 卡片宽度
+        
         fun windowX(): Int {
             return if (isLeftSide()) {
-                (floatOffsetX.value - buttonHalf).toInt().coerceAtLeast(0)
+                // 左侧：窗口贴左边缘，主按钮在窗口内左对齐
+                0
             } else {
-                (floatOffsetX.value + buttonHalf - cardWidthPx).toInt()
-                    .coerceAtMost(screenW.toInt() - cardWidthPx.toInt())
+                // 右侧：窗口贴右边缘，主按钮在窗口内右对齐
+                (screenW - windowWidthPx).toInt().coerceAtLeast(0)
             }
         }
 
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            windowWidthPx.toInt(),  // 固定窗口宽度
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -348,15 +367,41 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onDragEnd = {
                             val mid = screenW / 2f
                             floatOffsetX.value = if (floatOffsetX.value < mid) {
-                                buttonHalf
+                                buttonHalf  // 左侧贴边
                             } else {
-                                screenW - buttonHalf
+                                screenW - buttonHalf  // 右侧贴边
                             }
                             floatingView?.let { v ->
                                 val p = v.layoutParams as WindowManager.LayoutParams
                                 p.x = windowX()
                                 windowManager.updateViewLayout(v, p)
                             }
+                        },
+                        // 快捷开关状态
+                        visionEnabled = visionEnabled.value,
+                        searchEnabled = searchEnabled.value,
+                        reasoningEnabled = reasoningEnabled.value,
+                        // 快捷开关回调
+                        onVisionToggle = {
+                            visionEnabled.value = !visionEnabled.value
+                            AppConfig.saveVisionEnabled(visionEnabled.value)
+                            Toast.makeText(this@FloatingWindowService, 
+                                if (visionEnabled.value) "VLM模式已启用" else "VLM模式已关闭", 
+                                Toast.LENGTH_SHORT).show()
+                        },
+                        onSearchToggle = {
+                            searchEnabled.value = !searchEnabled.value
+                            AppConfig.saveTavilyEnabled(searchEnabled.value)
+                            Toast.makeText(this@FloatingWindowService, 
+                                if (searchEnabled.value) "联网搜索已启用" else "联网搜索已关闭", 
+                                Toast.LENGTH_SHORT).show()
+                        },
+                        onReasoningToggle = {
+                            reasoningEnabled.value = !reasoningEnabled.value
+                            AppConfig.saveReasoningEffort(reasoningEnabled.value)
+                            Toast.makeText(this@FloatingWindowService, 
+                                if (reasoningEnabled.value) "深度思考已启用" else "深度思考已关闭", 
+                                Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -425,7 +470,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     AppConfig.CROP_MODE_ONCE -> {
                         savedCropRect?.let { rect ->
                             // 已有保存的坐标：直接裁剪
-                            val croppedBitmap = ImageCropUtil.cropBitmap(bitmap, rect)
+                            val croppedBitmap = try {
+                                ImageCropUtil.cropBitmap(bitmap, rect)
+                            } catch (e: Exception) {
+                                // 裁剪失败时回收bitmap，避免内存泄漏
+                                bitmap.recycle()
+                                throw e
+                            }
                             bitmap.recycle()
                             processBitmap(croppedBitmap)
                         } ?: run {
@@ -676,105 +727,100 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
      * @param visionResult 可选的VLM分析结果，用于搜索关键词提取
      */
     private fun fetchAnswer(text: String, visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult? = null) {
-        // 使用Mutex防止并发请求
-        if (!fetchMutex.tryLock()) {
-            AppLog.d("已有请求正在进行，跳过本次请求")
-            return
-        }
-        
         currentFetchJob?.cancel()
-        currentFetchJob = lifecycleScope.launch {
-            try {
-                // 网络连接预检
-                if (!OpenAIClient.isNetworkAvailable()) {
-                    showErrorMessage(getString(R.string.error_api_unknown_host))
-                    return@launch
-                }
+        // 统一使用serviceScope，确保onDestroy时能正确取消所有协程
+        currentFetchJob = serviceScope.launch {
+            // 使用withLock确保tryLock/unlock在同一协程作用域内
+            fetchMutex.withLock {
+                try {
+                    // 网络连接预检
+                    if (!OpenAIClient.isNetworkAvailable()) {
+                        showErrorMessage(getString(R.string.error_api_unknown_host))
+                        return@withLock
+                    }
 
-                // 从配置读取答题设置
-                val questionTypes = AppConfig.getQuestionTypes()
-                val autoCopy = AppConfig.getAutoCopy()
+                    // 从配置读取答题设置
+                    val questionTypes = AppConfig.getQuestionTypes()
+                    val autoCopy = AppConfig.getAutoCopy()
 
-                // ========== 多题模式：VLM分离题目 + 单独搜索 ==========
-                if (visionResult != null && visionResult.questions.size > 1) {
-                    fetchAnswerMultiQuestion(visionResult, questionTypes, autoCopy)
-                    return@launch
-                }
+                    // ========== 多题模式：VLM分离题目 + 单独搜索 ==========
+                    if (visionResult != null && visionResult.questions.size > 1) {
+                        fetchAnswerMultiQuestion(visionResult, questionTypes, autoCopy)
+                        return@withLock
+                    }
 
-                // ========== 单题模式 ==========
-                var searchContext = ""
+                    // ========== 单题模式 ==========
+                    var searchContext = ""
 
-                // VLM模式：使用VLM提供的搜索关键词
-                if (visionResult != null) {
-                    if (visionResult.searchKeywords.isNotBlank() && AppConfig.isTavilyConfigValid()) {
-                        floatingStatus.value = FloatingStatus.Searching
-                        statusMessage.value = getString(R.string.status_searching)
-                        AppLog.d("Tavily搜索(VLM关键词): ${visionResult.searchKeywords}")
+                    // VLM模式：使用VLM提供的搜索关键词
+                    if (visionResult != null) {
+                        if (visionResult.searchKeywords.isNotBlank() && AppConfig.isTavilyConfigValid()) {
+                            floatingStatus.value = FloatingStatus.Searching
+                            statusMessage.value = getString(R.string.status_searching)
+                            AppLog.d("Tavily搜索(VLM关键词): ${visionResult.searchKeywords}")
 
-                        val tavilyResult = TavilyClient.getInstance().simpleSearch(
-                            query = visionResult.searchKeywords,
-                            maxResults = 3,
-                            includeAnswer = true
-                        )
-                        tavilyResult.onSuccess { results ->
-                            searchContext = results.joinToString("\n") {
-                                "【${it.title}】${it.content}"
+                            val tavilyResult = TavilyClient.getInstance().simpleSearch(
+                                query = visionResult.searchKeywords,
+                                maxResults = 3,
+                                includeAnswer = true
+                            )
+                            tavilyResult.onSuccess { results ->
+                                searchContext = results.joinToString("\n") {
+                                    "【${it.title}】${it.content}"
+                                }
+                                AppLog.d("Tavily搜索完成: ${results.size}条")
                             }
-                            AppLog.d("Tavily搜索完成: ${results.size}条")
+                        }
+                        // VLM模式下不使用正则，直接进入LLM答题
+                    } else {
+                        // OCR模式：使用正则提取搜索关键词
+                        val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
+                        val isMultiQuestion = AppConfig.isRegexFilterEnabled() && multiQuestionPattern.containsMatchIn(text)
+
+                        if (!isMultiQuestion && AppConfig.isTavilyConfigValid()) {
+                            floatingStatus.value = FloatingStatus.Searching
+                            statusMessage.value = getString(R.string.status_searching)
+                            val lines = text.lines()
+                            val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
+                            val optionLines = lines.filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
+                                .map { it.trim() }
+                            val searchQuery = if (!questionLine.isNullOrBlank()) {
+                                (listOf(questionLine) + optionLines).joinToString(" ")
+                            } else {
+                                text
+                            }
+                            AppLog.d("Tavily搜索(正则提取): $searchQuery")
+                            val tavilyResult = TavilyClient.getInstance().simpleSearch(
+                                query = searchQuery,
+                                maxResults = 3,
+                                includeAnswer = true
+                            )
+                            tavilyResult.onSuccess { results ->
+                                searchContext = results.joinToString("\n") {
+                                    "【${it.title}】${it.content}"
+                                }
+                                AppLog.d("Tavily搜索结果已注入上下文: ${results.size} 条")
+                            }
                         }
                     }
-                    // VLM模式下不使用正则，直接进入LLM答题
-                } else {
-                    // OCR模式：使用正则提取搜索关键词
-                    val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
-                    val isMultiQuestion = AppConfig.isRegexFilterEnabled() && multiQuestionPattern.containsMatchIn(text)
 
-                    if (!isMultiQuestion && AppConfig.isTavilyConfigValid()) {
-                        floatingStatus.value = FloatingStatus.Searching
-                        statusMessage.value = getString(R.string.status_searching)
-                        val lines = text.lines()
-                        val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
-                        val optionLines = lines.filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
-                            .map { it.trim() }
-                        val searchQuery = if (!questionLine.isNullOrBlank()) {
-                            (listOf(questionLine) + optionLines).joinToString(" ")
-                        } else {
-                            text
-                        }
-                        AppLog.d("Tavily搜索(正则提取): $searchQuery")
-                        val tavilyResult = TavilyClient.getInstance().simpleSearch(
-                            query = searchQuery,
-                            maxResults = 3,
-                            includeAnswer = true
-                        )
-                        tavilyResult.onSuccess { results ->
-                            searchContext = results.joinToString("\n") {
-                                "【${it.title}】${it.content}"
-                            }
-                            AppLog.d("Tavily搜索结果已注入上下文: ${results.size} 条")
-                        }
+                    // ========== LLM答题 ==========
+                    floatingStatus.value = FloatingStatus.GettingAnswer
+                    statusMessage.value = getString(R.string.status_getting_answer)
+
+                    val apiClient = OpenAIClient.getInstance()
+                    val result = apiClient.analyzeQuestion(text, questionTypes, searchContext)
+
+                    result.onSuccess { aiAnswers ->
+                        handleAnswerSuccess(aiAnswers, autoCopy)
+                    }.onFailure { error ->
+                        showErrorMessage(getString(R.string.status_ai_analysis_failed, error.message ?: ""))
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    showErrorMessage(getString(R.string.status_fetch_answer_failed, e.message ?: ""))
                 }
-
-                // ========== LLM答题 ==========
-                floatingStatus.value = FloatingStatus.GettingAnswer
-                statusMessage.value = getString(R.string.status_getting_answer)
-
-                val apiClient = OpenAIClient.getInstance()
-                val result = apiClient.analyzeQuestion(text, questionTypes, searchContext)
-
-                result.onSuccess { aiAnswers ->
-                    handleAnswerSuccess(aiAnswers, autoCopy)
-                }.onFailure { error ->
-                    showErrorMessage(getString(R.string.status_ai_analysis_failed, error.message ?: ""))
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                showErrorMessage(getString(R.string.status_fetch_answer_failed, e.message ?: ""))
-            } finally {
-                // 释放互斥锁，允许下一次请求
-                fetchMutex.unlock()
             }
         }
     }
@@ -1021,11 +1067,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
-        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
 
-        // 取消进行中的网络请求
+        // 先取消所有协程，再设置DESTROYED状态
+        // 避免lifecycleScope与serviceScope取消顺序不一致的问题
         currentFetchJob?.cancel()
         currentFetchJob = null
+        serviceScope.cancel()
+
+        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
 
         try {
             unregisterReceiver(answerReceiver)
@@ -1034,11 +1083,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         floatingView?.let {
+            // 显式销毁ComposeView的composition，避免内存泄漏
+            it.disposeComposition()
             windowManager.removeView(it)
         }
+        floatingView = null
 
         screenCaptureManager?.releaseAll()
-        serviceScope.cancel()
         _viewModelStore.clear()
     }
 

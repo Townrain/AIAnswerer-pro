@@ -28,14 +28,15 @@ android {
         applicationId = "com.hwb.aianswerer"
         minSdk = 30
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.3"
+        versionCode = 13
+        versionName = "1.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             //noinspection ChromeOsAbiSupport
-            abiFilters += setOf("arm64-v8a")
+            // 支持arm64-v8a(真机)和x86_64(模拟器)
+            abiFilters += setOf("arm64-v8a", "x86_64")
         }
 
         // BuildConfig字段 - 从local.properties读取
@@ -72,10 +73,15 @@ android {
         val buildTypeName = buildType.name
         val versionNameValue = versionName
         outputs.all {
-            val outputImpl = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            val date = SimpleDateFormat("yyyyMMdd-HHmm").format(Date())
-            outputImpl.outputFileName =
-                "${date}_AIAnswerer_v${versionNameValue}.apk"
+            // 使用安全的方式重命名APK，避免依赖AGP内部API
+            try {
+                val outputImpl = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+                val date = SimpleDateFormat("yyyyMMdd-HHmm").format(Date())
+                outputImpl.outputFileName =
+                    "${date}_AIAnswerer_v${versionNameValue}.apk"
+            } catch (e: Exception) {
+                println("Warning: Could not rename APK output: ${e.message}")
+            }
         }
     }
 
@@ -92,8 +98,14 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Release签名配置
-            signingConfig = signingConfigs.getByName("release")
+            // Release签名配置：如果签名配置不完整，使用debug签名
+            val releaseSigningConfig = signingConfigs.getByName("release")
+            if (releaseSigningConfig.storeFile != null) {
+                signingConfig = releaseSigningConfig
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+                println("Warning: Using debug signing config for release build")
+            }
         }
     }
     compileOptions {

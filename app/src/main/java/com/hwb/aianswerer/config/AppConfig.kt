@@ -63,8 +63,15 @@ object AppConfig {
     const val CAPTURE_MODE_SCREENSHOT = "screenshot"  // 截图 + OCR/VLM
     const val CAPTURE_MODE_ACCESSIBILITY = "accessibility"  // 无障碍读取屏幕
 
-    private lateinit var mmkv: MMKV
+    private var mmkv: MMKV? = null
     private var securePrefs: SharedPreferences? = null
+
+    /**
+     * 安全获取MMKV实例，未初始化时抛出明确异常
+     */
+    private fun requireMmkv(): MMKV {
+        return mmkv ?: throw IllegalStateException("AppConfig.init() must be called before accessing MMKV")
+    }
 
     /**
      * 初始化MMKV和EncryptedSharedPreferences
@@ -93,6 +100,7 @@ object AppConfig {
             // EncryptedSharedPreferences 初始化失败时降级到 MMKV
             // 常见原因：Android Keystore 不可用、模拟器兼容性问题
             securePrefs = null
+            android.util.Log.w("AppConfig", "EncryptedSharedPreferences初始化失败，API密钥将以明文形式存储在MMKV中", e)
         }
     }
 
@@ -101,12 +109,12 @@ object AppConfig {
      */
     private fun migrateApiKeyIfNeeded() {
         val prefs = securePrefs ?: return
-        val mmkvKey = mmkv.decodeString(KEY_API_KEY, null)
+        val mmkvKey = requireMmkv().decodeString(KEY_API_KEY, null)
         if (!mmkvKey.isNullOrEmpty() && prefs.getString(KEY_API_KEY, null).isNullOrEmpty()) {
             // 旧的明文Key存在且加密存储中没有，执行迁移
             prefs.edit().putString(KEY_API_KEY, mmkvKey).apply()
             // 删除旧的明文Key
-            mmkv.removeValueForKey(KEY_API_KEY)
+            requireMmkv().removeValueForKey(KEY_API_KEY)
         }
     }
 
@@ -116,7 +124,7 @@ object AppConfig {
      * 保存API URL
      */
     fun saveApiUrl(url: String) {
-        mmkv.encode(KEY_API_URL, url)
+        requireMmkv().encode(KEY_API_URL, url)
     }
 
     /**
@@ -124,7 +132,7 @@ object AppConfig {
      * @return API URL，优先返回BuildConfig配置，其次返回用户设置值，最后返回默认值
      */
     fun getApiUrl(): String {
-        return mmkv.decodeString(KEY_API_URL, BuildConfig.API_URL) ?: ""
+        return requireMmkv().decodeString(KEY_API_URL, BuildConfig.API_URL) ?: ""
     }
 
     /**
@@ -136,26 +144,26 @@ object AppConfig {
             prefs.edit().putString(KEY_API_KEY, key).apply()
         } else {
             // 降级到 MMKV
-            mmkv.encode(KEY_API_KEY, key)
+            requireMmkv().encode(KEY_API_KEY, key)
         }
     }
 
     /**
      * 获取API Key（优先从加密存储读取，降级时从MMKV读取）
-     * @return API Key，优先返回BuildConfig配置，其次返回用户设置值，最后返回空值
+     * @return API Key，如果未配置则返回空字符串
      */
     fun getApiKey(): String {
         val prefs = securePrefs
         val stored = prefs?.getString(KEY_API_KEY, null)
-            ?: mmkv.decodeString(KEY_API_KEY, null)
-        return stored?.takeIf { it.isNotEmpty() } ?: BuildConfig.API_KEY
+            ?: requireMmkv().decodeString(KEY_API_KEY, null)
+        return stored?.takeIf { it.isNotEmpty() } ?: ""
     }
 
     /**
      * 保存模型名称
      */
     fun saveModelName(model: String) {
-        mmkv.encode(KEY_MODEL_NAME, model)
+        requireMmkv().encode(KEY_MODEL_NAME, model)
     }
 
     /**
@@ -163,7 +171,7 @@ object AppConfig {
      * @return 模型名称，优先返回BuildConfig配置，其次返回用户设置值，最后返回默认值
      */
     fun getModelName(): String {
-        return mmkv.decodeString(KEY_MODEL_NAME, BuildConfig.API_MODEL) ?: ""
+        return requireMmkv().decodeString(KEY_MODEL_NAME, BuildConfig.API_MODEL) ?: ""
     }
 
     /**
@@ -186,7 +194,7 @@ object AppConfig {
      * @param languageCode 语言代码 (zh/en)
      */
     fun saveLanguage(languageCode: String) {
-        mmkv.encode(KEY_LANGUAGE, languageCode)
+        requireMmkv().encode(KEY_LANGUAGE, languageCode)
     }
 
     /**
@@ -194,7 +202,7 @@ object AppConfig {
      * @return 语言代码，默认为中文
      */
     fun getLanguage(): String {
-        return mmkv.decodeString(KEY_LANGUAGE, LANGUAGE_ZH) ?: LANGUAGE_ZH
+        return requireMmkv().decodeString(KEY_LANGUAGE, LANGUAGE_ZH) ?: LANGUAGE_ZH
     }
 
     // ========== 应用设置相关 ==========
@@ -204,7 +212,7 @@ object AppConfig {
      * @param enabled 是否启用自动提交（识别后直接获取答案，不显示确认对话框）
      */
     fun saveAutoSubmit(enabled: Boolean) {
-        mmkv.encode(KEY_AUTO_SUBMIT, enabled)
+        requireMmkv().encode(KEY_AUTO_SUBMIT, enabled)
     }
 
     /**
@@ -212,7 +220,7 @@ object AppConfig {
      * @return 是否启用自动提交，默认为true
      */
     fun getAutoSubmit(): Boolean {
-        return mmkv.decodeBool(KEY_AUTO_SUBMIT, true)
+        return requireMmkv().decodeBool(KEY_AUTO_SUBMIT, true)
     }
 
     /**
@@ -220,7 +228,7 @@ object AppConfig {
      * @param enabled 是否启用自动复制（生成答案后自动复制到剪贴板）
      */
     fun saveAutoCopy(enabled: Boolean) {
-        mmkv.encode(KEY_AUTO_COPY, enabled)
+        requireMmkv().encode(KEY_AUTO_COPY, enabled)
     }
 
     /**
@@ -228,7 +236,7 @@ object AppConfig {
      * @return 是否启用自动复制，默认为false
      */
     fun getAutoCopy(): Boolean {
-        return mmkv.decodeBool(KEY_AUTO_COPY, false)
+        return requireMmkv().decodeBool(KEY_AUTO_COPY, false)
     }
 
     // ========== 暗色模式相关 ==========
@@ -238,7 +246,7 @@ object AppConfig {
      * @param mode 暗色模式：0=跟随系统, 1=亮色, 2=暗色
      */
     fun saveDarkMode(mode: Int) {
-        mmkv.encode(KEY_DARK_MODE, mode)
+        requireMmkv().encode(KEY_DARK_MODE, mode)
     }
 
     /**
@@ -246,7 +254,7 @@ object AppConfig {
      * @return 暗色模式：0=跟随系统, 1=亮色, 2=暗色，默认为0
      */
     fun getDarkMode(): Int {
-        return mmkv.decodeInt(KEY_DARK_MODE, 0)
+        return requireMmkv().decodeInt(KEY_DARK_MODE, 0)
     }
 
     // ========== 答题设置相关 ==========
@@ -257,7 +265,7 @@ object AppConfig {
      */
     fun saveQuestionTypes(types: Set<String>) {
         val typesString = types.joinToString(",")
-        mmkv.encode(KEY_QUESTION_TYPES, typesString)
+        requireMmkv().encode(KEY_QUESTION_TYPES, typesString)
     }
 
     /**
@@ -265,7 +273,7 @@ object AppConfig {
      * @return 题型集合，默认为单选题
      */
     fun getQuestionTypes(): Set<String> {
-        val typesString = mmkv.decodeString(KEY_QUESTION_TYPES, "单选题") ?: "单选题"
+        val typesString = requireMmkv().decodeString(KEY_QUESTION_TYPES, "单选题") ?: "单选题"
         return if (typesString.isBlank()) {
             setOf("单选题")
         } else {
@@ -279,7 +287,7 @@ object AppConfig {
      * @param show 是否显示题目
      */
     fun saveShowAnswerCardQuestion(show: Boolean) {
-        mmkv.encode(KEY_SHOW_ANSWER_CARD_QUESTION, show)
+        requireMmkv().encode(KEY_SHOW_ANSWER_CARD_QUESTION, show)
     }
 
     /**
@@ -287,7 +295,7 @@ object AppConfig {
      * @return 是否显示题目，默认为true
      */
     fun getShowAnswerCardQuestion(): Boolean {
-        return mmkv.decodeBool(KEY_SHOW_ANSWER_CARD_QUESTION, true)
+        return requireMmkv().decodeBool(KEY_SHOW_ANSWER_CARD_QUESTION, true)
     }
 
     /**
@@ -295,7 +303,7 @@ object AppConfig {
      * @param show 是否显示选项
      */
     fun saveShowAnswerCardOptions(show: Boolean) {
-        mmkv.encode(KEY_SHOW_ANSWER_CARD_OPTIONS, show)
+        requireMmkv().encode(KEY_SHOW_ANSWER_CARD_OPTIONS, show)
     }
 
     /**
@@ -303,7 +311,7 @@ object AppConfig {
      * @return 是否显示选项，默认为true
      */
     fun getShowAnswerCardOptions(): Boolean {
-        return mmkv.decodeBool(KEY_SHOW_ANSWER_CARD_OPTIONS, true)
+        return requireMmkv().decodeBool(KEY_SHOW_ANSWER_CARD_OPTIONS, true)
     }
 
     // ========== 截图识别模式相关 ==========
@@ -313,7 +321,7 @@ object AppConfig {
      * @param mode 识别模式（CROP_MODE_FULL/CROP_MODE_EACH/CROP_MODE_ONCE）
      */
     fun saveCropMode(mode: String) {
-        mmkv.encode(KEY_CROP_MODE, mode)
+        requireMmkv().encode(KEY_CROP_MODE, mode)
     }
 
     /**
@@ -321,7 +329,7 @@ object AppConfig {
      * @return 识别模式，默认为全屏模式
      */
     fun getCropMode(): String {
-        return mmkv.decodeString(KEY_CROP_MODE, CROP_MODE_FULL) ?: CROP_MODE_FULL
+        return requireMmkv().decodeString(KEY_CROP_MODE, CROP_MODE_FULL) ?: CROP_MODE_FULL
     }
 
     // ========== 采集模式相关 ==========
@@ -331,7 +339,7 @@ object AppConfig {
      * @param mode CAPTURE_MODE_SCREENSHOT 或 CAPTURE_MODE_ACCESSIBILITY
      */
     fun saveCaptureMode(mode: String) {
-        mmkv.encode(KEY_CAPTURE_MODE, mode)
+        requireMmkv().encode(KEY_CAPTURE_MODE, mode)
     }
 
     /**
@@ -339,7 +347,7 @@ object AppConfig {
      * @return 采集模式，默认为截图模式
      */
     fun getCaptureMode(): String {
-        return mmkv.decodeString(KEY_CAPTURE_MODE, CAPTURE_MODE_SCREENSHOT) ?: CAPTURE_MODE_SCREENSHOT
+        return requireMmkv().decodeString(KEY_CAPTURE_MODE, CAPTURE_MODE_SCREENSHOT) ?: CAPTURE_MODE_SCREENSHOT
     }
 
     /**
@@ -361,7 +369,7 @@ object AppConfig {
         if (prefs != null) {
             prefs.edit().putString(KEY_TAVILY_API_KEY, key).apply()
         } else {
-            mmkv.encode(KEY_TAVILY_API_KEY, key)
+            requireMmkv().encode(KEY_TAVILY_API_KEY, key)
         }
     }
 
@@ -371,7 +379,7 @@ object AppConfig {
     fun getTavilyApiKey(): String {
         val prefs = securePrefs
         val stored = prefs?.getString(KEY_TAVILY_API_KEY, null)
-            ?: mmkv.decodeString(KEY_TAVILY_API_KEY, null)
+            ?: requireMmkv().decodeString(KEY_TAVILY_API_KEY, null)
         return stored?.takeIf { it.isNotEmpty() } ?: ""
     }
 
@@ -379,14 +387,14 @@ object AppConfig {
      * 保存 Tavily 启用状态
      */
     fun saveTavilyEnabled(enabled: Boolean) {
-        mmkv.encode(KEY_TAVILY_ENABLED, enabled)
+        requireMmkv().encode(KEY_TAVILY_ENABLED, enabled)
     }
 
     /**
      * 获取 Tavily 启用状态，默认为 false
      */
     fun getTavilyEnabled(): Boolean {
-        return mmkv.decodeBool(KEY_TAVILY_ENABLED, false)
+        return requireMmkv().decodeBool(KEY_TAVILY_ENABLED, false)
     }
 
     /**
@@ -402,28 +410,28 @@ object AppConfig {
      * 是否启用视觉过滤
      */
     fun isVisionEnabled(): Boolean {
-        return mmkv.decodeBool(KEY_VISION_ENABLED, false)
+        return requireMmkv().decodeBool(KEY_VISION_ENABLED, false)
     }
 
     /**
      * 保存视觉过滤启用状态
      */
     fun saveVisionEnabled(enabled: Boolean) {
-        mmkv.encode(KEY_VISION_ENABLED, enabled)
+        requireMmkv().encode(KEY_VISION_ENABLED, enabled)
     }
 
     /**
      * 获取视觉模型 Provider ID
      */
     fun getVisionProviderId(): String {
-        return mmkv.decodeString(KEY_VISION_PROVIDER_ID, "openai_compat") ?: "openai_compat"
+        return requireMmkv().decodeString(KEY_VISION_PROVIDER_ID, "openai_compat") ?: "openai_compat"
     }
 
     /**
      * 保存视觉模型 Provider ID
      */
     fun saveVisionProviderId(id: String) {
-        mmkv.encode(KEY_VISION_PROVIDER_ID, id)
+        requireMmkv().encode(KEY_VISION_PROVIDER_ID, id)
         VisionProviderFactory.invalidateCache()
     }
 
@@ -431,7 +439,7 @@ object AppConfig {
      * 获取视觉模型 API 地址
      */
     fun getVisionBaseUrl(): String {
-        val saved = mmkv.decodeString(KEY_VISION_BASE_URL, null)
+        val saved = requireMmkv().decodeString(KEY_VISION_BASE_URL, null)
         if (!saved.isNullOrBlank()) return saved
         // 根据 provider 返回默认值
         val meta = VisionProviderFactory.REGISTERED_PROVIDERS[getVisionProviderId()]
@@ -442,7 +450,7 @@ object AppConfig {
      * 保存视觉模型 API 地址
      */
     fun saveVisionBaseUrl(url: String) {
-        mmkv.encode(KEY_VISION_BASE_URL, url)
+        requireMmkv().encode(KEY_VISION_BASE_URL, url)
         VisionProviderFactory.invalidateCache()
     }
 
@@ -452,7 +460,7 @@ object AppConfig {
     fun getVisionApiKey(): String {
         val prefs = securePrefs
         val stored = prefs?.getString(KEY_VISION_API_KEY, null)
-            ?: mmkv.decodeString(KEY_VISION_API_KEY, null)
+            ?: requireMmkv().decodeString(KEY_VISION_API_KEY, null)
         return stored?.takeIf { it.isNotEmpty() } ?: ""
     }
 
@@ -464,7 +472,7 @@ object AppConfig {
         if (prefs != null) {
             prefs.edit().putString(KEY_VISION_API_KEY, key).apply()
         } else {
-            mmkv.encode(KEY_VISION_API_KEY, key)
+            requireMmkv().encode(KEY_VISION_API_KEY, key)
         }
         VisionProviderFactory.invalidateCache()
     }
@@ -473,7 +481,7 @@ object AppConfig {
      * 获取视觉模型名称
      */
     fun getVisionModelName(): String {
-        val saved = mmkv.decodeString(KEY_VISION_MODEL_NAME, null)
+        val saved = requireMmkv().decodeString(KEY_VISION_MODEL_NAME, null)
         if (!saved.isNullOrBlank()) return saved
         val meta = VisionProviderFactory.REGISTERED_PROVIDERS[getVisionProviderId()]
         return meta?.defaultModel ?: "deepseek-chat"
@@ -483,7 +491,7 @@ object AppConfig {
      * 保存视觉模型名称
      */
     fun saveVisionModelName(name: String) {
-        mmkv.encode(KEY_VISION_MODEL_NAME, name)
+        requireMmkv().encode(KEY_VISION_MODEL_NAME, name)
         VisionProviderFactory.invalidateCache()
     }
 
@@ -491,14 +499,14 @@ object AppConfig {
      * 获取视觉模型 Temperature
      */
     fun getVisionTemperature(): Double {
-        return mmkv.decodeFloat(KEY_VISION_TEMPERATURE, 0.0f).toDouble()
+        return requireMmkv().decodeFloat(KEY_VISION_TEMPERATURE, 0.0f).toDouble()
     }
 
     /**
      * 保存视觉模型 Temperature
      */
     fun saveVisionTemperature(t: Double) {
-        mmkv.encode(KEY_VISION_TEMPERATURE, t.toFloat())
+        requireMmkv().encode(KEY_VISION_TEMPERATURE, t.toFloat())
         VisionProviderFactory.invalidateCache()
     }
 
@@ -506,14 +514,14 @@ object AppConfig {
      * 获取视觉模型 Max Tokens
      */
     fun getVisionMaxTokens(): Int {
-        return mmkv.decodeInt(KEY_VISION_MAX_TOKENS, 4096)
+        return requireMmkv().decodeInt(KEY_VISION_MAX_TOKENS, 4096)
     }
 
     /**
      * 保存视觉模型 Max Tokens
      */
     fun saveVisionMaxTokens(n: Int) {
-        mmkv.encode(KEY_VISION_MAX_TOKENS, n)
+        requireMmkv().encode(KEY_VISION_MAX_TOKENS, n)
         VisionProviderFactory.invalidateCache()
     }
 
@@ -521,14 +529,14 @@ object AppConfig {
      * 获取视觉模型 JSON 模式
      */
     fun getVisionJsonMode(): Boolean {
-        return mmkv.decodeBool(KEY_VISION_JSON_MODE, true)
+        return requireMmkv().decodeBool(KEY_VISION_JSON_MODE, true)
     }
 
     /**
      * 保存视觉模型 JSON 模式
      */
     fun saveVisionJsonMode(v: Boolean) {
-        mmkv.encode(KEY_VISION_JSON_MODE, v)
+        requireMmkv().encode(KEY_VISION_JSON_MODE, v)
         VisionProviderFactory.invalidateCache()
     }
 
@@ -550,7 +558,7 @@ object AppConfig {
      * @return true表示启用并发模式，false表示使用串行模式，默认为false
      */
     fun isParallelModeEnabled(): Boolean {
-        return mmkv.decodeBool(KEY_PARALLEL_MODE, false)
+        return requireMmkv().decodeBool(KEY_PARALLEL_MODE, false)
     }
 
     /**
@@ -558,7 +566,7 @@ object AppConfig {
      * @param enabled 是否启用并发模式
      */
     fun saveParallelMode(enabled: Boolean) {
-        mmkv.encode(KEY_PARALLEL_MODE, enabled)
+        requireMmkv().encode(KEY_PARALLEL_MODE, enabled)
     }
 
     /**
@@ -566,7 +574,7 @@ object AppConfig {
      * @return 最大并发数，默认为3，范围1-10
      */
     fun getMaxConcurrency(): Int {
-        return mmkv.decodeInt(KEY_MAX_CONCURRENCY, 3)
+        return requireMmkv().decodeInt(KEY_MAX_CONCURRENCY, 3)
     }
 
     /**
@@ -574,7 +582,7 @@ object AppConfig {
      * @param count 最大并发数，会被限制在1-10范围内
      */
     fun saveMaxConcurrency(count: Int) {
-        mmkv.encode(KEY_MAX_CONCURRENCY, count.coerceIn(1, 10))
+        requireMmkv().encode(KEY_MAX_CONCURRENCY, count.coerceIn(1, 10))
     }
 
     /**
@@ -582,7 +590,7 @@ object AppConfig {
      * @return true表示启用隐身模式，false表示关闭，默认为true
      */
     fun isStealthModeEnabled(): Boolean {
-        return mmkv.decodeBool(KEY_STEALTH_MODE, true)
+        return requireMmkv().decodeBool(KEY_STEALTH_MODE, true)
     }
 
     /**
@@ -590,7 +598,7 @@ object AppConfig {
      * @param enabled 是否启用隐身模式
      */
     fun saveStealthMode(enabled: Boolean) {
-        mmkv.encode(KEY_STEALTH_MODE, enabled)
+        requireMmkv().encode(KEY_STEALTH_MODE, enabled)
     }
 
     // ========== LLM Temperature 相关 ==========
@@ -600,7 +608,7 @@ object AppConfig {
      * @return Temperature值，默认为0.3（适合答题场景）
      */
     fun getLlmTemperature(): Double {
-        return mmkv.decodeFloat(KEY_LLM_TEMPERATURE, 0.3f).toDouble()
+        return requireMmkv().decodeFloat(KEY_LLM_TEMPERATURE, 0.3f).toDouble()
     }
 
     /**
@@ -608,7 +616,7 @@ object AppConfig {
      * @param temperature Temperature值，会被限制在0.0-2.0范围内
      */
     fun saveLlmTemperature(temperature: Double) {
-        mmkv.encode(KEY_LLM_TEMPERATURE, temperature.coerceIn(0.0, 2.0).toFloat())
+        requireMmkv().encode(KEY_LLM_TEMPERATURE, temperature.coerceIn(0.0, 2.0).toFloat())
     }
 
     // ========== 正则过滤相关 ==========
@@ -618,14 +626,14 @@ object AppConfig {
      * @return true表示启用正则过滤（检测到多题时跳过搜索），默认为true
      */
     fun isRegexFilterEnabled(): Boolean {
-        return mmkv.decodeBool(KEY_REGEX_FILTER_ENABLED, true)
+        return requireMmkv().decodeBool(KEY_REGEX_FILTER_ENABLED, true)
     }
 
     /**
      * 保存正则过滤启用状态
      */
     fun saveRegexFilterEnabled(enabled: Boolean) {
-        mmkv.encode(KEY_REGEX_FILTER_ENABLED, enabled)
+        requireMmkv().encode(KEY_REGEX_FILTER_ENABLED, enabled)
     }
 
     // ========== 思考模式相关 ==========
@@ -635,43 +643,43 @@ object AppConfig {
      * @return "medium" 当启用，null 当禁用
      */
     fun getReasoningEffort(): String? {
-        return if (mmkv.decodeBool(KEY_REASONING_EFFORT, false)) "medium" else null
+        return if (requireMmkv().decodeBool(KEY_REASONING_EFFORT, false)) "medium" else null
     }
 
     /**
      * 保存思考模式启用状态
      */
     fun saveReasoningEffort(enabled: Boolean) {
-        mmkv.encode(KEY_REASONING_EFFORT, enabled)
+        requireMmkv().encode(KEY_REASONING_EFFORT, enabled)
     }
 
     // ========== 悬浮窗外观相关 ==========
 
     /** 悬浮按钮大小（dp），默认 48 */
     fun getFloatButtonSize(): Int {
-        return mmkv.decodeInt(KEY_FLOAT_BUTTON_SIZE, 56)
+        return requireMmkv().decodeInt(KEY_FLOAT_BUTTON_SIZE, 56)
     }
 
     fun saveFloatButtonSize(size: Int) {
-        mmkv.encode(KEY_FLOAT_BUTTON_SIZE, size.coerceIn(32, 80))
+        requireMmkv().encode(KEY_FLOAT_BUTTON_SIZE, size.coerceIn(32, 80))
     }
 
     /** 悬浮按钮透明度 0.1~1.0，默认 0.9 */
     fun getFloatButtonAlpha(): Float {
-        return mmkv.decodeFloat(KEY_FLOAT_BUTTON_ALPHA, 0.9f)
+        return requireMmkv().decodeFloat(KEY_FLOAT_BUTTON_ALPHA, 0.9f)
     }
 
     fun saveFloatButtonAlpha(alpha: Float) {
-        mmkv.encode(KEY_FLOAT_BUTTON_ALPHA, alpha.coerceIn(0.1f, 1.0f))
+        requireMmkv().encode(KEY_FLOAT_BUTTON_ALPHA, alpha.coerceIn(0.1f, 1.0f))
     }
 
     /** 卡片透明度 0.1~1.0，默认 0.85 */
     fun getFloatCardAlpha(): Float {
-        return mmkv.decodeFloat(KEY_FLOAT_CARD_ALPHA, 0.85f)
+        return requireMmkv().decodeFloat(KEY_FLOAT_CARD_ALPHA, 0.85f)
     }
 
     fun saveFloatCardAlpha(alpha: Float) {
-        mmkv.encode(KEY_FLOAT_CARD_ALPHA, alpha.coerceIn(0.1f, 1.0f))
+        requireMmkv().encode(KEY_FLOAT_CARD_ALPHA, alpha.coerceIn(0.1f, 1.0f))
     }
 
     /**
@@ -679,14 +687,14 @@ object AppConfig {
      * @return true表示首次启动，false表示已启动过
      */
     fun isFirstLaunch(): Boolean {
-        return mmkv.decodeBool(KEY_IS_FIRST_LAUNCH, true)
+        return requireMmkv().decodeBool(KEY_IS_FIRST_LAUNCH, true)
     }
 
     /**
      * 标记首次启动完成
      */
     fun setFirstLaunchComplete() {
-        mmkv.encode(KEY_IS_FIRST_LAUNCH, false)
+        requireMmkv().encode(KEY_IS_FIRST_LAUNCH, false)
     }
 }
 

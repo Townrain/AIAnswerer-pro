@@ -41,7 +41,8 @@ class OpenAIClient {
             .apply {
                 if (com.hwb.aianswerer.BuildConfig.DEBUG) {
                     addInterceptor(HttpLoggingInterceptor().apply {
-                        level = HttpLoggingInterceptor.Level.BODY
+                        // 使用HEADERS级别，避免泄露请求体中的敏感信息（如API Key）
+                        level = HttpLoggingInterceptor.Level.HEADERS
                         redactHeader("Authorization")
                     })
                 }
@@ -348,30 +349,15 @@ class OpenAIClient {
     /**
      * 清理 JSON 字符串中的非法字符
      * LLM 返回的 JSON 可能在字符串值中包含换行符、中文标点等，导致解析失败
+     *
+     * 重要：中文标点只在 JSON 字符串外部替换，避免破坏字符串值内的中文内容
      */
     private fun sanitizeJson(json: String): String {
-        // 预处理：替换中文标点为 ASCII 等价物
-        var s = json
-            .replace('\u201C', '"')   // 左双引号 "
-            .replace('\u201D', '"')   // 右双引号 "
-            .replace('\u2018', '\'')  // 左单引号 '
-            .replace('\u2019', '\'')  // 右单引号 '
-            .replace('\uFF0C', ',')   // 全角逗号 ，
-            .replace('\u3001', ',')   // 顿号 、
-            .replace('\uFF1A', ':')   // 全角冒号 ：
-            .replace('\uFF1B', ';')   // 全角分号 ；
-            .replace('\u3002', '.')   // 句号 。
-            .replace('\uFF08', '(')   // 全角左括号 （
-            .replace('\uFF09', ')')   // 全角右括号 ）
-            .replace('\u300A', '<')   // 左书名号 《
-            .replace('\u300B', '>')   // 右书名号 》
-            .replace('\uFF01', '!')   // 全角感叹号 ！
-
         val result = StringBuilder()
         var inString = false
         var escape = false
 
-        for (c in s) {
+        for (c in json) {
             when {
                 escape -> {
                     result.append(c)
@@ -393,8 +379,27 @@ class OpenAIClient {
                     // 字符串内的制表符替换为 \\t
                     result.append("\\t")
                 }
-                else -> {
+                inString -> {
+                    // 字符串内的内容原样保留，不替换中文标点
                     result.append(c)
+                }
+                else -> {
+                    // 字符串外的中文标点替换为 ASCII
+                    when (c) {
+                        '\u201C', '\u201D' -> result.append('"')  // 中文双引号
+                        '\u2018', '\u2019' -> result.append('\'') // 中文单引号
+                        '\uFF0C' -> result.append(',')             // 全角逗号
+                        '\u3001' -> result.append(',')             // 顿号
+                        '\uFF1A' -> result.append(':')             // 全角冒号
+                        '\uFF1B' -> result.append(';')             // 全角分号
+                        '\u3002' -> result.append('.')             // 句号
+                        '\uFF08' -> result.append('(')             // 全角左括号
+                        '\uFF09' -> result.append(')')             // 全角右括号
+                        '\u300A' -> result.append('<')             // 左书名号
+                        '\u300B' -> result.append('>')             // 右书名号
+                        '\uFF01' -> result.append('!')             // 全角感叹号
+                        else -> result.append(c)
+                    }
                 }
             }
         }

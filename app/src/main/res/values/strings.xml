@@ -366,4 +366,9 @@
     <string name="setting_stealth_title">隐身模式</string>
     <string name="setting_stealth_mode">启用隐身模式</string>
     <string name="setting_stealth_mode_desc">启用后将防止截屏捕获、绕过无障碍检测，并降低窗口可见度</string>
+
+    <!-- Quick Toggle Buttons -->
+    <string name="quick_toggle_vlm">视觉模型</string>
+    <string name="quick_toggle_search">联网搜索</string>
+    <string name="quick_toggle_reasoning">深度思考</string>
 </resources>

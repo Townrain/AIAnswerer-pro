@@ -315,9 +315,11 @@ class MainActivity : BaseActivity() {
         }
 
         val intent = Intent(this, FloatingWindowService::class.java).apply {
-            if (screenCaptureResultCode != null && screenCaptureData != null) {
-                putExtra("resultCode", screenCaptureResultCode!!)
-                putExtra("data", screenCaptureData)
+            val resultCode = screenCaptureResultCode
+            val data = screenCaptureData
+            if (resultCode != null && data != null) {
+                putExtra("resultCode", resultCode)
+                putExtra("data", data)
             }
             // 传递答题设置
             putStringArrayListExtra("questionTypes", ArrayList(selectedQuestionTypes))
