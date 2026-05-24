@@ -149,6 +149,7 @@
     <string name="cd_app_icon">应用图标</string>
     <string name="cd_capture_button">截图</string>
     <string name="cd_close_button">关闭</string>
+    <string name="cd_stop_button">中止</string>
     <string name="cd_hide_password">隐藏密码</string>
     <string name="cd_show_password">显示密码</string>
     <string name="cd_copied">已复制</string>
@@ -371,4 +372,17 @@
     <string name="quick_toggle_vlm">视觉模型</string>
     <string name="quick_toggle_search">联网搜索</string>
     <string name="quick_toggle_reasoning">深度思考</string>
+
+    <!-- 录制模式 -->
+    <string name="recording_start">录制模式已开启</string>
+    <string name="recording_stop">录制模式已结束，共 %d 题</string>
+    <string name="recording_indicator">🔴 录制中 (已拍 %d 题)</string>
+    <string name="recording_capturing">📸 正在截取第 %d 题…</string>
+    <string name="recording_processing">⏳ 正在处理答案 (%1$d/%2$d 题已完成)…</string>
+    <string name="recording_all_done">✅ 全部完成 (共 %d 题)</string>
+    <string name="recording_all_done_dedup">✅ 全部完成 (共拍 %1$d 题，去重 %2$d 题，有效 %3$d 题)</string>
+    <string name="recording_no_valid_answers">录制结束，但未获取到有效答案</string>
+    <string name="recording_no_captures">未拍到任何题目</string>
+    <string name="recording_concurrency_limit">并发数已满 (%1$d/%2$d)，请等待当前题目处理完成</string>
+    <string name="quick_toggle_record">录制模式</string>
 </resources>

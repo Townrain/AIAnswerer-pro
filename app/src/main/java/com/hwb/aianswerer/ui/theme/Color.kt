@@ -56,6 +56,10 @@ val SuccessGreenLight = Color(0xFF67D480)
 val ErrorRed = Color(0xFFFF3B30)
 val ErrorRedLight = Color(0xFFFF6961)
 
+// ── Recording Mode — red accent ──
+val RecordingRed = Color(0xFFFF3B30)
+val RecordingRedDark = Color(0xFFD32F2F)
+
 // ── Chip — refined segmented control ──
 val ChipUnselected = Color(0xFF000000).copy(alpha = 0.04f)
 val ChipSelected = Color(0xFF6C5CE7).copy(alpha = 0.10f)

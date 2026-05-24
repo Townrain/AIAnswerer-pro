@@ -329,6 +329,25 @@ object LocalIcons {
         }.build()
     }
 
+    /** 停止图标（方块），用于中止进行中的操作 */
+    val Stop: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Stop",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(6f, 6f)
+                horizontalLineToRelative(12f)
+                verticalLineToRelative(12f)
+                horizontalLineToRelative(-12f)
+                close()
+            }
+        }.build()
+    }
+
     /**
      * 视觉图标（眼睛）
      * 用于: 视觉模型快捷开关
@@ -487,6 +506,29 @@ object LocalIcons {
                 curveToRelative(0f, -1.1f, 0.9f, -2f, 2f, -2f)
                 reflectiveCurveToRelative(2f, 0.9f, 2f, 2f)
                 verticalLineToRelative(1f)
+                close()
+            }
+        }.build()
+    }
+
+    /**
+     * 录制图标（实心圆）
+     * 用于: 录制模式快捷开关
+     */
+    val Record: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Record",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(12f, 2f)
+                curveTo(6.48f, 2f, 2f, 6.48f, 2f, 12f)
+                reflectiveCurveToRelative(4.48f, 10f, 10f, 10f)
+                reflectiveCurveToRelative(10f, -4.48f, 10f, -10f)
+                reflectiveCurveTo(17.52f, 2f, 12f, 2f)
                 close()
             }
         }.build()

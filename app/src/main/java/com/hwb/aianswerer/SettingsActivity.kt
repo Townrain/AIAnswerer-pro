@@ -293,12 +293,12 @@ fun SettingsScreen(
                 PremiumSlider(
                     value = maxConcurrency,
                     onValueChange = { maxConcurrency = it; AppConfig.saveMaxConcurrency(it.toInt()) },
-                    valueRange = 1f..10f,
-                    steps = 8,
+                    valueRange = 1f..50f,
+                    steps = 48,
                     valueFormatter = { "${it.toInt()} 题" },
                     enabled = parallelMode
                 )
-                if (maxConcurrency > 5) {
+                if (maxConcurrency > 20) {
                     Text(
                         text = stringResource(R.string.setting_concurrency_warning),
                         style = MaterialTheme.typography.bodySmall,

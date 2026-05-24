@@ -148,6 +148,7 @@
     <string name="cd_app_icon">App icon</string>
     <string name="cd_capture_button">Capture</string>
     <string name="cd_close_button">Close</string>
+    <string name="cd_stop_button">Stop</string>
     <string name="cd_hide_password">Hide password</string>
     <string name="cd_show_password">Show password</string>
     <string name="cd_copied">Copied</string>
@@ -365,4 +366,17 @@
     <string name="setting_stealth_title">Stealth Mode</string>
     <string name="setting_stealth_mode">Enable Stealth Mode</string>
     <string name="setting_stealth_mode_desc">Prevents screenshot capture, bypasses accessibility detection, and reduces window visibility</string>
+
+    <!-- Recording Mode -->
+    <string name="recording_start">Recording mode enabled</string>
+    <string name="recording_stop">Recording stopped, %d question(s) captured</string>
+    <string name="recording_indicator">🔴 Recording (%d captured)</string>
+    <string name="recording_capturing">📸 Capturing question %d…</string>
+    <string name="recording_processing">⏳ Processing answers (%1$d/%2$d complete)…</string>
+    <string name="recording_all_done">✅ All done (%d question(s))</string>
+    <string name="recording_all_done_dedup">✅ All done (%1$d captured, %2$d duplicate(s) skipped, %3$d valid)</string>
+    <string name="recording_no_valid_answers">Recording finished, but no valid answers were obtained</string>
+    <string name="recording_no_captures">No questions captured</string>
+    <string name="recording_concurrency_limit">Concurrency limit reached (%1$d/%2$d), wait for current questions to finish</string>
+    <string name="quick_toggle_record">Record</string>
 </resources>

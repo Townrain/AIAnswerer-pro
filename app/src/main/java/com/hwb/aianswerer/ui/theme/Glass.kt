@@ -211,6 +211,31 @@ fun Modifier.primaryGlowGradient(
         )
     }
 
+/** Recording gradient — red. */
+fun Modifier.recordingGradient(
+    shape: Shape = androidx.compose.foundation.shape.RoundedCornerShape(DefaultGradientRadius),
+    cornerRadius: Dp = DefaultGradientRadius,
+    shadowElevation: Float = 0f,
+    shadowColor: Color = Color.Black.copy(alpha = 0.15f)
+): Modifier = this
+    .drawWithCache {
+        val corner = CornerRadius(cornerRadius.toPx())
+        onDrawBehind {
+            if (shadowElevation > 0f) drawGlassShadow(this, corner, shadowElevation, shadowColor)
+        }
+    }
+    .clip(shape)
+    .drawBehind {
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(RecordingRed, RecordingRedDark),
+                start = Offset(0f, 0f),
+                end = Offset(size.width, size.height)
+            ),
+            cornerRadius = CornerRadius(cornerRadius.toPx())
+        )
+    }
+
 /** Error gradient. */
 fun Modifier.errorGradient(
     shape: Shape = androidx.compose.foundation.shape.RoundedCornerShape(DefaultGradientRadius),

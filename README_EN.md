@@ -105,6 +105,73 @@ com.hwb.aianswerer/
 
 ### Changelog
 
+#### v1.4 (Recording Mode & Interaction Optimization)
+* **Recording Mode (New Feature)**
+  - Added recording mode for continuously capturing multiple questions, with parallel answer processing during recording
+  - Answers are hidden during recording, only showing a red recording indicator and captured question count
+  - After stopping, all answers are displayed unified, separated by dividers, including full question, options, and answer
+  - Auto-deduplication: based on normalized text comparison, duplicate questions are automatically skipped with dedup statistics
+  - Copy format is concise: only question number and answer (e.g., `Q1: A`)
+  - Concurrency limit: rejects captures when active tasks reach the upper limit and prompts the user to wait
+  - Max concurrency上限 raised from 10 to 50
+* **Abort Search**
+  - Close button on the answer card header changes to a red stop icon during active search
+  - Clicking immediately aborts the ongoing HTTP request, interrupting the LLM streaming response
+  - HTTP requests now use async API (OkHttp enqueue), coroutine cancellation directly closes the connection
+* **Quick Panel Animation Optimization**
+  - Long-press main button quick panel now uses spring animations (scaleIn/scaleOut + fadeIn/fadeOut)
+  - Both expand and collapse have bouncy physics effects, replacing abrupt instant switching
+  - Clicking the record button auto-collapses the quick panel, no need to click the main button again
+
+#### v1.3.1 (Bug Fixes & Stability Improvements)
+* **Null Safety Fixes**
+  - Fixed crash risk from `attachBaseContext(newBase!!)` forced assertion
+  - Fixed crash risk from `screenCaptureResultCode!!` forced unwrapping
+  - Fixed crash risk from `bitmap!!` forced assertion
+  - Fixed crash risk from `savedResultCode!!` forced unwrapping
+* **Thread Safety Fixes**
+  - Fixed potential crash from `questionTypes` using non-thread-safe `mutableSetOf`
+  - Fixed `savedCropRect` visibility issue, added `@Volatile` annotation
+  - Fixed potential deadlock from inconsistent `fetchMutex` scope
+* **Resource Leak Fixes**
+  - Fixed memory leak when screenshot bitmap not recycled during crop exceptions
+  - Fixed `TextRecognitionManager` close on cancel causing singleton unavailability
+  - Fixed temp file residue, cleanup added in `MyApplication.onCreate()`
+  - Fixed `ScreenCaptureManager` listener not removed causing leaks
+* **Logic Error Fixes**
+  - Fixed `START_STICKY` causing zombie service after process kill
+  - Fixed `sanitizeJson()` globally replacing Chinese quotes breaking JSON string content
+  - Fixed `OpenAIVisionProvider` singleton cache preventing config updates from taking effect
+  - Fixed `OpenAIVisionProvider` defaulting to `hasQuestions=true` on JSON parse failure
+  - Fixed `ScreenCaptureManager` virtualDisplay creation failure leaving continuation never resumed
+* **Security Enhancements**
+  - Fixed API key silently downgrading to MMKV plaintext storage when `EncryptedSharedPreferences` fails
+  - Fixed Debug logs potentially leaking sensitive info, log level changed from BODY to HEADERS
+  - Fixed `BuildConfig` fallback potentially leaking API Key
+  - Fixed `allowBackup=true` allowing cloud backup to include MMKV/cache data
+* **Build Optimization**
+  - Fixed release build failing when no signing config present, now falls back to debug signing
+  - Fixed `abiFilters` only including arm64-v8a, preventing emulators and 32-bit devices from running
+  - Fixed using AGP internal API `BaseVariantOutputImpl` causing breakage on AGP upgrade
+  - Fixed `AppConfig` `mmkv` lateinit var crash when called before initialization
+* **UI Fixes**
+  - Fixed empty tags in `parseSections` causing blank lines in UI
+* **Floating Window Quick Toggles**
+  - Added long-press main button to expand quick toggles (VLM, Web Search, Deep Thinking)
+  - Quick toggles use horizontal strip layout, supporting left/right side expansion
+  - Click toggles to instantly switch state without entering settings page
+  - Toggle colors adapt to theme, enabled state shows dark gray background
+  - Ring progress bar animation shown during long press
+* **Floating Window Interaction Optimization**
+  - Fixed main button jumping on click, removed unnecessary scale animation
+  - Optimized drag smoothness, increased touch event processing frequency
+  - When quick buttons expanded, clicking main button only collapses buttons, no screenshot trigger
+  - Dragging main button auto-collapses quick buttons
+* **Window Position Fixes**
+  - Fixed main button not snapping to screen edge
+  - Fixed quick buttons too far from main button when expanding to the right
+  - Simplified window position calculation logic
+
 #### v1.3 (UI Optimization & Concurrent Testing)
 * **Floating Window UI Refactoring**
   - Floating button displayed independently, no longer integrated into card

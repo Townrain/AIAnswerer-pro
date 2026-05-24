@@ -94,7 +94,12 @@ fun FloatingWindowContent(
     reasoningEnabled: Boolean = false,
     onVisionToggle: (() -> Unit)? = null,
     onSearchToggle: (() -> Unit)? = null,
-    onReasoningToggle: (() -> Unit)? = null
+    onReasoningToggle: (() -> Unit)? = null,
+    isRecording: Boolean = false,
+    isProcessingRecording: Boolean = false,
+    recordingCaptureCount: Int = 0,
+    recordingProcessedCount: Int = 0,
+    onRecordingToggle: () -> Unit = {}
 ) {
     val viewConfig = androidx.compose.ui.platform.LocalViewConfiguration.current
     val touchSlop = viewConfig.touchSlop
@@ -112,9 +117,9 @@ fun FloatingWindowContent(
     // 小按钮显示状态
     var showQuickButtons by remember { mutableStateOf(false) }
 
-    // 有内容时自动收起快捷按钮
+    // 有内容时自动收起快捷按钮（录制期间除外）
     LaunchedEffect(hasContent) {
-        if (hasContent) showQuickButtons = false
+        if (hasContent && !isRecording) showQuickButtons = false
     }
 
     // 使用Box作为根容器，fillMaxWidth让宽度等于窗口宽度
@@ -131,6 +136,8 @@ fun FloatingWindowContent(
                     buttonSize = buttonSize,
                     buttonAlpha = buttonAlpha,
                     floatingStatus = floatingStatus,
+                    isRecording = isRecording,
+                    isProcessingRecording = isProcessingRecording,
                     onCaptureClick = {
                         // 如果小按钮展开，只收起小按钮，不触发截图
                         if (showQuickButtons) {
@@ -168,29 +175,53 @@ fun FloatingWindowContent(
             }
         }
 
-        // 小按钮展开层
-        if (showQuickButtons) {
-            Box(
-                modifier = Modifier
-                    .align(if (isLeftSide) Alignment.TopStart else Alignment.TopEnd)
-                    .offset(
-                        x = if (isLeftSide) {
-                            (buttonSize + 8).dp  // 左侧：主按钮右边
-                        } else {
-                            -(buttonSize + 8).dp  // 右侧：主按钮左边
-                        },
-                        y = ((buttonSize - QuickButtonSize.value) / 2).dp  // 垂直居中
-                    )
-            ) {
-                QuickButtonsRow(
-                    visionEnabled = visionEnabled,
-                    searchEnabled = searchEnabled,
-                    reasoningEnabled = reasoningEnabled,
-                    onVisionToggle = { onVisionToggle?.invoke() },
-                    onSearchToggle = { onSearchToggle?.invoke() },
-                    onReasoningToggle = { onReasoningToggle?.invoke() }
+        // 小按钮展开层（Q弹动画）
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showQuickButtons,
+            enter = androidx.compose.animation.scaleIn(
+                animationSpec = spring(dampingRatio = 0.35f, stiffness = 400f),
+                transformOrigin = if (isLeftSide) {
+                    androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                } else {
+                    androidx.compose.ui.graphics.TransformOrigin(1f, 0.5f)
+                }
+            ) + androidx.compose.animation.fadeIn(
+                animationSpec = spring(dampingRatio = 0.45f, stiffness = 350f)
+            ),
+            exit = androidx.compose.animation.scaleOut(
+                animationSpec = spring(dampingRatio = 0.55f, stiffness = 500f),
+                transformOrigin = if (isLeftSide) {
+                    androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                } else {
+                    androidx.compose.ui.graphics.TransformOrigin(1f, 0.5f)
+                }
+            ) + androidx.compose.animation.fadeOut(
+                animationSpec = tween(durationMillis = 120)
+            ),
+            modifier = Modifier
+                .align(if (isLeftSide) Alignment.TopStart else Alignment.TopEnd)
+                .offset(
+                    x = if (isLeftSide) {
+                        (buttonSize + 8).dp
+                    } else {
+                        -(buttonSize + 8).dp
+                    },
+                    y = ((buttonSize - QuickButtonSize.value) / 2).dp
                 )
-            }
+        ) {
+            QuickButtonsRow(
+                visionEnabled = visionEnabled,
+                searchEnabled = searchEnabled,
+                reasoningEnabled = reasoningEnabled,
+                isRecording = isRecording,
+                onVisionToggle = { onVisionToggle?.invoke() },
+                onSearchToggle = { onSearchToggle?.invoke() },
+                onReasoningToggle = { onReasoningToggle?.invoke() },
+                onRecordingToggle = {
+                    onRecordingToggle.invoke()
+                    if (!isRecording) showQuickButtons = false
+                }
+            )
         }
     }
 }
@@ -202,9 +233,11 @@ private fun QuickButtonsRow(
     visionEnabled: Boolean,
     searchEnabled: Boolean,
     reasoningEnabled: Boolean,
+    isRecording: Boolean = false,
     onVisionToggle: (() -> Unit)?,
     onSearchToggle: (() -> Unit)?,
-    onReasoningToggle: (() -> Unit)?
+    onReasoningToggle: (() -> Unit)?,
+    onRecordingToggle: (() -> Unit)? = null
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -214,19 +247,25 @@ private fun QuickButtonsRow(
             icon = LocalIcons.Vision,
             enabled = visionEnabled,
             contentDescription = stringResource(R.string.quick_toggle_vlm),
-            onClick = { onVisionToggle?.invoke() }  // 不再自动收起
+            onClick = { onVisionToggle?.invoke() }
         )
         QuickToggleButton(
             icon = LocalIcons.Globe,
             enabled = searchEnabled,
             contentDescription = stringResource(R.string.quick_toggle_search),
-            onClick = { onSearchToggle?.invoke() }  // 不再自动收起
+            onClick = { onSearchToggle?.invoke() }
         )
         QuickToggleButton(
             icon = LocalIcons.Lightbulb,
             enabled = reasoningEnabled,
             contentDescription = stringResource(R.string.quick_toggle_reasoning),
-            onClick = { onReasoningToggle?.invoke() }  // 不再自动收起
+            onClick = { onReasoningToggle?.invoke() }
+        )
+        QuickToggleButton(
+            icon = LocalIcons.Record,
+            enabled = isRecording,
+            contentDescription = stringResource(R.string.quick_toggle_record),
+            onClick = { onRecordingToggle?.invoke() }
         )
     }
 }
@@ -238,6 +277,8 @@ private fun FloatingButton(
     buttonSize: Int,
     buttonAlpha: Float,
     floatingStatus: FloatingStatus,
+    isRecording: Boolean = false,
+    isProcessingRecording: Boolean = false,
     onCaptureClick: () -> Unit,
     onMove: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
@@ -330,7 +371,12 @@ private fun FloatingButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        FloatingBtnBackground(floatingStatus = floatingStatus, shape = shape)
+        FloatingBtnBackground(
+            floatingStatus = floatingStatus,
+            shape = shape,
+            isRecording = isRecording,
+            isProcessingRecording = isProcessingRecording
+        )
         
         // 长按进度条
         if (longPressProgress > 0f) {
@@ -498,7 +544,15 @@ private fun ContentCard(
                         if (showAnswer && answerText != null && onCopyAnswer != null) {
                             CopyButton(onCopy = onCopyAnswer, isDark = isDark)
                         }
-                        CloseButton(onClose = if (showAnswer && answerText != null) onCloseAnswer else onCloseStatus, isDark = isDark)
+                        val isBusy = floatingStatus == FloatingStatus.Capturing ||
+                                floatingStatus == FloatingStatus.Recognizing ||
+                                floatingStatus == FloatingStatus.Searching ||
+                                floatingStatus == FloatingStatus.GettingAnswer
+                        CloseButton(
+                            onClose = if (showAnswer && answerText != null) onCloseAnswer else onCloseStatus,
+                            isDark = isDark,
+                            isBusy = isBusy
+                        )
                     }
                 }
             }
@@ -558,16 +612,16 @@ private fun CopyButton(onCopy: () -> Unit, isDark: Boolean) {
     }
 }
 
-// ── 关闭按钮 ──
+// ── 关闭/停止按钮 ──
 
 @Composable
-private fun CloseButton(onClose: () -> Unit, isDark: Boolean) {
+private fun CloseButton(onClose: () -> Unit, isDark: Boolean, isBusy: Boolean = false) {
     IconButton(onClick = onClose, modifier = Modifier.size(TouchMin)) {
         Icon(
-            imageVector = LocalIcons.Close,
-            contentDescription = stringResource(R.string.cd_close_button),
+            imageVector = if (isBusy) LocalIcons.Stop else LocalIcons.Close,
+            contentDescription = stringResource(if (isBusy) R.string.cd_stop_button else R.string.cd_close_button),
             modifier = Modifier.size(Spacing.lg),
-            tint = if (isDark) TextDarkSecondary else TextTertiary
+            tint = if (isBusy) ErrorRed else (if (isDark) TextDarkSecondary else TextTertiary)
         )
     }
 }
@@ -723,12 +777,24 @@ private fun AnswerBody(text: String, isDark: Boolean) {
 // ── Floating Button Background ──
 
 @Composable
-private fun FloatingBtnBackground(floatingStatus: FloatingStatus, shape: RoundedCornerShape, cornerRadius: androidx.compose.ui.unit.Dp = CardRadius) {
+private fun FloatingBtnBackground(
+    floatingStatus: FloatingStatus,
+    shape: RoundedCornerShape,
+    cornerRadius: androidx.compose.ui.unit.Dp = CardRadius,
+    isRecording: Boolean = false,
+    isProcessingRecording: Boolean = false
+) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     val shadowElev = with(density) { Spacing.lg.toPx() }
     val shadowColor = Color.Black.copy(alpha = ShadowFloatingAlpha)
-    // 按钮全程使用深灰色调，不变色
-    Box(modifier = Modifier.fillMaxSize().darkAccentGradient(shape, cornerRadius, shadowElev, shadowColor))
+    Box(
+        modifier = Modifier.fillMaxSize().then(
+            when {
+                isRecording -> Modifier.recordingGradient(shape, cornerRadius, shadowElev, shadowColor)
+                else -> Modifier.darkAccentGradient(shape, cornerRadius, shadowElev, shadowColor)
+            }
+        )
+    )
 }
 
 // ── Section Parser ──

@@ -3,6 +3,13 @@ package com.hwb.aianswerer
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -125,6 +133,22 @@ fun ModelSettingsScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val isDark = LocalIsDarkMode.current
+    val scrollState = rememberScrollState()
+
+    // Tavily/Vision 展开后自动滚动到新内容
+    LaunchedEffect(tavilyEnabled) {
+        if (tavilyEnabled) {
+            // 等待 AnimatedVisibility 展开动画完成（弹簧 ~350ms 稳定）
+            kotlinx.coroutines.delay(400)
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+    LaunchedEffect(visionEnabled) {
+        if (visionEnabled) {
+            kotlinx.coroutines.delay(400)
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -140,7 +164,7 @@ fun ModelSettingsScreen(
                 .background(if (isDark) PremiumBgDark else PremiumBgLight)
                 .padding(paddingValues)
                 .padding(horizontal = Spacing.xxl)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
         ) {
             // 顶部说明
             GlassInfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
@@ -155,7 +179,7 @@ fun ModelSettingsScreen(
                     Spacer(Modifier.width(Spacing.md))
                     Text(
                         text = stringResource(R.string.model_settings_notice),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.headlineSmall,
                         color = if (isDark) TextDarkPrimary else TextDark
                     )
                 }
@@ -299,70 +323,75 @@ fun ModelSettingsScreen(
                 )
 
                 // 多题正则过滤开关（启用时显示）
-                if (tavilyEnabled) {
-                    Spacer(modifier = Modifier.height(Spacing.lg))
-                    SettingItem(
-                        title = stringResource(R.string.setting_regex_filter),
-                        description = stringResource(R.string.setting_regex_filter_desc),
-                        checked = regexFilterEnabled,
-                        onCheckedChange = {
-                            regexFilterEnabled = it
-                            AppConfig.saveRegexFilterEnabled(it)
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(Spacing.lg))
-                    PasswordTextField(
-                        value = tavilyApiKey,
-                        onValueChange = { tavilyApiKey = it },
-                        label = stringResource(R.string.label_tavily_api_key),
-                        placeholder = stringResource(R.string.hint_tavily_api_key),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.lg))
-
-                // 测试连接按钮
-                AnimatedButton(
-                    text = if (tavilyTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
-                    onClick = {
-                        if (tavilyTestState is TestConnectionState.Testing) return@AnimatedButton
-                        coroutineScope.launch {
-                            tavilyTestState = TestConnectionState.Testing
-                            val result = TavilyClient.getInstance().testConnection(tavilyApiKey)
-                            result.onSuccess {
-                                tavilyTestState = TestConnectionState.Success()
-                            }.onFailure { error ->
-                                tavilyTestState = TestConnectionState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
+                AnimatedVisibility(
+                    visible = tavilyEnabled,
+                    enter = expandVertically(animationSpec = spring(dampingRatio = 0.45f, stiffness = 400f)) + fadeIn(animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f)),
+                    exit = shrinkVertically(animationSpec = spring(dampingRatio = 0.55f, stiffness = 500f)) + fadeOut(animationSpec = tween(120))
+                ) {
+                    Column {
+                        Spacer(modifier = Modifier.height(Spacing.lg))
+                        SettingItem(
+                            title = stringResource(R.string.setting_regex_filter),
+                            description = stringResource(R.string.setting_regex_filter_desc),
+                            checked = regexFilterEnabled,
+                            onCheckedChange = {
+                                regexFilterEnabled = it
+                                AppConfig.saveRegexFilterEnabled(it)
                             }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    variant = ButtonVariant.Tonal,
-                    enabled = tavilyEnabled && tavilyTestState !is TestConnectionState.Testing
-                )
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.lg))
+                        PasswordTextField(
+                            value = tavilyApiKey,
+                            onValueChange = { tavilyApiKey = it },
+                            label = stringResource(R.string.label_tavily_api_key),
+                            placeholder = stringResource(R.string.hint_tavily_api_key),
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                if (tavilyTestState is TestConnectionState.Success) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Text(text = stringResource(R.string.toast_connection_success), style = MaterialTheme.typography.bodySmall, color = SuccessGreen)
-                } else if (tavilyTestState is TestConnectionState.Error) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Text(text = stringResource(R.string.toast_connection_failed).format((tavilyTestState as TestConnectionState.Error).message), style = MaterialTheme.typography.bodySmall, color = ErrorRed)
+                        Spacer(modifier = Modifier.height(Spacing.lg))
+
+                        // 测试连接按钮
+                        AnimatedButton(
+                            text = if (tavilyTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
+                            onClick = {
+                            if (tavilyTestState is TestConnectionState.Testing) return@AnimatedButton
+                            coroutineScope.launch {
+                                tavilyTestState = TestConnectionState.Testing
+                                val result = TavilyClient.getInstance().testConnection(tavilyApiKey)
+                                result.onSuccess {
+                                    tavilyTestState = TestConnectionState.Success()
+                                }.onFailure { error ->
+                                    tavilyTestState = TestConnectionState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = ButtonVariant.Tonal,
+                        enabled = tavilyTestState !is TestConnectionState.Testing
+                    )
+
+                    if (tavilyTestState is TestConnectionState.Success) {
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(text = stringResource(R.string.toast_connection_success), style = MaterialTheme.typography.bodySmall, color = SuccessGreen)
+                    } else if (tavilyTestState is TestConnectionState.Error) {
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(text = stringResource(R.string.toast_connection_failed).format((tavilyTestState as TestConnectionState.Error).message), style = MaterialTheme.typography.bodySmall, color = ErrorRed)
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.lg))
+
+                    // 保存按钮
+                    AnimatedButton(
+                        text = stringResource(R.string.button_save),
+                        onClick = {
+                            AppConfig.saveTavilyApiKey(tavilyApiKey)
+                            Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_saved), Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = ButtonVariant.Primary
+                    )
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(Spacing.lg))
-
-                // 保存按钮
-                AnimatedButton(
-                    text = stringResource(R.string.button_save),
-                    onClick = {
-                        AppConfig.saveTavilyApiKey(tavilyApiKey)
-                        Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_saved), Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    variant = ButtonVariant.Primary,
-                    enabled = tavilyEnabled
-                )
             }
 
             // ========== 视觉模型配置 ==========
@@ -386,89 +415,93 @@ fun ModelSettingsScreen(
                     }
                 )
 
-                if (visionEnabled) {
-                    Spacer(modifier = Modifier.height(Spacing.lg))
-                    AppTextField(
-                        value = visionApiUrl,
-                        onValueChange = { visionApiUrl = it },
-                        label = stringResource(R.string.label_vision_api_url),
-                        placeholder = stringResource(R.string.hint_vision_api_url),
-                        singleLine = false,
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(Spacing.lg))
-                    PasswordTextField(
-                        value = visionApiKey,
-                        onValueChange = { visionApiKey = it },
-                        label = stringResource(R.string.label_vision_api_key),
-                        placeholder = stringResource(R.string.hint_vision_api_key),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(Spacing.lg))
-                    AppTextField(
-                        value = visionModelName,
-                        onValueChange = { visionModelName = it },
-                        label = stringResource(R.string.label_vision_model),
-                        placeholder = stringResource(R.string.hint_vision_model),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                AnimatedVisibility(
+                    visible = visionEnabled,
+                    enter = expandVertically(animationSpec = spring(dampingRatio = 0.45f, stiffness = 400f)) + fadeIn(animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f)),
+                    exit = shrinkVertically(animationSpec = spring(dampingRatio = 0.55f, stiffness = 500f)) + fadeOut(animationSpec = tween(120))
+                ) {
+                    Column {
+                        Spacer(modifier = Modifier.height(Spacing.lg))
+                        AppTextField(
+                            value = visionApiUrl,
+                            onValueChange = { visionApiUrl = it },
+                            label = stringResource(R.string.label_vision_api_url),
+                            placeholder = stringResource(R.string.hint_vision_api_url),
+                            singleLine = false,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.lg))
+                        PasswordTextField(
+                            value = visionApiKey,
+                            onValueChange = { visionApiKey = it },
+                            label = stringResource(R.string.label_vision_api_key),
+                            placeholder = stringResource(R.string.hint_vision_api_key),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.lg))
+                        AppTextField(
+                            value = visionModelName,
+                            onValueChange = { visionModelName = it },
+                            label = stringResource(R.string.label_vision_model),
+                            placeholder = stringResource(R.string.hint_vision_model),
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                Spacer(modifier = Modifier.height(Spacing.lg))
+                        Spacer(modifier = Modifier.height(Spacing.lg))
 
-                // 测试连接按钮
-                AnimatedButton(
-                    text = if (visionTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
-                    onClick = {
-                        if (visionTestState is TestConnectionState.Testing) return@AnimatedButton
-                        coroutineScope.launch {
-                            visionTestState = TestConnectionState.Testing
-                            val config = OpenAIVisionConfig(baseUrl = visionApiUrl, apiKey = visionApiKey, modelName = visionModelName)
-                            // 使用getInstance复用实例，避免每次创建新的OkHttpClient
-                            val provider = OpenAIVisionProvider.getInstance(config)
-                            val result = provider.testConnection()
-                            result.onSuccess {
-                                visionTestState = TestConnectionState.Success()
-                            }.onFailure { error ->
-                                visionTestState = TestConnectionState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
-                            }
+                        // 测试连接按钮
+                        AnimatedButton(
+                            text = if (visionTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
+                            onClick = {
+                                if (visionTestState is TestConnectionState.Testing) return@AnimatedButton
+                                coroutineScope.launch {
+                                    visionTestState = TestConnectionState.Testing
+                                    val config = OpenAIVisionConfig(baseUrl = visionApiUrl, apiKey = visionApiKey, modelName = visionModelName)
+                                    val provider = OpenAIVisionProvider.getInstance(config)
+                                    val result = provider.testConnection()
+                                    result.onSuccess {
+                                        visionTestState = TestConnectionState.Success()
+                                    }.onFailure { error ->
+                                        visionTestState = TestConnectionState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            variant = ButtonVariant.Tonal,
+                            enabled = visionTestState !is TestConnectionState.Testing
+                        )
+
+                        if (visionTestState is TestConnectionState.Success) {
+                            Spacer(Modifier.height(Spacing.sm))
+                            Text(text = stringResource(R.string.toast_connection_success), style = MaterialTheme.typography.bodySmall, color = SuccessGreen)
+                        } else if (visionTestState is TestConnectionState.Error) {
+                            Spacer(Modifier.height(Spacing.sm))
+                            Text(text = stringResource(R.string.toast_connection_failed).format((visionTestState as TestConnectionState.Error).message), style = MaterialTheme.typography.bodySmall, color = ErrorRed)
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    variant = ButtonVariant.Tonal,
-                    enabled = visionEnabled && visionTestState !is TestConnectionState.Testing
-                )
 
-                if (visionTestState is TestConnectionState.Success) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Text(text = stringResource(R.string.toast_connection_success), style = MaterialTheme.typography.bodySmall, color = SuccessGreen)
-                } else if (visionTestState is TestConnectionState.Error) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Text(text = stringResource(R.string.toast_connection_failed).format((visionTestState as TestConnectionState.Error).message), style = MaterialTheme.typography.bodySmall, color = ErrorRed)
+                        Spacer(modifier = Modifier.height(Spacing.lg))
+
+                        // 保存按钮
+                        AnimatedButton(
+                            text = stringResource(R.string.button_save),
+                            onClick = {
+                                if (visionApiUrl.isBlank() || visionApiKey.isBlank() || visionModelName.isBlank()) {
+                                    Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_error_empty_fields), Toast.LENGTH_SHORT).show()
+                                } else if (!visionApiUrl.startsWith("http")) {
+                                    Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_error_invalid_url), Toast.LENGTH_SHORT).show()
+                                } else {
+                                    AppConfig.saveVisionBaseUrl(visionApiUrl)
+                                    AppConfig.saveVisionApiKey(visionApiKey)
+                                    AppConfig.saveVisionModelName(visionModelName)
+                                    Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_saved), Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            variant = ButtonVariant.Primary
+                        )
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(Spacing.lg))
-
-                // 保存按钮
-                AnimatedButton(
-                    text = stringResource(R.string.button_save),
-                    onClick = {
-                        if (visionApiUrl.isBlank() || visionApiKey.isBlank() || visionModelName.isBlank()) {
-                            Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_error_empty_fields), Toast.LENGTH_SHORT).show()
-                        } else if (!visionApiUrl.startsWith("http")) {
-                            Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_error_invalid_url), Toast.LENGTH_SHORT).show()
-                        } else {
-                            AppConfig.saveVisionBaseUrl(visionApiUrl)
-                            AppConfig.saveVisionApiKey(visionApiKey)
-                            AppConfig.saveVisionModelName(visionModelName)
-                            Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_saved), Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    variant = ButtonVariant.Primary,
-                    enabled = visionEnabled
-                )
             }
         }
     }

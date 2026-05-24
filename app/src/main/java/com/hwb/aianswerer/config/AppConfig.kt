@@ -582,7 +582,7 @@ object AppConfig {
      * @param count 最大并发数，会被限制在1-10范围内
      */
     fun saveMaxConcurrency(count: Int) {
-        requireMmkv().encode(KEY_MAX_CONCURRENCY, count.coerceIn(1, 10))
+        requireMmkv().encode(KEY_MAX_CONCURRENCY, count.coerceIn(1, 50))
     }
 
     /**

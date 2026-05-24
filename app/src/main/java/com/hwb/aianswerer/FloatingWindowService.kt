@@ -127,6 +127,19 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     // 用于防止并发请求的互斥锁
     private val fetchMutex = kotlinx.coroutines.sync.Mutex()
 
+    // ── 录制模式 ──
+    private var isRecording = mutableStateOf(false)
+    private var recordingCaptureCount = mutableStateOf(0)
+    private var isProcessingRecording = mutableStateOf(false)
+    private var recordingProcessedCount = mutableStateOf(0)
+    private var recordingAnswers = mutableStateOf<List<Pair<Int, String>>>(emptyList())
+    private var recordingCopyTexts = mutableStateOf<List<Pair<Int, String>>>(emptyList())
+    private var recordingSkippedCount = mutableStateOf(0)
+    private val recordingJobs = java.util.concurrent.CopyOnWriteArrayList<Job>()
+    private val recordingActiveCount = java.util.concurrent.atomic.AtomicInteger(0)
+    private var recordingTextHashes = mutableSetOf<String>()
+    private var recordingSemaphore: kotlinx.coroutines.sync.Semaphore? = null
+
     // 以下三个组件是ComposeView在Service中运行的必要条件
     private val lifecycleRegistry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle get() = lifecycleRegistry
@@ -186,8 +199,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             }
                         }
 
-                        // 处理裁剪后的图片
-                        handleCroppedImage(imagePath, cropRect)
+                        // 录制模式走录制路径
+                        if (isRecording.value) {
+                            handleRecordingCroppedImage(imagePath, cropRect)
+                        } else {
+                            handleCroppedImage(imagePath, cropRect)
+                        }
                     }
                 }
 
@@ -341,11 +358,19 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         floatingStatus = floatingStatus.value,
                         onCaptureClick = { handleCapture() },
                         onCloseAnswer = {
+                            currentFetchJob?.cancel()
+                            currentFetchJob = null
                             showAnswer.value = false
                             answerText.value = null
                             floatingStatus.value = FloatingStatus.Idle
+                            statusMessage.value = null
                         },
                         onCloseStatus = {
+                            currentFetchJob?.cancel()
+                            currentFetchJob = null
+                            showAnswer.value = false
+                            answerText.value = null
+                            floatingStatus.value = FloatingStatus.Idle
                             statusMessage.value = null
                         },
                         onCopyAnswer = {
@@ -399,9 +424,17 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onReasoningToggle = {
                             reasoningEnabled.value = !reasoningEnabled.value
                             AppConfig.saveReasoningEffort(reasoningEnabled.value)
-                            Toast.makeText(this@FloatingWindowService, 
-                                if (reasoningEnabled.value) "深度思考已启用" else "深度思考已关闭", 
+                            Toast.makeText(this@FloatingWindowService,
+                                if (reasoningEnabled.value) "深度思考已启用" else "深度思考已关闭",
                                 Toast.LENGTH_SHORT).show()
+                        },
+                        // 录制模式
+                        isRecording = isRecording.value,
+                        isProcessingRecording = isProcessingRecording.value,
+                        recordingCaptureCount = recordingCaptureCount.value,
+                        recordingProcessedCount = recordingProcessedCount.value,
+                        onRecordingToggle = {
+                            if (isRecording.value) stopRecording() else startRecording()
                         }
                     )
                 }
@@ -412,6 +445,57 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     private fun handleCapture() {
+        // ── 录制模式分支（必须在 isBusy 检查之前）──
+        if (isRecording.value) {
+            // 并发数限制：活跃处理任务数不能超过设置的最大并发数
+            val maxConcurrency = AppConfig.getMaxConcurrency()
+            val activeJobs = recordingActiveCount.get()
+            AppLog.d("录制并发检查: activeJobs=$activeJobs, maxConcurrency=$maxConcurrency")
+            if (activeJobs >= maxConcurrency) {
+                statusMessage.value = getString(R.string.recording_concurrency_limit, activeJobs, maxConcurrency)
+                floatingStatus.value = FloatingStatus.Error
+                Toast.makeText(this, getString(R.string.recording_concurrency_limit, activeJobs, maxConcurrency), Toast.LENGTH_SHORT).show()
+                return
+            }
+            recordingCaptureCount.value++
+            // 截图前就计数，防止快速连拍时计数器滞后
+            recordingActiveCount.incrementAndGet()
+            AppLog.d("录制计数器+1: activeJobs=${recordingActiveCount.get()}")
+            floatingStatus.value = FloatingStatus.Capturing
+            statusMessage.value = getString(R.string.recording_capturing, recordingCaptureCount.value)
+            showAnswer.value = false
+            serviceScope.launch {
+                // 第一次等待：隐藏答案卡片，用户看到"正在截取"反馈
+                delay(COMPOSE_RECOMPOSITION_DELAY_MS)
+                // 清空状态消息，防止悬浮窗内容被截入
+                statusMessage.value = null
+                // 第二次等待：状态消息从屏幕上消失
+                delay(COMPOSE_RECOMPOSITION_DELAY_MS)
+                val bitmap = screenCaptureManager?.captureScreen()
+                if (bitmap == null) {
+                    recordingActiveCount.decrementAndGet()
+                    AppLog.d("录制计数器-1(截图失败): activeJobs=${recordingActiveCount.get()}")
+                    showErrorMessage(getString(R.string.status_capture_failed))
+                    return@launch
+                }
+                when (cropMode) {
+                    AppConfig.CROP_MODE_FULL -> recordingProcessBitmap(bitmap)
+                    AppConfig.CROP_MODE_EACH -> launchCropActivity(bitmap, savedCropRectEach)
+                    AppConfig.CROP_MODE_ONCE -> {
+                        savedCropRect?.let { rect ->
+                            val cropped = try { ImageCropUtil.cropBitmap(bitmap, rect) }
+                            catch (e: Exception) { bitmap.recycle(); throw e }
+                            bitmap.recycle()
+                            recordingProcessBitmap(cropped)
+                        } ?: launchCropActivity(bitmap, null)
+                    }
+                }
+                floatingStatus.value = FloatingStatus.Idle
+                statusMessage.value = getString(R.string.recording_indicator, recordingCaptureCount.value)
+            }
+            return
+        }
+
         // 忙时点击 → 取消当前请求，回到空闲，不开始新截图
         val isBusy = floatingStatus.value != FloatingStatus.Idle &&
                 floatingStatus.value != FloatingStatus.Success &&
@@ -426,7 +510,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             return
         }
 
-        serviceScope.launch {
+        currentFetchJob?.cancel()
+        currentFetchJob = serviceScope.launch {
             try {
                 showAnswer.value = false
                 answerText.value = null
@@ -600,6 +685,299 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 ImageCropUtil.deleteTempFile(imagePath)
             }
         }
+    }
+
+    // ══════════════════════════════════════════════
+    //  录制模式
+    // ══════════════════════════════════════════════
+
+    private fun normalizeForDedupe(text: String): String {
+        return text.trim()
+            .replace(Regex("\\s+"), "")
+            .replace(Regex("[,，。.、；;：:！!？?\"'`()（）\\[\\]【】]"), "")
+            .lowercase()
+    }
+
+    private fun startRecording() {
+        isRecording.value = true
+        recordingCaptureCount.value = 0
+        recordingProcessedCount.value = 0
+        recordingSkippedCount.value = 0
+        recordingAnswers.value = emptyList()
+        recordingCopyTexts.value = emptyList()
+        recordingTextHashes.clear()
+        recordingJobs.clear()
+        recordingActiveCount.set(0)
+        recordingSemaphore = kotlinx.coroutines.sync.Semaphore(AppConfig.getMaxConcurrency())
+        showAnswer.value = false
+        answerText.value = null
+        floatingStatus.value = FloatingStatus.Idle
+        statusMessage.value = getString(R.string.recording_indicator, 0)
+        Toast.makeText(this, getString(R.string.recording_start), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopRecording() {
+        isRecording.value = false
+        val total = recordingCaptureCount.value
+        if (total == 0) {
+            Toast.makeText(this, getString(R.string.recording_no_captures), Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (recordingJobs.isEmpty()) {
+            showRecordingResults()
+        } else {
+            isProcessingRecording.value = true
+            floatingStatus.value = FloatingStatus.GettingAnswer
+            statusMessage.value = getString(R.string.recording_processing, recordingProcessedCount.value, total)
+            Toast.makeText(this, getString(R.string.recording_stop, total), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun handleRecordingCroppedImage(imagePath: String, cropRect: CropRect) {
+        serviceScope.launch {
+            try {
+                val bitmap = ImageCropUtil.loadBitmapFromFile(imagePath)
+                val croppedBitmap = ImageCropUtil.cropBitmap(bitmap, cropRect)
+                bitmap.recycle()
+                recordingProcessBitmap(croppedBitmap)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showErrorMessage(getString(R.string.status_crop_failed, e.message ?: ""))
+            } finally {
+                ImageCropUtil.deleteTempFile(imagePath)
+            }
+        }
+    }
+
+    private fun recordingProcessBitmap(bitmap: android.graphics.Bitmap) {
+        val captureIndex = recordingCaptureCount.value
+        val job = serviceScope.launch(Dispatchers.IO) {
+            try {
+                if (AppConfig.isVisionEnabled()) {
+                    recordingProcessWithVlm(bitmap, captureIndex)
+                } else {
+                    recordingProcessWithOcr(bitmap, captureIndex)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                AppLog.e("Recording process failed for Q$captureIndex", e)
+                // OCR/VLM失败且未调用recordingFetchAnswer，需要减计数
+                recordingActiveCount.decrementAndGet()
+                AppLog.d("录制计数器-1(处理失败): activeJobs=${recordingActiveCount.get()}")
+            }
+        }
+        recordingJobs.add(job)
+        job.invokeOnCompletion {
+            recordingJobs.remove(job)
+            if (isProcessingRecording.value) {
+                serviceScope.launch(Dispatchers.Main) {
+                    recordingProcessedCount.value++
+                    updateRecordingProgress()
+                }
+            }
+        }
+    }
+
+    private suspend fun recordingProcessWithOcr(bitmap: android.graphics.Bitmap, captureIndex: Int) {
+        val result = textRecognitionManager.recognizeText(bitmap)
+        bitmap.recycle()
+        result.onSuccess { recognizedText ->
+            val normalized = normalizeForDedupe(recognizedText)
+            val alreadyExists = withContext(Dispatchers.Main) {
+                if (recordingTextHashes.contains(normalized)) true
+                else { recordingTextHashes.add(normalized); false }
+            }
+            if (alreadyExists) {
+                AppLog.d("录制去重: 第$captureIndex 题与之前重复，跳过")
+                withContext(Dispatchers.Main) { recordingSkippedCount.value++ }
+                recordingActiveCount.decrementAndGet()
+                AppLog.d("录制计数器-1(去重跳过): activeJobs=${recordingActiveCount.get()}")
+                return
+            }
+            recordingFetchAnswer(recognizedText, captureIndex)
+        }.onFailure { error ->
+            AppLog.e("Recording OCR failed for Q$captureIndex", error)
+            recordingActiveCount.decrementAndGet()
+            AppLog.d("录制计数器-1(OCR失败): activeJobs=${recordingActiveCount.get()}")
+        }
+    }
+
+    private suspend fun recordingProcessWithVlm(bitmap: android.graphics.Bitmap, captureIndex: Int) {
+        val provider = VisionProviderFactory.create()
+        if (provider == null) {
+            recordingProcessWithOcr(bitmap, captureIndex)
+            return
+        }
+        val visionResult = provider.analyze(bitmap)
+        visionResult.onSuccess { filter ->
+            bitmap.recycle()
+            if (!filter.hasQuestions) {
+                recordingActiveCount.decrementAndGet()
+                AppLog.d("录制计数器-1(VLM无题目): activeJobs=${recordingActiveCount.get()}")
+                return
+            }
+
+            if (filter.questions.size > 1) {
+                var skipped = 0
+                var fetched = 0
+                filter.questions.forEachIndexed { index, separatedQuestion ->
+                    val normalized = normalizeForDedupe(separatedQuestion.text)
+                    val alreadyExists = withContext(Dispatchers.Main) {
+                        if (recordingTextHashes.contains(normalized)) true
+                        else { recordingTextHashes.add(normalized); false }
+                    }
+                    if (alreadyExists) {
+                        skipped++
+                        return@forEachIndexed
+                    }
+                    recordingFetchAnswer(separatedQuestion.text, captureIndex, filter)
+                    fetched++
+                }
+                if (skipped > 0) {
+                    withContext(Dispatchers.Main) { recordingSkippedCount.value += skipped }
+                }
+                // 如果没有任何题目调用了recordingFetchAnswer，需要减计数
+                if (fetched == 0) {
+                    recordingActiveCount.decrementAndGet()
+                    AppLog.d("录制计数器-1(VLM全部去重): activeJobs=${recordingActiveCount.get()}")
+                }
+            } else {
+                val text = filter.extractedText
+                if (text.isBlank()) {
+                    recordingActiveCount.decrementAndGet()
+                    AppLog.d("录制计数器-1(VLM空文本): activeJobs=${recordingActiveCount.get()}")
+                    return
+                }
+                val normalized = normalizeForDedupe(text)
+                val alreadyExists = withContext(Dispatchers.Main) {
+                    if (recordingTextHashes.contains(normalized)) true
+                    else { recordingTextHashes.add(normalized); false }
+                }
+                if (alreadyExists) {
+                    withContext(Dispatchers.Main) { recordingSkippedCount.value++ }
+                    recordingActiveCount.decrementAndGet()
+                    AppLog.d("录制计数器-1(VLM去重): activeJobs=${recordingActiveCount.get()}")
+                    return
+                }
+                recordingFetchAnswer(text, captureIndex, filter)
+            }
+        }.onFailure {
+            recordingProcessWithOcr(bitmap, captureIndex)
+        }
+    }
+
+    private fun recordingFetchAnswer(
+        text: String, captureIndex: Int,
+        visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult? = null
+    ) {
+        val job = serviceScope.launch(Dispatchers.IO) {
+            recordingSemaphore?.withPermit {
+                try {
+                    if (!OpenAIClient.isNetworkAvailable()) { return@withPermit }
+                    val questionTypes = AppConfig.getQuestionTypes()
+
+                    var searchContext = ""
+                    if (visionResult != null && visionResult.searchKeywords.isNotBlank()
+                        && AppConfig.isTavilyConfigValid()) {
+                        TavilyClient.getInstance().simpleSearch(visionResult.searchKeywords, 3, true)
+                            .onSuccess { results ->
+                                searchContext = results.joinToString("\n") { "【${it.title}】${it.content}" }
+                            }
+                    }
+
+                    val result = OpenAIClient.getInstance().analyzeQuestion(text, questionTypes, searchContext)
+                    result.onSuccess { aiAnswers ->
+                        recordingStoreAnswer(aiAnswers, captureIndex)
+                    }.onFailure { error ->
+                        AppLog.e("Recording answer failed for Q$captureIndex", error)
+                    }
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) { AppLog.e("Recording fetch failed", e) }
+            }
+        }
+        recordingJobs.add(job)
+        job.invokeOnCompletion {
+            recordingJobs.remove(job)
+            recordingActiveCount.decrementAndGet()
+            AppLog.d("录制计数器-1(API完成): activeJobs=${recordingActiveCount.get()}")
+            if (isProcessingRecording.value) {
+                serviceScope.launch(Dispatchers.Main) {
+                    recordingProcessedCount.value++
+                    updateRecordingProgress()
+                }
+            }
+        }
+    }
+
+    private fun recordingStoreAnswer(aiAnswers: List<com.hwb.aianswerer.models.AIAnswer>?, captureIndex: Int) {
+        if (aiAnswers == null || aiAnswers.isEmpty()) return
+
+        val displayFormatted = if (aiAnswers.size == 1) {
+            aiAnswers.first().formatAnswerWithConfig(showQuestion = true, showOptions = true)
+        } else {
+            aiAnswers.mapIndexed { i, a ->
+                "━━━ 第 ${captureIndex}-${i + 1} 题 ━━━\n" +
+                    a.formatAnswerWithConfig(showQuestion = true, showOptions = true)
+            }.joinToString("\n\n")
+        }
+        val displayEntry = "━━━ 第 $captureIndex 题 ━━━\n$displayFormatted"
+
+        val copyFormatted = if (aiAnswers.size == 1) {
+            "第${captureIndex}题：${aiAnswers.first().answer}"
+        } else {
+            aiAnswers.mapIndexed { i, a ->
+                "第${captureIndex}-${i + 1}题：${a.answer}"
+            }.joinToString("\n")
+        }
+
+        serviceScope.launch(Dispatchers.Main) {
+            recordingAnswers.value = (recordingAnswers.value + (captureIndex to displayEntry))
+                .sortedBy { it.first }
+            recordingCopyTexts.value = (recordingCopyTexts.value + (captureIndex to copyFormatted))
+                .sortedBy { it.first }
+        }
+    }
+
+    private fun updateRecordingProgress() {
+        val total = recordingCaptureCount.value
+        val done = recordingProcessedCount.value
+        if (done >= total) {
+            showRecordingResults()
+        } else {
+            statusMessage.value = getString(R.string.recording_processing, done, total)
+        }
+    }
+
+    private fun showRecordingResults() {
+        val autoCopy = AppConfig.getAutoCopy()
+        val allEntries = recordingAnswers.value.sortedBy { it.first }
+        val displayText = allEntries.joinToString("\n\n") { it.second }
+
+        if (displayText.isBlank()) {
+            showErrorMessage(getString(R.string.recording_no_valid_answers))
+            isProcessingRecording.value = false
+            return
+        }
+
+        answerText.value = displayText
+        showAnswer.value = true
+        floatingStatus.value = FloatingStatus.Success
+
+        val total = recordingCaptureCount.value
+        val skipped = recordingSkippedCount.value
+        statusMessage.value = if (skipped > 0) {
+            getString(R.string.recording_all_done_dedup, total, skipped, total - skipped)
+        } else {
+            getString(R.string.recording_all_done, total)
+        }
+
+        if (autoCopy) {
+            val copyText = recordingCopyTexts.value.sortedBy { it.first }
+                .joinToString("\n") { it.second }
+            ClipboardUtil.copyToClipboard(this@FloatingWindowService, copyText)
+        }
+        isProcessingRecording.value = false
     }
 
     /**
@@ -1067,6 +1445,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+
+        // 清理录制状态
+        recordingJobs.forEach { it.cancel() }
+        recordingJobs.clear()
+        isRecording.value = false
+        isProcessingRecording.value = false
 
         // 先取消所有协程，再设置DESTROYED状态
         // 避免lifecycleScope与serviceScope取消顺序不一致的问题

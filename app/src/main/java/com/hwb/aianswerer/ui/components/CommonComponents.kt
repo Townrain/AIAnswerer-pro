@@ -568,7 +568,7 @@ fun AppTextField(
             .clip(RoundedCornerShape(InputRadius))
             .background(if (isDark) GlassDark else InputBackground)
             .then(if (isDark) Modifier.border(0.5.dp, GlassDarkBorder, RoundedCornerShape(InputRadius)) else Modifier.border(0.5.dp, InputBorder, RoundedCornerShape(InputRadius)))
-            .padding(horizontal = Spacing.lg, vertical = Spacing.md)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.sm)
     ) {
         Column {
             Text(
@@ -581,7 +581,7 @@ fun AppTextField(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = Spacing.xxl)
+                    .heightIn(min = if (singleLine) Spacing.lg else Spacing.xxl)
             ) {
                 if (value.isEmpty()) {
                     Text(
@@ -626,7 +626,7 @@ fun PasswordTextField(
             .clip(RoundedCornerShape(InputRadius))
             .background(if (isDark) GlassDark else InputBackground)
             .then(if (isDark) Modifier.border(0.5.dp, GlassDarkBorder, RoundedCornerShape(InputRadius)) else Modifier.border(0.5.dp, InputBorder, RoundedCornerShape(InputRadius)))
-            .padding(horizontal = Spacing.lg, vertical = Spacing.md)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.sm)
     ) {
         Column {
             Text(
@@ -643,7 +643,7 @@ fun PasswordTextField(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = Spacing.xxl)
+                        .heightIn(min = Spacing.lg)
                 ) {
                     if (value.isEmpty()) {
                         Text(

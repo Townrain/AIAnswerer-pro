@@ -1094,7 +1094,8 @@ fun SessionSettingsCard(
 
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
         ) {
             listOf(
                 AppConfig.CROP_MODE_FULL to stringResource(R.string.crop_mode_full),
