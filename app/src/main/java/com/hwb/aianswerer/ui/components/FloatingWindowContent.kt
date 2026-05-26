@@ -19,6 +19,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -60,11 +61,15 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.hwb.aianswerer.R
+import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.ui.icons.LocalIcons
 import com.hwb.aianswerer.ui.theme.*
+import kotlin.math.cos
+import kotlin.math.sin
 
 enum class FloatingStatus { Idle, Capturing, Recognizing, Searching, GettingAnswer, Success, Error }
 
@@ -75,7 +80,7 @@ private val MaxCardHeight = 500.dp
 private val ProgressStrokeWidth = 2.5.dp
 
 // 长按触发时间（毫秒）
-private const val LONG_PRESS_DURATION_MS = 2000L
+private const val LONG_PRESS_DURATION_MS = 3000L
 
 // 小按钮大小
 private val QuickButtonSize = 40.dp
@@ -99,7 +104,9 @@ fun FloatingWindowContent(
     isProcessingRecording: Boolean = false,
     recordingCaptureCount: Int = 0,
     recordingProcessedCount: Int = 0,
-    onRecordingToggle: () -> Unit = {}
+    onRecordingToggle: () -> Unit = {},
+    onArcExpandChanged: ((Boolean) -> Unit)? = null,
+    quickButtonLayout: String = AppConfig.QUICK_BUTTON_LAYOUT_ARC
 ) {
     val viewConfig = androidx.compose.ui.platform.LocalViewConfiguration.current
     val touchSlop = viewConfig.touchSlop
@@ -117,119 +124,265 @@ fun FloatingWindowContent(
     // 小按钮显示状态
     var showQuickButtons by remember { mutableStateOf(false) }
 
+    // 布局模式判断
+    val isArcLayout = quickButtonLayout == AppConfig.QUICK_BUTTON_LAYOUT_ARC
+
     // 有内容时自动收起快捷按钮（录制期间除外）
     LaunchedEffect(hasContent) {
-        if (hasContent && !isRecording) showQuickButtons = false
+        if (hasContent && !isRecording && showQuickButtons) {
+            if (isArcLayout) onArcExpandChanged?.invoke(false)
+            showQuickButtons = false
+        }
     }
 
-    // 使用Box作为根容器，fillMaxWidth让宽度等于窗口宽度
-    Box(modifier = Modifier.fillMaxWidth()) {
-        // 主按钮 + 卡片的垂直布局
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = if (isLeftSide) Alignment.Start else Alignment.End
-        ) {
-            // 主按钮行 - 使用固定大小的Box，避免小按钮撑大布局
-            Box(modifier = Modifier.size(buttonSize.dp)) {
-                // 主按钮（始终在Box内）
-                FloatingButton(
-                    buttonSize = buttonSize,
-                    buttonAlpha = buttonAlpha,
-                    floatingStatus = floatingStatus,
-                    isRecording = isRecording,
-                    isProcessingRecording = isProcessingRecording,
-                    onCaptureClick = {
-                        // 如果小按钮展开，只收起小按钮，不触发截图
-                        if (showQuickButtons) {
-                            showQuickButtons = false
-                        } else {
-                            currentOnCaptureClick()
-                        }
-                    },
-                    onMove = { dx, dy ->
-                        if (showQuickButtons) showQuickButtons = false
-                        currentOnMove(dx, dy)
-                    },
-                    onDragEnd = currentOnDragEnd,
-                    touchSlop = touchSlop,
-                    onLongPress = { showQuickButtons = !showQuickButtons }
-                )
+    // 窗口位置由 onArcExpandChanged 在 showQuickButtons 变更前同步调整，无需 LaunchedEffect
+
+    if (isArcLayout) {
+        // ── 弧形布局：展开时用固定 spacer 为圆弧提供可见区，窗口位置由 Service 同步上移
+        val arcReserveDp = 72.dp
+        val topReserve = if (showQuickButtons) arcReserveDp else 0.dp
+        val bottomReserve = if (showQuickButtons) arcReserveDp else 0.dp
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = if (isLeftSide) Alignment.Start else Alignment.End
+            ) {
+                // 顶部预留（展开时 72dp，收起时 0dp）— 窗口 Y 由 Service 同步补偿
+                if (showQuickButtons) {
+                    // 展开时此区域作为拖拽层，接收 Spacer 空白区的手指事件
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(arcReserveDp)
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    val down = awaitFirstDown()
+                                    var totalDx = 0f; var totalDy = 0f
+                                    var dragging = false
+                                    while (true) {
+                                        val event = withTimeoutOrNull(16L) { awaitPointerEvent() }
+                                        if (event == null) continue
+                                        val change = event.changes.firstOrNull()
+                                        if (change == null || !change.pressed) {
+                                            change?.consume()
+                                            break
+                                        }
+                                        val dx = change.positionChange().x
+                                        val dy = change.positionChange().y
+                                        if (dx != 0f || dy != 0f) {
+                                            totalDx += dx; totalDy += dy
+                                            if (!dragging && totalDx * totalDx + totalDy * totalDy > touchSlop * touchSlop) {
+                                                dragging = true
+                                            }
+                                            if (dragging) {
+                                                currentOnMove(dx, dy)
+                                                change.consume()
+                                            }
+                                        }
+                                    }
+                                    if (dragging) currentOnDragEnd()
+                                }
+                            }
+                    )
+                } else {
+                    Spacer(Modifier.height(0.dp))
+                }
+
+                // 主按钮 Box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(buttonSize.dp)
+                ) {
+                    val btnAlign = if (isLeftSide) Alignment.CenterStart else Alignment.CenterEnd
+                    Box(
+                        modifier = Modifier
+                            .size(buttonSize.dp)
+                            .align(btnAlign)
+                    ) {
+                        FloatingButton(
+                            buttonSize = buttonSize,
+                            buttonAlpha = buttonAlpha,
+                            floatingStatus = floatingStatus,
+                            isRecording = isRecording,
+                            isProcessingRecording = isProcessingRecording,
+                            onCaptureClick = {
+                                if (showQuickButtons) {
+                                    onArcExpandChanged?.invoke(false)
+                                    showQuickButtons = false
+                                } else {
+                                    currentOnCaptureClick()
+                                }
+                            },
+                            onMove = currentOnMove,
+                            onDragEnd = currentOnDragEnd,
+                            touchSlop = touchSlop,
+                            onLongPress = {
+                                onArcExpandChanged?.invoke(!showQuickButtons)
+                                showQuickButtons = !showQuickButtons
+                            }
+                        )
+                    }
+                }
+
+                // 底部预留
+                Spacer(Modifier.height(bottomReserve))
+
+                // 卡片内容
+                if (hasContent) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    Box(modifier = Modifier.width(cardWidth)) {
+                        ContentCard(
+                            answerText = answerText,
+                            showAnswer = showAnswer,
+                            statusMessage = statusMessage,
+                            floatingStatus = floatingStatus,
+                            isDark = isDark,
+                            cardAlpha = cardAlpha,
+                            onCloseAnswer = onCloseAnswer,
+                            onCloseStatus = onCloseStatus,
+                            onCopyAnswer = onCopyAnswer
+                        )
+                    }
+                }
             }
 
-            // 卡片内容
-            if (hasContent) {
-                Spacer(Modifier.height(Spacing.sm))
-                Box(modifier = Modifier.width(cardWidth)) {
-                    ContentCard(
-                        answerText = answerText,
-                        showAnswer = showAnswer,
-                        statusMessage = statusMessage,
-                        floatingStatus = floatingStatus,
-                        isDark = isDark,
-                        cardAlpha = cardAlpha,
-                        onCloseAnswer = onCloseAnswer,
-                        onCloseStatus = onCloseStatus,
-                        onCopyAnswer = onCopyAnswer
+            // 弧形快捷按钮浮层
+            if (showQuickButtons) {
+                val arcCenterOffsetY = topReserve + buttonSize.dp / 2
+                Box(modifier = Modifier.fillMaxSize()) {
+                    QuickButtonsArcInBox(
+                        arcCenterOffsetY = arcCenterOffsetY,
+                        buttonSize = buttonSize,
+                        isLeftSide = isLeftSide,
+                        visionEnabled = visionEnabled,
+                        searchEnabled = searchEnabled,
+                        reasoningEnabled = reasoningEnabled,
+                        isRecording = isRecording,
+                        onVisionToggle = { onVisionToggle?.invoke() },
+                        onSearchToggle = { onSearchToggle?.invoke() },
+                        onReasoningToggle = { onReasoningToggle?.invoke() },
+                        onRecordingToggle = {
+                            onRecordingToggle.invoke()
+                            if (!isRecording) {
+                                onArcExpandChanged?.invoke(false)
+                                showQuickButtons = false
+                            }
+                        }
                     )
                 }
             }
         }
+    } else {
+        // ── 横向布局：与原始设计一致，快捷按钮用 offset 定位在主按钮旁 ──
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = if (isLeftSide) Alignment.Start else Alignment.End
+            ) {
+                // 主按钮行 — 固定大小 Box，避免撑大布局
+                Box(modifier = Modifier.size(buttonSize.dp)) {
+                    FloatingButton(
+                        buttonSize = buttonSize,
+                        buttonAlpha = buttonAlpha,
+                        floatingStatus = floatingStatus,
+                        isRecording = isRecording,
+                        isProcessingRecording = isProcessingRecording,
+                        onCaptureClick = {
+                            if (showQuickButtons) {
+                                showQuickButtons = false
+                            } else {
+                                currentOnCaptureClick()
+                            }
+                        },
+                        onMove = { dx, dy ->
+                            if (showQuickButtons) showQuickButtons = false
+                            currentOnMove(dx, dy)
+                        },
+                        onDragEnd = currentOnDragEnd,
+                        touchSlop = touchSlop,
+                        onLongPress = { showQuickButtons = !showQuickButtons }
+                    )
+                }
 
-        // 小按钮展开层（Q弹动画）
-        androidx.compose.animation.AnimatedVisibility(
-            visible = showQuickButtons,
-            enter = androidx.compose.animation.scaleIn(
-                animationSpec = spring(dampingRatio = 0.35f, stiffness = 400f),
-                transformOrigin = if (isLeftSide) {
-                    androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
-                } else {
-                    androidx.compose.ui.graphics.TransformOrigin(1f, 0.5f)
+                // 卡片内容
+                if (hasContent) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    Box(modifier = Modifier.width(cardWidth)) {
+                        ContentCard(
+                            answerText = answerText,
+                            showAnswer = showAnswer,
+                            statusMessage = statusMessage,
+                            floatingStatus = floatingStatus,
+                            isDark = isDark,
+                            cardAlpha = cardAlpha,
+                            onCloseAnswer = onCloseAnswer,
+                            onCloseStatus = onCloseStatus,
+                            onCopyAnswer = onCopyAnswer
+                        )
+                    }
                 }
-            ) + androidx.compose.animation.fadeIn(
-                animationSpec = spring(dampingRatio = 0.45f, stiffness = 350f)
-            ),
-            exit = androidx.compose.animation.scaleOut(
-                animationSpec = spring(dampingRatio = 0.55f, stiffness = 500f),
-                transformOrigin = if (isLeftSide) {
-                    androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+            }
+
+            // 横向快捷按钮浮层 — 用 align + offset 定位，Q弹展开/收起动画
+            AnimatedVisibility(
+                visible = showQuickButtons,
+                modifier = Modifier
+                    .align(if (isLeftSide) Alignment.TopStart else Alignment.TopEnd)
+                    .offset(
+                        x = if (isLeftSide) {
+                            (buttonSize + 8).dp
+                        } else {
+                            -(buttonSize + 8).dp
+                        },
+                        y = ((buttonSize - QuickButtonSize.value) / 2).dp
+                    ),
+                enter = if (isLeftSide) {
+                    expandHorizontally(animationSpec = spring(dampingRatio = 0.35f, stiffness = 300f), expandFrom = Alignment.Start) +
+                    fadeIn(animationSpec = spring(dampingRatio = 0.35f, stiffness = 300f)) +
+                    scaleIn(animationSpec = spring(dampingRatio = 0.35f, stiffness = 300f), initialScale = 0.3f)
                 } else {
-                    androidx.compose.ui.graphics.TransformOrigin(1f, 0.5f)
+                    expandHorizontally(animationSpec = spring(dampingRatio = 0.35f, stiffness = 300f), expandFrom = Alignment.End) +
+                    fadeIn(animationSpec = spring(dampingRatio = 0.35f, stiffness = 300f)) +
+                    scaleIn(animationSpec = spring(dampingRatio = 0.35f, stiffness = 300f), initialScale = 0.3f)
+                },
+                exit = if (isLeftSide) {
+                    shrinkHorizontally(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f), shrinkTowards = Alignment.Start) +
+                    fadeOut(animationSpec = tween(120)) +
+                    scaleOut(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f), targetScale = 0.3f)
+                } else {
+                    shrinkHorizontally(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f), shrinkTowards = Alignment.End) +
+                    fadeOut(animationSpec = tween(120)) +
+                    scaleOut(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f), targetScale = 0.3f)
                 }
-            ) + androidx.compose.animation.fadeOut(
-                animationSpec = tween(durationMillis = 120)
-            ),
-            modifier = Modifier
-                .align(if (isLeftSide) Alignment.TopStart else Alignment.TopEnd)
-                .offset(
-                    x = if (isLeftSide) {
-                        (buttonSize + 8).dp
-                    } else {
-                        -(buttonSize + 8).dp
-                    },
-                    y = ((buttonSize - QuickButtonSize.value) / 2).dp
+            ) {
+                QuickButtonsHorizontalRow(
+                    visionEnabled = visionEnabled,
+                    searchEnabled = searchEnabled,
+                    reasoningEnabled = reasoningEnabled,
+                    isRecording = isRecording,
+                    onVisionToggle = { onVisionToggle?.invoke() },
+                    onSearchToggle = { onSearchToggle?.invoke() },
+                    onReasoningToggle = { onReasoningToggle?.invoke() },
+                    onRecordingToggle = {
+                        onRecordingToggle.invoke()
+                        if (!isRecording) showQuickButtons = false
+                    }
                 )
-        ) {
-            QuickButtonsRow(
-                visionEnabled = visionEnabled,
-                searchEnabled = searchEnabled,
-                reasoningEnabled = reasoningEnabled,
-                isRecording = isRecording,
-                onVisionToggle = { onVisionToggle?.invoke() },
-                onSearchToggle = { onSearchToggle?.invoke() },
-                onReasoningToggle = { onReasoningToggle?.invoke() },
-                onRecordingToggle = {
-                    onRecordingToggle.invoke()
-                    if (!isRecording) showQuickButtons = false
-                }
-            )
+            }
         }
     }
 }
 
-// ── 快捷按钮行 ──
+// ── 弧形快捷按钮（在 BoxScope 内使用 align 定位）──
+// 半圆环绕主按钮内侧，如同五星红旗上小星围绕大星
 
 @Composable
-private fun QuickButtonsRow(
+private fun BoxScope.QuickButtonsArcInBox(
+    arcCenterOffsetY: androidx.compose.ui.unit.Dp,
+    buttonSize: Int,
+    isLeftSide: Boolean,
     visionEnabled: Boolean,
     searchEnabled: Boolean,
     reasoningEnabled: Boolean,
@@ -237,7 +390,71 @@ private fun QuickButtonsRow(
     onVisionToggle: (() -> Unit)?,
     onSearchToggle: (() -> Unit)?,
     onReasoningToggle: (() -> Unit)?,
-    onRecordingToggle: (() -> Unit)? = null
+    onRecordingToggle: (() -> Unit)?
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val btnHalfPx = with(density) { (buttonSize / 2f).dp.toPx() }
+    val btnRadiusPx = with(density) { (QuickButtonSize / 2f).toPx() }
+
+    // 窗口宽度（与 FloatingWindowService 中 windowWidthPx 一致：360dp）
+    val boxWidthPx = with(density) {
+        (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp).toPx()
+    }.coerceAtMost(with(density) { 360.dp.toPx() })
+
+    // 弧中心：X 贴屏幕边缘，Y = arcCenterOffsetY（主按钮在窗口中的 Y 中心）
+    val arcCenterXPx = if (isLeftSide) btnHalfPx else boxWidthPx - btnHalfPx
+    val arcCenterYPx = with(density) { arcCenterOffsetY.toPx() }
+
+    // 弧半径：主按钮边缘 + 间隙 + 小按钮半径
+    val arcRadiusPx = with(density) { 56.dp.toPx() }
+
+    // 左侧：180° 半圆朝右（屏幕内侧）展开 → 角度 270°(上) → 0°(右) → 90°(下)
+    // 右侧：180° 半圆朝左（屏幕内侧）展开 → 角度 90°(下) → 180°(左) → 270°(上)
+    val startAngle = if (isLeftSide) 270f else 90f
+    val angleStep = 60f  // 4 个按钮均匀分布在 180° 上
+
+    data class ArcBtn(val icon: androidx.compose.ui.graphics.vector.ImageVector, val enabled: Boolean, val desc: String, val onClick: () -> Unit)
+
+    val buttons = listOf(
+        ArcBtn(LocalIcons.Vision, visionEnabled, stringResource(R.string.quick_toggle_vlm)) { onVisionToggle?.invoke() },
+        ArcBtn(LocalIcons.Globe, searchEnabled, stringResource(R.string.quick_toggle_search)) { onSearchToggle?.invoke() },
+        ArcBtn(LocalIcons.Lightbulb, reasoningEnabled, stringResource(R.string.quick_toggle_reasoning)) { onReasoningToggle?.invoke() },
+        ArcBtn(LocalIcons.Record, isRecording, stringResource(R.string.quick_toggle_record)) { onRecordingToggle?.invoke() }
+    )
+
+    buttons.forEachIndexed { index, btn ->
+        val angleDeg = startAngle + index * angleStep
+        val angleRad = Math.toRadians(angleDeg.toDouble())
+        val cx = arcCenterXPx + arcRadiusPx * cos(angleRad)
+        val cy = arcCenterYPx + arcRadiusPx * sin(angleRad)
+
+        Box(modifier = Modifier
+            .size(QuickButtonSize)
+            .align(Alignment.TopStart)
+            .offset { IntOffset((cx - btnRadiusPx).toInt(), (cy - btnRadiusPx).toInt()) }
+        ) {
+            QuickToggleButton(
+                icon = btn.icon,
+                enabled = btn.enabled,
+                contentDescription = btn.desc,
+                onClick = btn.onClick
+            )
+        }
+    }
+}
+
+// ── 横向快捷按钮（原始风格，水平排列在主按钮旁）──
+
+@Composable
+private fun QuickButtonsHorizontalRow(
+    visionEnabled: Boolean,
+    searchEnabled: Boolean,
+    reasoningEnabled: Boolean,
+    isRecording: Boolean = false,
+    onVisionToggle: (() -> Unit)?,
+    onSearchToggle: (() -> Unit)?,
+    onReasoningToggle: (() -> Unit)?,
+    onRecordingToggle: (() -> Unit)?
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -316,8 +533,9 @@ private fun FloatingButton(
                     while (true) {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         down.consume()
-                        var totalDx = 0f; var totalDy = 0f; var isDragging = false
-                        var longPressTriggered = false
+                        var totalDx = 0f; var totalDy = 0f
+                        var isDragging = false; var hasMoved = false
+                        var longPressFired = false
                         val startTime = System.currentTimeMillis()
                         longPressProgress = 0f
 
@@ -325,7 +543,7 @@ private fun FloatingButton(
                             val event = withTimeoutOrNull(16L) {
                                 awaitPointerEvent()
                             }
-                            
+
                             if (event != null) {
                                 val change = event.changes.firstOrNull()
                                 if (change == null || !change.pressed) {
@@ -337,6 +555,7 @@ private fun FloatingButton(
                                     totalDx += dx; totalDy += dy
                                     if (!isDragging && totalDx * totalDx + totalDy * totalDy > touchSlop * touchSlop) {
                                         isDragging = true
+                                        hasMoved = true
                                         longPressProgress = 0f
                                     }
                                     if (isDragging) {
@@ -350,19 +569,19 @@ private fun FloatingButton(
                             if (!isDragging) {
                                 longPressProgress = (elapsed.toFloat() / LONG_PRESS_DURATION_MS).coerceIn(0f, 1f)
                             }
-                            
-                            if (!isDragging && !longPressTriggered && elapsed >= LONG_PRESS_DURATION_MS) {
-                                longPressTriggered = true
+
+                            if (!isDragging && elapsed >= LONG_PRESS_DURATION_MS) {
+                                longPressFired = true
                                 longPressProgress = 0f
+                                isDragging = true
                                 onLongPress()
                             }
                         }
 
                         longPressProgress = 0f
-
-                        if (isDragging) {
+                        if (hasMoved) {
                             onDragEnd()
-                        } else if (!longPressTriggered) {
+                        } else if (!longPressFired) {
                             pressed = true
                             onCaptureClick()
                         }
@@ -377,7 +596,7 @@ private fun FloatingButton(
             isRecording = isRecording,
             isProcessingRecording = isProcessingRecording
         )
-        
+
         // 长按进度条
         if (longPressProgress > 0f) {
             val progressColor = PremiumPrimary.copy(alpha = 0.6f)
@@ -406,7 +625,7 @@ private fun FloatingButton(
                     }
             )
         }
-        
+
         Icon(
             imageVector = LocalIcons.Search,
             contentDescription = stringResource(R.string.cd_capture_button),
@@ -445,15 +664,15 @@ private fun QuickToggleButton(
                     // 启用状态：使用主按钮同款深灰色
                     DarkAccent
                 } else {
-                    // 未启用状态：半透明
-                    if (isDark) GlassDark else GlassWhiteStrong
+                    // 未启用状态：半透明（增加暗色模式可见度）
+                    if (isDark) Color.White.copy(alpha = 0.12f) else GlassWhiteStrong
                 },
                 shape = CircleShape
             )
             .then(
                 if (enabled) {
                     // 启用状态：白色边框
-                    Modifier.border(1.5.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                    Modifier.border(1.5.dp, Color.White.copy(alpha = 0.25f), CircleShape)
                 } else {
                     // 未启用状态
                     Modifier.border(
@@ -646,7 +865,7 @@ private fun AnswerBody(text: String, isDark: Boolean) {
             .clip(bodyShape)
             .drawBehind {
                 // 绘制只有底部圆角的背景
-                val path = androidx.compose.ui.graphics.Path().apply {
+                val path = Path().apply {
                     val w = size.width
                     val h = size.height
                     val r = cornerRadiusPx

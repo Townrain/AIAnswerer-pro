@@ -105,6 +105,20 @@ com.hwb.aianswerer/
 
 ### Changelog
 
+#### v1.4.1 (Quick Button Layout & Settings Optimization)
+* **Quick Button Layout Mode**
+  - Added quick button layout setting: Arc Layout / Horizontal Layout, switchable in settings at any time
+  - Arc Layout: semicircle around the main button, window dynamically expands on open (original style)
+  - Horizontal Layout: horizontal row beside the main button, consistent with the original design, window stays fixed
+  - Horizontal layout supports bouncy expand/collapse animation (expandHorizontally + scaleIn spring effect)
+  - Dragging the main button auto-collapses quick buttons
+* **Dark Mode Adaptation**
+  - Fixed main page status card icon color not adapting to dark mode
+  - Inactive state icon changed to #FCA731 orange for better contrast in dark mode
+* **Settings Page Optimization**
+  - Merged parallel mode and connection test into a single card, separated by a divider
+  - More compact layout, fewer cards
+
 #### v1.4 (Recording Mode & Interaction Optimization)
 * **Recording Mode (New Feature)**
   - Added recording mode for continuously capturing multiple questions, with parallel answer processing during recording

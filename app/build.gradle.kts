@@ -28,8 +28,8 @@ android {
         applicationId = "com.hwb.aianswerer"
         minSdk = 30
         targetSdk = 34
-        versionCode = 14
-        versionName = "1.4"
+        versionCode = 15
+        versionName = "1.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

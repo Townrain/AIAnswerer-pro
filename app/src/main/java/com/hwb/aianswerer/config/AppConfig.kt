@@ -49,6 +49,7 @@ object AppConfig {
     private const val KEY_REASONING_EFFORT = "reasoning_effort"
     private const val KEY_CAPTURE_MODE = "capture_mode"
     private const val KEY_STEALTH_MODE = "stealth_mode"
+    private const val KEY_QUICK_BUTTON_LAYOUT = "quick_button_layout"
 
     // 语言代码常量
     const val LANGUAGE_ZH = "zh"
@@ -62,6 +63,10 @@ object AppConfig {
     // 采集模式常量
     const val CAPTURE_MODE_SCREENSHOT = "screenshot"  // 截图 + OCR/VLM
     const val CAPTURE_MODE_ACCESSIBILITY = "accessibility"  // 无障碍读取屏幕
+
+    // 快捷按钮布局模式常量
+    const val QUICK_BUTTON_LAYOUT_ARC = "arc"           // 半圆弧形排列
+    const val QUICK_BUTTON_LAYOUT_HORIZONTAL = "horizontal"  // 横向排列
 
     private var mmkv: MMKV? = null
     private var securePrefs: SharedPreferences? = null
@@ -599,6 +604,24 @@ object AppConfig {
      */
     fun saveStealthMode(enabled: Boolean) {
         requireMmkv().encode(KEY_STEALTH_MODE, enabled)
+    }
+
+    // ========== 快捷按钮布局模式相关 ==========
+
+    /**
+     * 获取快捷按钮布局模式
+     * @return 布局模式，默认为弧形排列
+     */
+    fun getQuickButtonLayout(): String {
+        return requireMmkv().decodeString(KEY_QUICK_BUTTON_LAYOUT, QUICK_BUTTON_LAYOUT_ARC) ?: QUICK_BUTTON_LAYOUT_ARC
+    }
+
+    /**
+     * 保存快捷按钮布局模式
+     * @param mode 布局模式（QUICK_BUTTON_LAYOUT_ARC 或 QUICK_BUTTON_LAYOUT_HORIZONTAL）
+     */
+    fun saveQuickButtonLayout(mode: String) {
+        requireMmkv().encode(KEY_QUICK_BUTTON_LAYOUT, mode)
     }
 
     // ========== LLM Temperature 相关 ==========

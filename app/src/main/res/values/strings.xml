@@ -373,6 +373,12 @@
     <string name="quick_toggle_search">联网搜索</string>
     <string name="quick_toggle_reasoning">深度思考</string>
 
+    <!-- 快捷按钮布局模式 -->
+    <string name="setting_quick_button_layout">快捷按钮排列方式</string>
+    <string name="setting_quick_button_layout_desc">长按主按钮后，快捷按钮的排列样式</string>
+    <string name="quick_button_layout_arc">弧形排列</string>
+    <string name="quick_button_layout_horizontal">横向排列</string>
+
     <!-- 录制模式 -->
     <string name="recording_start">录制模式已开启</string>
     <string name="recording_stop">录制模式已结束，共 %d 题</string>

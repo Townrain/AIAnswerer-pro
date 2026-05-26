@@ -298,6 +298,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val screenH = metrics.heightPixels.toFloat()
         val buttonSizePx = AppConfig.getFloatButtonSize() * metrics.density
         val buttonHalf = buttonSizePx / 2f
+        // 窗口最小高度预估：含上下预留(72+72dp) + 按钮(56dp) = 200dp
+        val windowHeightPx = 200 * metrics.density
+        // 当前窗口高度（展开快捷按钮时动态增加）
+        var currentWindowHeightPx = windowHeightPx
 
         // 初始位置：右侧贴边
         floatOffsetX.value = screenW - buttonHalf
@@ -320,7 +324,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         val params = WindowManager.LayoutParams(
             windowWidthPx.toInt(),  // 固定窗口宽度
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            windowHeightPx.toInt(),  // 固定窗口高度，展开快捷按钮时动态调整
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
@@ -333,7 +337,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = windowX()
-            y = floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - buttonSizePx.toInt())
+            y = floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - windowHeightPx.toInt())
             if (AppConfig.isStealthModeEnabled()) alpha = 0.99f
         }
 
@@ -380,12 +384,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             floatOffsetX.value = (floatOffsetX.value + deltaX)
                                 .coerceIn(buttonHalf, screenW - buttonHalf)
                             floatOffsetY.value = (floatOffsetY.value + deltaY)
-                                .coerceIn(buttonHalf, screenH - buttonHalf)
+                                .coerceIn(0f, screenH - currentWindowHeightPx)
                             floatingView?.let { v ->
                                 val p = v.layoutParams as WindowManager.LayoutParams
                                 p.x = windowX()
                                 p.y = floatOffsetY.value.toInt()
-                                    .coerceIn(0, screenH.toInt() - buttonSizePx.toInt())
+                                    .coerceIn(0, screenH.toInt() - currentWindowHeightPx.toInt())
                                 windowManager.updateViewLayout(v, p)
                             }
                         },
@@ -435,7 +439,33 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         recordingProcessedCount = recordingProcessedCount.value,
                         onRecordingToggle = {
                             if (isRecording.value) stopRecording() else startRecording()
-                        }
+                        },
+                        onArcExpandChanged = { expanded ->
+                            val arcReservePx = 72 * metrics.density
+                            // 展开时窗口增高 144dp（上下各 72dp Spacer），收起时恢复
+                            val expandedHeightPx = windowHeightPx + arcReservePx * 2
+                            currentWindowHeightPx = if (expanded) expandedHeightPx else windowHeightPx
+                            if (expanded) {
+                                // 快捷按钮展开，spacer 从 0→72dp 把按钮往下推
+                                // 窗口同步上移 72dp，按钮屏幕位置不变
+                                floatOffsetY.value = (floatOffsetY.value - arcReservePx)
+                                    .coerceIn(0f, screenH - currentWindowHeightPx)
+                            } else {
+                                // 快捷按钮收起，spacer 从 72→0dp
+                                // 窗口同步下移 72dp
+                                floatOffsetY.value = (floatOffsetY.value + arcReservePx)
+                                    .coerceIn(0f, screenH - currentWindowHeightPx)
+                            }
+                            floatingView?.let { v ->
+                                val p = v.layoutParams as WindowManager.LayoutParams
+                                p.x = windowX()
+                                p.y = floatOffsetY.value.toInt()
+                                    .coerceIn(0, screenH.toInt() - currentWindowHeightPx.toInt())
+                                p.height = currentWindowHeightPx.toInt()
+                                windowManager.updateViewLayout(v, p)
+                            }
+                        },
+                        quickButtonLayout = AppConfig.getQuickButtonLayout()
                     )
                 }
             }

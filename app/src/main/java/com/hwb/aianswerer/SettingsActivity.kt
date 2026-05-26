@@ -134,6 +134,9 @@ fun SettingsScreen(
     var floatButtonAlpha by remember { mutableStateOf(AppConfig.getFloatButtonAlpha()) }
     var floatCardAlpha by remember { mutableStateOf(AppConfig.getFloatCardAlpha()) }
 
+    // 快捷按钮布局模式
+    var quickButtonLayout by remember { mutableStateOf(AppConfig.getQuickButtonLayout()) }
+
     // 隐身模式设置
     var stealthMode by remember { mutableStateOf(AppConfig.isStealthModeEnabled()) }
 
@@ -271,7 +274,7 @@ fun SettingsScreen(
                 }
             }
 
-            // ── Parallel Mode ──
+            // ── Parallel Mode + Connection Test ──
             SectionLabel(stringResource(R.string.setting_parallel_title))
             InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
                 SettingItem(
@@ -305,13 +308,27 @@ fun SettingsScreen(
                         color = ErrorRed
                     )
                 }
-            }
 
-            // ── Connection Test ──
-            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
-                SectionLabel(stringResource(R.string.setting_parallel_title) + " - " + stringResource(R.string.button_test_connection))
+                // 分隔线
+                Spacer(Modifier.height(Spacing.lg))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(if (isDark) GlassDarkBorder else InputBorder)
+                )
+                Spacer(Modifier.height(Spacing.lg))
+
+                // 连接测试
+                Text(
+                    text = stringResource(R.string.button_test_connection),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) TextDarkPrimary else TextDark
+                )
+                Spacer(Modifier.height(Spacing.sm))
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     AnimatedButton(
@@ -370,7 +387,6 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
-                    // LLM测试结果
                     when (val state = llmTestState) {
                         is TestConnectionState.Success -> Text(
                             text = stringResource(R.string.test_result_success, stringResource(R.string.setting_test_llm), state.latencyMs),
@@ -384,7 +400,6 @@ fun SettingsScreen(
                         )
                         else -> {}
                     }
-                    // VLM测试结果
                     when (val state = vlmTestState) {
                         is TestConnectionState.Success -> Text(
                             text = stringResource(R.string.test_result_success, stringResource(R.string.setting_test_vlm), state.latencyMs),
@@ -398,7 +413,6 @@ fun SettingsScreen(
                         )
                         else -> {}
                     }
-                    // Search测试结果
                     when (val state = searchTestState) {
                         is TestConnectionState.Success -> Text(
                             text = stringResource(R.string.test_result_success, stringResource(R.string.setting_test_search), state.latencyMs),
@@ -447,6 +461,43 @@ fun SettingsScreen(
             // ── Floating Window Appearance ──
             SectionLabel(stringResource(R.string.setting_float_window_title))
             InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
+                // 快捷按钮布局模式
+                Text(
+                    text = stringResource(R.string.setting_quick_button_layout),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) TextDarkPrimary else TextDark
+                )
+                Text(
+                    text = stringResource(R.string.setting_quick_button_layout_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) TextDarkSecondary else TextTertiary,
+                    modifier = Modifier.padding(bottom = Spacing.md)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    PremiumChip(
+                        text = stringResource(R.string.quick_button_layout_arc),
+                        selected = quickButtonLayout == AppConfig.QUICK_BUTTON_LAYOUT_ARC,
+                        onClick = {
+                            quickButtonLayout = AppConfig.QUICK_BUTTON_LAYOUT_ARC
+                            AppConfig.saveQuickButtonLayout(AppConfig.QUICK_BUTTON_LAYOUT_ARC)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    PremiumChip(
+                        text = stringResource(R.string.quick_button_layout_horizontal),
+                        selected = quickButtonLayout == AppConfig.QUICK_BUTTON_LAYOUT_HORIZONTAL,
+                        onClick = {
+                            quickButtonLayout = AppConfig.QUICK_BUTTON_LAYOUT_HORIZONTAL
+                            AppConfig.saveQuickButtonLayout(AppConfig.QUICK_BUTTON_LAYOUT_HORIZONTAL)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(Spacing.md))
                 Text(
                     text = stringResource(R.string.setting_float_button_size, floatButtonSize.toInt()),
                     style = MaterialTheme.typography.titleSmall,

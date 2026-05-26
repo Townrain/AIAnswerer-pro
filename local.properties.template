@@ -5,9 +5,9 @@
 sdk.dir=xxx
 
 ## AI API configuration
-api.url=https://integrate.api.nvidia.com/v1/chat/completions
+api.url=https://api.openai.com/v1/chat/completions
 api.key=YOUR_API_KEY
-api.model=deepseek-ai/deepseek-v3.1
+api.model=gpt-4
 
 ## Release signing configuration
 signing.storeFile=../keystore/release.jks

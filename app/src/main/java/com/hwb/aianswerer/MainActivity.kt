@@ -618,14 +618,18 @@ fun MainScreen(
                                         if (isAnswerModeActive) {
                                             val d = androidx.compose.ui.platform.LocalDensity.current
                                             Modifier.primaryGradient(RoundedCornerShape(14.dp), 14.dp, shadowElevation = with(d) { 6.dp.toPx() }, shadowColor = PremiumPrimary.copy(alpha = 0.08f))
-                                        } else Modifier.background(AccentGold.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
+                                        } else Modifier.background(
+                                            if (isDark) Color(0xFFFCA731).copy(alpha = 0.2f) else AccentGold.copy(alpha = 0.15f),
+                                            RoundedCornerShape(14.dp)
+                                        )
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = if (isAnswerModeActive) LocalIcons.Search else LocalIcons.Search,
                                     contentDescription = null,
-                                    tint = if (isAnswerModeActive) PremiumCardLight else AccentGold,
+                                    tint = if (isAnswerModeActive) Color.White
+                                           else if (isDark) Color(0xFFFCA731) else AccentGold,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
