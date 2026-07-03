@@ -105,6 +105,14 @@ com.hwb.aianswerer/
 
 ### Changelog
 
+#### v1.4.2 (Bug Fixes)
+* **Fixed GitHub link navigation crash**
+  - Fixed `AndroidRuntimeException` crash when tapping the GitHub link on the About page due to missing `FLAG_ACTIVITY_NEW_TASK` flag
+* **Fixed floating window occupying screen space when idle**
+  - Fixed issue where the floating window kept a fixed 200dp height when idle, causing the transparent area to block touches to the app underneath
+  - Window height now automatically shrinks to wrap only the floating button (~72dp) when idle, allowing touch passthrough
+  - Automatically restores full height when answer card is shown or quick buttons are expanded
+
 #### v1.4.1 (Quick Button Layout & Settings Optimization)
 * **Quick Button Layout Mode**
   - Added quick button layout setting: Arc Layout / Horizontal Layout, switchable in settings at any time

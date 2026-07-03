@@ -122,6 +122,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var searchEnabled = mutableStateOf(AppConfig.getTavilyEnabled())
     private var reasoningEnabled = mutableStateOf(AppConfig.getReasoningEffort() != null)
 
+    // 悬浮按钮透明度状态（响应式，支持长按垂直滑动实时调节）
+    private var floatButtonAlpha = mutableStateOf(AppConfig.getFloatButtonAlpha())
+
+    // 悬浮窗高度与状态管理
+    private var isArcExpanded = false
+    private var hasContent = false
+    private var currentWindowHeightPx = 0f
+
     // 当前进行中的网络请求 Job，用于在 onDestroy 时取消
     private var currentFetchJob: Job? = null
     // 用于防止并发请求的互斥锁
@@ -298,10 +306,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val screenH = metrics.heightPixels.toFloat()
         val buttonSizePx = AppConfig.getFloatButtonSize() * metrics.density
         val buttonHalf = buttonSizePx / 2f
-        // 窗口最小高度预估：含上下预留(72+72dp) + 按钮(56dp) = 200dp
-        val windowHeightPx = 200 * metrics.density
-        // 当前窗口高度（展开快捷按钮时动态增加）
-        var currentWindowHeightPx = windowHeightPx
+        // 初始化窗口高度为内容显示基准高度
+        currentWindowHeightPx = 200 * metrics.density
 
         // 初始位置：右侧贴边
         floatOffsetX.value = screenW - buttonHalf
@@ -324,7 +330,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         val params = WindowManager.LayoutParams(
             windowWidthPx.toInt(),  // 固定窗口宽度
-            windowHeightPx.toInt(),  // 固定窗口高度，展开快捷按钮时动态调整
+            currentWindowHeightPx.toInt(),  // 窗口高度，动态调整
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
@@ -337,7 +343,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = windowX()
-            y = floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - windowHeightPx.toInt())
+            y = floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - currentWindowHeightPx.toInt())
             if (AppConfig.isStealthModeEnabled()) alpha = 0.99f
         }
 
@@ -356,7 +362,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         showAnswer = showAnswer.value,
                         statusMessage = statusMessage.value,
                         buttonSize = AppConfig.getFloatButtonSize(),
-                        buttonAlpha = AppConfig.getFloatButtonAlpha(),
+                        buttonAlpha = floatButtonAlpha.value,
                         cardAlpha = AppConfig.getFloatCardAlpha(),
                         isLeftSide = isLeftSide(),
                         floatingStatus = floatingStatus.value,
@@ -406,6 +412,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                 windowManager.updateViewLayout(v, p)
                             }
                         },
+                        onAlphaAdjust = { delta ->
+                            val newAlpha = (floatButtonAlpha.value + delta)
+                                .coerceIn(0.1f, 1.0f)
+                            floatButtonAlpha.value = newAlpha
+                            AppConfig.saveFloatButtonAlpha(newAlpha)
+                        },
                         // 快捷开关状态
                         visionEnabled = visionEnabled.value,
                         searchEnabled = searchEnabled.value,
@@ -442,9 +454,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         },
                         onArcExpandChanged = { expanded ->
                             val arcReservePx = 72 * metrics.density
-                            // 展开时窗口增高 144dp（上下各 72dp Spacer），收起时恢复
-                            val expandedHeightPx = windowHeightPx + arcReservePx * 2
-                            currentWindowHeightPx = if (expanded) expandedHeightPx else windowHeightPx
+                            isArcExpanded = expanded
+                            // 调整窗口 Y 位置，使按钮在屏幕上保持稳定
                             if (expanded) {
                                 // 快捷按钮展开，spacer 从 0→72dp 把按钮往下推
                                 // 窗口同步上移 72dp，按钮屏幕位置不变
@@ -456,14 +467,11 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                 floatOffsetY.value = (floatOffsetY.value + arcReservePx)
                                     .coerceIn(0f, screenH - currentWindowHeightPx)
                             }
-                            floatingView?.let { v ->
-                                val p = v.layoutParams as WindowManager.LayoutParams
-                                p.x = windowX()
-                                p.y = floatOffsetY.value.toInt()
-                                    .coerceIn(0, screenH.toInt() - currentWindowHeightPx.toInt())
-                                p.height = currentWindowHeightPx.toInt()
-                                windowManager.updateViewLayout(v, p)
-                            }
+                            updateFloatingWindowHeight()
+                        },
+                        onContentVisibilityChanged = { visible ->
+                            hasContent = visible
+                            updateFloatingWindowHeight()
                         },
                         quickButtonLayout = AppConfig.getQuickButtonLayout()
                     )
@@ -472,6 +480,39 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         windowManager.addView(floatingView, params)
+    }
+
+    /**
+     * 根据当前状态动态调整浮窗高度。
+     *
+     * 状态优先级：
+     *   1. 弧形快捷按钮展开 → 内容基准高度 + 弧形预留区
+     *   2. 有内容显示或录制中 → 内容基准高度（正常显示卡片）
+     *   3. 空闲状态 → 仅按钮高度 + 边距（避免多余透明区拦截触摸）
+     */
+    private fun updateFloatingWindowHeight() {
+        val metrics = resources.displayMetrics
+        val buttonSizePx = AppConfig.getFloatButtonSize() * metrics.density
+        val idleBaseHeightPx = buttonSizePx + 16 * metrics.density  // 按钮 + 8dp 上下边距
+        val contentBaseHeightPx = 200 * metrics.density  // 内容显示基准高度
+        val screenH = metrics.heightPixels.toFloat()
+
+        val newHeight = (when {
+            isArcExpanded -> contentBaseHeightPx + 144 * metrics.density  // 200dp + 144dp 弧形预留
+            hasContent || isRecording.value -> contentBaseHeightPx
+            else -> idleBaseHeightPx
+        }).toInt()
+
+        if (newHeight.toFloat() != currentWindowHeightPx) {
+            currentWindowHeightPx = newHeight.toFloat()
+            floatingView?.let { v ->
+                val p = v.layoutParams as WindowManager.LayoutParams
+                p.height = newHeight
+                p.y = floatOffsetY.value.toInt()
+                    .coerceIn(0, screenH.toInt() - newHeight)
+                windowManager.updateViewLayout(v, p)
+            }
+        }
     }
 
     private fun handleCapture() {

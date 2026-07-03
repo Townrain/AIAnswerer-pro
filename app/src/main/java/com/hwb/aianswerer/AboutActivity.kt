@@ -61,7 +61,7 @@ class AboutActivity : BaseActivity() {
         setContent {
             AIAnswererTheme {
                 AboutScreen(
-                    context = applicationContext,
+                    context = this,
                     onBackClick = { finish() }
                 )
             }

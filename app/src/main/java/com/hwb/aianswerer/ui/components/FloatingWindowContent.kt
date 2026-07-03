@@ -68,6 +68,7 @@ import com.hwb.aianswerer.R
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.ui.icons.LocalIcons
 import com.hwb.aianswerer.ui.theme.*
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -82,6 +83,10 @@ private val ProgressStrokeWidth = 2.5.dp
 // 长按触发时间（毫秒）
 private const val LONG_PRESS_DURATION_MS = 3000L
 
+// 长按垂直滑动透明度调节灵敏度（每像素 alpha 变化量）
+// 范围 0.1~1.0，跨度为 0.9。0.005f × 180px ≈ 0.9，一次完整滑动覆盖全范围
+private const val ALPHA_ADJUST_SENSITIVITY = 0.005f
+
 // 小按钮大小
 private val QuickButtonSize = 40.dp
 
@@ -94,6 +99,7 @@ fun FloatingWindowContent(
     isLeftSide: Boolean = true, floatingStatus: FloatingStatus = FloatingStatus.Idle,
     onCaptureClick: () -> Unit, onCloseAnswer: () -> Unit, onCloseStatus: () -> Unit,
     onCopyAnswer: (() -> Unit)? = null, onMove: (Float, Float) -> Unit, onDragEnd: () -> Unit = {},
+    onAlphaAdjust: (Float) -> Unit = {},
     visionEnabled: Boolean = false,
     searchEnabled: Boolean = false,
     reasoningEnabled: Boolean = false,
@@ -106,6 +112,7 @@ fun FloatingWindowContent(
     recordingProcessedCount: Int = 0,
     onRecordingToggle: () -> Unit = {},
     onArcExpandChanged: ((Boolean) -> Unit)? = null,
+    onContentVisibilityChanged: (Boolean) -> Unit = {},
     quickButtonLayout: String = AppConfig.QUICK_BUTTON_LAYOUT_ARC
 ) {
     val viewConfig = androidx.compose.ui.platform.LocalViewConfiguration.current
@@ -114,6 +121,7 @@ fun FloatingWindowContent(
     val currentOnCaptureClick by rememberUpdatedState(onCaptureClick)
     val currentOnMove by rememberUpdatedState(onMove)
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
+    val currentOnAlphaAdjust by rememberUpdatedState(onAlphaAdjust)
     val isDark = LocalIsDarkMode.current
 
     val cardWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp * 0.82f).dp
@@ -133,6 +141,11 @@ fun FloatingWindowContent(
             if (isArcLayout) onArcExpandChanged?.invoke(false)
             showQuickButtons = false
         }
+    }
+
+    // 通知 Service 窗口内容可见性变化，用于动态调整浮窗高度
+    LaunchedEffect(hasContent) {
+        onContentVisibilityChanged(hasContent)
     }
 
     // 窗口位置由 onArcExpandChanged 在 showQuickButtons 变更前同步调整，无需 LaunchedEffect
@@ -221,7 +234,8 @@ fun FloatingWindowContent(
                             onLongPress = {
                                 onArcExpandChanged?.invoke(!showQuickButtons)
                                 showQuickButtons = !showQuickButtons
-                            }
+                            },
+                            onAlphaAdjust = currentOnAlphaAdjust
                         )
                     }
                 }
@@ -302,7 +316,8 @@ fun FloatingWindowContent(
                         },
                         onDragEnd = currentOnDragEnd,
                         touchSlop = touchSlop,
-                        onLongPress = { showQuickButtons = !showQuickButtons }
+                        onLongPress = { showQuickButtons = !showQuickButtons },
+                        onAlphaAdjust = currentOnAlphaAdjust
                     )
                 }
 
@@ -500,7 +515,8 @@ private fun FloatingButton(
     onMove: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
     touchSlop: Float,
-    onLongPress: () -> Unit = {}
+    onLongPress: () -> Unit = {},
+    onAlphaAdjust: (Float) -> Unit = {}
 ) {
     var pressed by remember { mutableStateOf(false) }
     var longPressProgress by remember { mutableStateOf(0f) }
@@ -535,6 +551,7 @@ private fun FloatingButton(
                         down.consume()
                         var totalDx = 0f; var totalDy = 0f
                         var isDragging = false; var hasMoved = false
+                        var isAlphaAdjust = false
                         var longPressFired = false
                         val startTime = System.currentTimeMillis()
                         longPressProgress = 0f
@@ -554,23 +571,32 @@ private fun FloatingButton(
                                 if (dx != 0f || dy != 0f) {
                                     totalDx += dx; totalDy += dy
                                     if (!isDragging && totalDx * totalDx + totalDy * totalDy > touchSlop * touchSlop) {
+                                        // 在触摸滑动阈值处决定模式
+                                        // 垂直主导 → 透明度调节；水平主导 → 窗口拖动
+                                        if (abs(totalDy) > abs(totalDx)) {
+                                            isAlphaAdjust = true
+                                        }
                                         isDragging = true
                                         hasMoved = true
                                         longPressProgress = 0f
                                     }
                                     if (isDragging) {
-                                        onMove(dx, dy)
+                                        if (isAlphaAdjust) {
+                                            onAlphaAdjust(dy * ALPHA_ADJUST_SENSITIVITY)
+                                        } else {
+                                            onMove(dx, dy)
+                                        }
                                         change.consume()
                                     }
                                 }
                             }
 
                             val elapsed = System.currentTimeMillis() - startTime
-                            if (!isDragging) {
+                            if (!isDragging && !isAlphaAdjust) {
                                 longPressProgress = (elapsed.toFloat() / LONG_PRESS_DURATION_MS).coerceIn(0f, 1f)
                             }
 
-                            if (!isDragging && elapsed >= LONG_PRESS_DURATION_MS) {
+                            if (!isDragging && !isAlphaAdjust && elapsed >= LONG_PRESS_DURATION_MS) {
                                 longPressFired = true
                                 longPressProgress = 0f
                                 isDragging = true
@@ -580,7 +606,9 @@ private fun FloatingButton(
 
                         longPressProgress = 0f
                         if (hasMoved) {
-                            onDragEnd()
+                            if (!isAlphaAdjust) {
+                                onDragEnd()
+                            }
                         } else if (!longPressFired) {
                             pressed = true
                             onCaptureClick()
