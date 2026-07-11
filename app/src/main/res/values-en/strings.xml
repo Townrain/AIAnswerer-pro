@@ -1,0 +1,418 @@
+<resources>
+    <!-- App name -->
+    <string name="app_name">AI Answerer</string>
+
+    <!-- Main screen -->
+    <string name="main_title">AI Answerer</string>
+    <string name="main_subtitle">Capture · Recognize · Answer, in one flow</string>
+    <string name="status_label">Current Status</string>
+    <string name="status_running">Answer Mode Running</string>
+    <string name="status_running_desc">Floating window is visible</string>
+    <string name="status_stopped">Answer Mode Stopped</string>
+    <string name="status_stopped_desc">Click the button below to start</string>
+    <string name="button_start_mode">✦  Start Answer Mode</string>
+    <string name="button_stop_mode">Stop Answer Mode</string>
+    <string name="stop_confirm_title">Stop Answering</string>
+    <string name="stop_confirm_message">Exit answer mode? The floating window and screen capture service will stop.</string>
+
+    <!-- Usage guide -->
+    <string name="usage_guide_title">Usage Guide &amp; FAQ</string>
+    <string name="usage_step_0">0. Configure AI Model</string>
+    <string name="usage_step_1">1. Click the button below to start answer mode</string>
+    <string name="usage_step_2">2. App will run in background with floating button</string>
+    <string name="usage_step_3">3. Click floating button to capture screen</string>
+    <string name="usage_step_4">4. Confirm the recognized question text</string>
+    <string name="usage_step_5">5. AI will analyze and provide answer</string>
+    <string name="usage_step_6_text">6. If recognition fails, consider</string>
+    <string name="usage_step_6_url" translatable="false">https://jingyan.baidu.com/article/7f41ecec6bf8de183c095c29.html</string>
+    <string name="usage_step_7_text">7. If you see "System has denied access permission to this app" when granting overlay permission</string>
+    <string name="usage_step_7_link">Please manually enable "Display over other apps"</string>
+    <string name="usage_step_7_url" translatable="false">https://bbs.oneplus.com/thread/5077724</string>
+    <string name="usage_step_8">8. For better recognition, crop to a single question. Multiple-question images are not supported yet</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="setting_auto_submit">Auto Submit Answer</string>
+    <string name="setting_auto_submit_desc">Get answer directly without confirmation dialog</string>
+    <string name="setting_auto_copy">Auto Copy to Clipboard</string>
+    <string name="setting_auto_copy_desc">Automatically copy answer to clipboard after generation</string>
+    <string name="setting_display_control_title">Answer Card Display Content</string>
+    <string name="setting_display_control_desc">Customize answer card display content</string>
+    <string name="setting_show_question">Show Question</string>
+    <string name="setting_show_question_desc">Display question content in answer card</string>
+    <string name="setting_show_options">Show Options</string>
+    <string name="setting_show_options_desc">Display options in answer card</string>
+
+    <!-- Floating Window Appearance -->
+    <string name="setting_float_window_title">Floating Window</string>
+    <string name="setting_float_window_desc">Adjust button and card size &amp; transparency</string>
+    <string name="setting_float_button_size">Button size: %d dp</string>
+    <string name="setting_float_button_alpha">Button transparency: %d%%</string>
+    <string name="setting_float_card_alpha">Card transparency: %d%%</string>
+
+    <!-- Theme Mode -->
+    <string name="setting_theme_title">Appearance</string>
+    <string name="setting_theme_system">Follow System</string>
+    <string name="setting_theme_light">Light Mode</string>
+    <string name="setting_theme_dark">Dark Mode</string>
+
+    <!-- Session Settings -->
+    <string name="session_settings_title">Session Settings</string>
+    <string name="session_settings_desc">Configure question types and scope to improve accuracy</string>
+    <string name="question_type_label">Question Types (Multiple)</string>
+    <string name="question_type_single">Single Choice</string>
+    <string name="question_type_multiple">Multiple Choice</string>
+    <string name="question_type_uncertain">Uncertain</string>
+    <string name="question_type_blank">Fill in Blank</string>
+    <string name="question_type_essay">Essay</string>
+    <string name="crop_mode_label">Screenshot Recognition Mode</string>
+    <string name="crop_mode_full">Full Screen</string>
+    <string name="crop_mode_each">Partial (Each Time)</string>
+    <string name="crop_mode_once">Partial (Once)</string>
+    <string name="model_settings_card_title">Custom Mode Settings</string>
+    <string name="model_settings_card_desc">Configure API and model parameters</string>
+    <string name="current_settings">Current: %s</string>
+
+    <!-- Menu -->
+    <string name="menu_settings">Settings</string>
+    <string name="menu_model_settings">Custom Mode Settings</string>
+    <string name="menu_about">About</string>
+    <string name="menu_more">More</string>
+
+    <!-- Model Settings screen -->
+    <string name="model_settings_title">Custom Mode Settings</string>
+    <string name="model_settings_notice">Currently only supports OpenAI format API</string>
+    <string name="model_settings_section_llm">LLM Model</string>
+    <string name="label_api_url">API URL</string>
+    <string name="hint_api_url">e.g. https://api.openai.com/v1/chat/completions</string>
+    <string name="label_api_key">API Key</string>
+    <string name="hint_api_key">e.g. sk-xxxxxxxxxxxxxxxxxxxx</string>
+    <string name="label_model_name">Model Name</string>
+    <string name="hint_model_name">e.g. gpt-4 or deepseek-v3.1</string>
+    <string name="button_save">Save</string>
+    <string name="button_test_connection">Test Connection</string>
+    <string name="button_testing">Testing...</string>
+    <string name="toast_connection_success">Connection successful</string>
+    <string name="toast_connection_failed">Connection failed: %s</string>
+    <string name="toast_settings_saved">Settings saved</string>
+    <string name="toast_settings_error">Save failed, please check input</string>
+    <string name="toast_settings_error_empty_fields">Please fill in all required fields</string>
+    <string name="toast_settings_error_invalid_url">API URL must start with http</string>
+
+    <!-- Tavily Search Settings -->
+    <string name="tavily_settings_title">Web Search Enhancement</string>
+    <string name="tavily_settings_desc">Use Tavily search engine to fetch real-time references for more accurate AI answers</string>
+    <string name="tavily_enable_label">Enable Web Search</string>
+    <string name="tavily_enable_desc">Automatically search for references before answering</string>
+    <string name="label_tavily_api_key">Tavily API Key</string>
+    <string name="hint_tavily_api_key">tvly-xxxxxxxx</string>
+
+    <!-- About screen -->
+    <string name="about_title">About</string>
+    <string name="about_app_intro_title">App Introduction</string>
+    <string name="about_app_intro">An AI-powered Android answering assistant that uses screenshots and OCR to recognize questions and provides answers through AI.</string>
+    <string name="about_version_title">Version Information</string>
+    <string name="about_version">Version %1$s (%2$d)</string>
+    <string name="about_libraries_title">Core Libraries</string>
+    <string name="about_github_title">GitHub</string>
+    <string name="about_github_subtitle">GitHub</string>
+    <string name="about_language_title">Language Settings</string>
+    <string name="about_language_chinese">简体中文</string>
+    <string name="about_language_english">English</string>
+    <string name="language_zh_label">中文</string>
+    <string name="language_en_label">English</string>
+    <string name="about_contact_title">Contact Email</string>
+    <string name="about_contact_email" translatable="false">hwang@linux.do</string>
+    <string name="about_contact_email_intent_title">Contact via Email</string>
+    <string name="about_contact_email_copied">Email copied to clipboard: %s</string>
+    <string name="about_restart_dialog_title">Restart App</string>
+    <string name="about_restart_dialog_message">App needs to restart to switch language. Note: restart will interrupt the current answer mode. Confirm restart?</string>
+    <string name="button_confirm">Confirm</string>
+    <string name="button_cancel">Cancel</string>
+
+    <!-- Common -->
+    <string name="back">Back</string>
+    <string name="close">Close</string>
+
+    <!-- Toast messages -->
+    <string name="toast_model_not_configured">Please configure AI model first</string>
+    <string name="toast_permission_overlay_required">Overlay permission required for answer mode</string>
+    <string name="toast_permission_capture_required">Screen capture permission required for answer mode</string>
+    <string name="toast_mode_started">Answer mode started</string>
+    <string name="toast_mode_stopped">Answer mode stopped</string>
+    <string name="toast_mode_start_failed">Failed to start answer mode: %s</string>
+
+    <!-- Content descriptions (Accessibility) -->
+    <string name="cd_back_button">Back button</string>
+    <string name="cd_menu_button">Menu button</string>
+    <string name="cd_app_icon">App icon</string>
+    <string name="cd_capture_button">Capture</string>
+    <string name="cd_close_button">Close</string>
+    <string name="cd_stop_button">Stop</string>
+    <string name="cd_hide_password">Hide password</string>
+    <string name="cd_show_password">Show password</string>
+    <string name="cd_copied">Copied</string>
+    <string name="cd_copy">Copy</string>
+    <string name="cd_drag_handle">Drag to move</string>
+    <string name="cd_collapse">Collapse</string>
+    <string name="cd_expand">Expand</string>
+    <string name="cd_status_loading">Processing</string>
+    <string name="cd_status_success">Success</string>
+    <string name="cd_status_error">Error</string>
+
+    <!-- Confirm Text Screen -->
+    <string name="confirm_text_title">Confirm Recognized Text</string>
+    <string name="confirm_text_label">Recognized Text (Editable)</string>
+    <string name="confirm_text_placeholder">Edit or confirm the recognized text</string>
+    <string name="button_confirm_and_answer">Confirm and Get Answer</string>
+    <string name="toast_text_empty">Text is empty</string>
+    <string name="toast_getting_answer">Getting answer...</string>
+
+    <!-- Floating Window -->
+    <string name="floating_answer_title">AI Response</string>
+    <string name="notification_content">Answer mode is running</string>
+    <string name="stop_service">Stop Answering</string>
+
+    <!-- API Error Messages -->
+    <string name="error_empty_response">Empty response body</string>
+    <string name="error_no_answer_content">No answer content received</string>
+    <string name="error_parse_question_failed">Failed to parse question</string>
+    <string name="error_connection_test_failed">Connection test failed: %s</string>
+    <string name="error_unknown">Unknown error</string>
+    <string name="error_api_config_invalid">API configuration is invalid. Please configure the API in settings.</string>
+    <string name="error_api_request_failed">API request failed: %1$d %2$s</string>
+    <string name="error_api_config_incomplete">API configuration is invalid. Please complete all API settings first.</string>
+    <string name="error_api_key_invalid">API key is invalid or expired.</string>
+    <string name="error_api_forbidden">Access to this API is forbidden.</string>
+    <string name="error_api_not_found">API endpoint not found.</string>
+    <string name="error_api_rate_limited">Too many requests. Please try again later.</string>
+    <string name="error_api_server_error">API server error.</string>
+    <string name="error_http_status_generic">HTTP %1$d: %2$s</string>
+    <string name="error_api_empty_response">API returned an empty response.</string>
+    <string name="error_api_response_invalid">API response format is invalid.</string>
+    <string name="error_api_response_error">API response format error.</string>
+    <string name="error_api_unknown_host">Unable to connect to the server. Please check the network and API URL.</string>
+    <string name="error_api_timeout">Connection timed out. Please check the network.</string>
+    <string name="error_api_ssl">SSL connection error. Please check the API URL.</string>
+
+    <!-- Text Recognition -->
+    <string name="error_no_text_recognized">No text recognized</string>
+    <string name="error_recognition_cancelled">Recognition cancelled</string>
+
+    <!-- Main Screen Others -->
+    <string name="link_close_screen_protection">Close Screen Share Protection</string>
+    <string name="toast_unable_to_open_link">Unable to open link</string>
+
+    <!-- Question Type Default -->
+    <string name="default_question_type">Single Choice</string>
+
+    <!-- Answer Display Panel -->
+    <string name="answer_section_question_title">Question</string>
+    <string name="answer_section_options_title">Options</string>
+    <string name="answer_section_answer_title">Answer</string>
+
+    <!-- Dialog related strings -->
+    <string name="dialog_language_title">选择语言 / Select Language</string>
+    <string name="dialog_language_message">Please select your preferred language:</string>
+    <string name="dialog_language_confirm">Confirm</string>
+    <string name="dialog_language_cancel">Cancel</string>
+
+    <string name="dialog_model_setup_title">AI Model Settings</string>
+    <string name="dialog_model_setup_message">To use the AI answering feature, you need to configure API parameters first. Go to settings now?</string>
+    <string name="dialog_model_setup_confirm">Go to Settings</string>
+    <string name="dialog_model_setup_cancel">Cancel</string>
+
+    <!-- Image Crop Activity -->
+    <string name="crop_title">Select Recognition Area</string>
+    <string name="crop_instruction">Drag corners to adjust recognition area</string>
+    <string name="crop_zoom_hint">Pinch to zoom and drag image</string>
+    <string name="crop_confirm">Confirm</string>
+    <string name="crop_cancel">Cancel</string>
+    <string name="crop_reset">Reset</string>
+
+    <!-- AI System Prompt -->
+    <string name="ai_question_type_choice">Multiple Choice</string>
+    <string name="ai_question_type_essay">Essay</string>
+    <string name="ai_question_type_blank">Fill in the Blank</string>
+    <string name="system_prompt_type_separator">, </string>
+    <string name="system_prompt_limit_header">## Constraints</string>
+    <string name="system_prompt_type_template">Only handle the following question types: %1$s. If a question does not match, set questionType="%2$s".</string>
+    <string name="system_prompt_search_header">## Reference Materials\nThe following are search results related to the question, which can be used as answering references (reference only, do not copy directly):</string>
+    <string name="system_prompt_user_message">Please analyze the following question:\n\n%1$s</string>
+    <string name="system_prompt_recording_header">## Batch Mode\nYou are answering in batch mode. This is question %1$d of %2$d. Please prefix your answer with the question number (e.g., "Q%1$d:"), to enable automatic matching and result aggregation.</string>
+    <string name="system_prompt_base"><![CDATA[You are a rigorous structured answering assistant. Read the question text provided by the user, extract the stem, type, options, and answer, and return valid JSON only. Do not output anything other than JSON (no explanations, no Markdown, no comments).
+
+## Output Requirements
+- If the input contains only one question: return a JSON object.
+- If the input contains multiple questions: return a JSON array, each element is an object for one question.
+- Each object must include:
+```
+  {
+    "question": string,
+    "questionType": "%1$s" | "%2$s" | "%3$s",
+    "answer": string,
+    "options": string[]    // Only when questionType is "%1$s"
+  }
+```
+
+## Question Type Rules
+- Single choice, multiple choice, or uncertain choice questions → "%1$s"
+- Contains blanks or underscores (e.g., "(    )", "_____") → "%3$s"
+- Other subjective questions → "%2$s"
+
+## Option Extraction (only when question type is "%1$s")
+- Support markers such as A. / A、 / (A) / A) / A: / A： / A． etc.
+- Normalize to "A. xxx".
+- Keep original order and trim extra line breaks and spaces.
+
+## Answer Rules (answer field MUST be filled)
+- %1$s:
+  - Single choice: return the correct option letter (e.g., "A" or "A. content").
+  - Multiple/uncertain: return all correct option letters, formatted as "ABC" or "A, B, C".
+  - You MUST provide an answer based on your knowledge, never leave it empty.
+- %3$s: return the full answer; separate multiple blanks with ";".
+- %2$s: respond concisely with 1–3 key sentences.
+- NEVER set answer to an empty string. You MUST provide an answer based on common knowledge.
+
+## Formatting Requirements
+- JSON must be syntactically valid (UTF-8, no trailing commas, no extra text).
+- Do not add comments, explanations, or Markdown.
+- Preserve critical conditions and units, and normalize spaces and punctuation.
+- Output JSON only; no code fences or Markdown syntax.
+- The output must start with "{" or "[" and end with "}" or "]" with nothing else surrounding it.
+]]></string>
+
+    <!-- Floating Window Status Messages -->
+    <string name="status_capturing">📸 Capturing screen…</string>
+    <string name="status_capture_failed">Capture failed, please grant screen capture permission</string>
+    <string name="status_select_region">✂️ Select recognition area…</string>
+    <string name="status_recognizing">🔍 OCR recognizing…</string>
+    <string name="status_recognized">✅ Recognition complete</string>
+    <string name="status_getting_answer">🤖 AI analyzing…</string>
+    <string name="status_searching">🔍 Searching web…</string>
+    <string name="status_answer_copied">✅ Answer copied</string>
+    <string name="status_answer_generated">✅ Answer generated</string>
+    <string name="status_error_prefix">❌ %s</string>
+    <string name="status_success_prefix">✅ %s</string>
+    <string name="status_operation_failed">Operation failed: %s</string>
+    <string name="status_crop_launch_failed">Failed to launch crop: %s</string>
+    <string name="status_crop_failed">Crop failed: %s</string>
+    <string name="status_recognition_failed">Text recognition failed: %s</string>
+    <string name="status_recognition_error">Recognition error: %s</string>
+    <string name="status_ai_analysis_failed">AI analysis failed: %s</string>
+    <string name="status_fetch_answer_failed">Failed to get answer: %s</string>
+    <string name="notification_channel_name">AI Answerer Service</string>
+    <string name="clipboard_label">AI Answer</string>
+
+    <!-- Vision Model -->
+    <string name="vision_settings_title">Vision Model Settings</string>
+    <string name="vision_settings_desc">Use vision model to analyze screenshots and extract text (alternative to OCR)</string>
+    <string name="vision_enable_label">Enable Vision Model</string>
+    <string name="vision_enable_desc">Use vision model instead of OCR, better for noisy pages</string>
+    <string name="vision_provider_label">Vision API Provider</string>
+    <string name="vision_provider_openai_compat">OpenAI Compatible</string>
+    <string name="vision_provider_custom">Custom API</string>
+    <string name="label_vision_api_url">API URL</string>
+    <string name="hint_vision_api_url">https://api.deepseek.com/v1/chat/completions</string>
+    <string name="label_vision_api_key">API Key</string>
+    <string name="hint_vision_api_key">sk-xxxxxxxx</string>
+    <string name="label_vision_model">Model Name</string>
+    <string name="hint_vision_model">e.g. deepseek-chat or gpt-4o-mini</string>
+    <string name="vision_reset_defaults">Reset to Defaults</string>
+    <string name="status_vision_analyzing">👁️ Vision analyzing…</string>
+    <string name="status_vision_detected_single">✅ Detected 1 question</string>
+    <string name="status_vision_detected_multi">📋 Detected %d questions</string>
+    <string name="status_vision_no_question">⚠️ No questions detected</string>
+    <string name="status_vision_fallback">⚠️ Vision failed, please retry</string>
+
+    <!-- Capture Mode -->
+    <string name="setting_capture_mode">Capture Mode</string>
+    <string name="setting_capture_mode_desc">Choose how to get screen content</string>
+    <string name="capture_mode_screenshot">Screenshot</string>
+    <string name="capture_mode_accessibility">Screen Reader</string>
+    <string name="accessibility_status_enabled">Accessibility service enabled</string>
+    <string name="accessibility_status_disabled">Accessibility service not enabled</string>
+    <string name="accessibility_enable_hint">Please enable AI Answerer accessibility service in system settings</string>
+    <string name="status_reading_screen">📖 Reading screen content…</string>
+    <string name="status_screen_read_failed">Screen reading failed, please ensure accessibility service is enabled</string>
+    <string name="accessibility_fallback_to_screenshot">Accessibility service not enabled, switched to screenshot mode</string>
+    <string name="accessibility_service_not_enabled">Please enable accessibility service first, or switch to screenshot mode in settings</string>
+
+    <!-- Thinking Mode -->
+    <string name="setting_thinking_mode">Enable Thinking Mode</string>
+    <string name="setting_thinking_mode_desc">Send reasoning_effort parameter to API, for reasoning models (e.g. o1, DeepSeek-R1)</string>
+
+    <!-- Regex Filter -->
+    <string name="setting_regex_filter">Multi-question Regex Filter</string>
+    <string name="setting_regex_filter_desc">Skip web search when multi-question pattern detected (always search when off)</string>
+
+    <!-- Parallel Settings -->
+    <string name="setting_parallel_title">Parallel Answer Settings</string>
+    <string name="setting_parallel_desc">Parallel processing configuration for multi-question mode</string>
+    <string name="setting_parallel_mode">Enable Parallel Mode</string>
+    <string name="setting_parallel_mode_desc">Process multiple questions simultaneously for faster results</string>
+    <string name="setting_max_concurrency">Max Concurrency: %d</string>
+    <string name="setting_max_concurrency_desc">Number of questions processed simultaneously, too high may trigger API rate limiting</string>
+    <string name="setting_concurrency_warning">⚠️ High concurrency may trigger API rate limiting</string>
+    <string name="setting_test_concurrency">Test Concurrency Performance</string>
+    <string name="setting_test_llm">Test LLM</string>
+    <string name="setting_test_vlm">Test VLM</string>
+    <string name="setting_test_search">Test Search</string>
+    <string name="testing_concurrency">Testing…</string>
+    <string name="test_result_success">✅ %1$s connected, took %2$dms</string>
+    <string name="test_result_error">❌ %1$s connection failed: %2$s</string>
+    <string name="status_parallel_answering">🤖 Answering (%1$d/%2$d)…</string>
+    <string name="status_parallel_partial_failed">⚠️ Some questions failed, showing successful results</string>
+
+    <!-- Stealth Mode -->
+    <string name="setting_stealth_title">Stealth Mode</string>
+    <string name="setting_stealth_mode">Enable Stealth Mode</string>
+    <string name="setting_stealth_mode_desc">Prevents screenshot capture, bypasses accessibility detection, and reduces window visibility</string>
+
+    <!-- Recording Mode -->
+    <string name="recording_start">Recording mode enabled</string>
+    <string name="recording_stop">Recording stopped, %d question(s) captured</string>
+    <string name="recording_indicator">🔴 Recording (%d captured)</string>
+    <string name="recording_capturing">📸 Capturing question %d…</string>
+    <string name="recording_processing">⏳ Processing answers (%1$d/%2$d complete)…</string>
+    <string name="recording_all_done">✅ All done (%d question(s))</string>
+    <string name="recording_all_done_dedup">✅ All done (%1$d captured, %2$d duplicate(s) skipped, %3$d valid)</string>
+    <string name="recording_no_valid_answers">Recording finished, but no valid answers were obtained</string>
+    <string name="recording_no_captures">No questions captured</string>
+    <string name="recording_concurrency_limit">Concurrency limit reached (%1$d/%2$d), wait for current questions to finish</string>
+    <string name="quick_toggle_record">Record</string>
+
+    <!-- Quick Button Layout Mode -->
+    <string name="setting_quick_button_layout">Quick Button Layout</string>
+    <string name="setting_quick_button_layout_desc">Layout style of quick buttons when long-pressing the main button</string>
+    <string name="quick_button_layout_arc">Arc Layout</string>
+    <string name="quick_button_layout_horizontal">Horizontal Layout</string>
+
+    <!-- Provider Settings -->
+    <string name="provider_settings_title">Language Model Settings</string>
+    <string name="provider_search_hint">Search providers…</string>
+    <string name="provider_section_api_config">API Configuration</string>
+    <string name="provider_section_models">Model List</string>
+    <string name="provider_section_links">Related Links</string>
+    <string name="provider_fetch_models">Fetch Remote Models</string>
+    <string name="provider_fetching_models">Fetching…</string>
+
+    <!-- Vision Provider Settings -->
+    <string name="vision_provider_settings_title">Vision Model Settings</string>
+    <string name="vision_provider_settings_desc">Select vision model provider and model for screenshot recognition</string>
+
+    <!-- Web Search Settings -->
+    <string name="web_search_settings_title">Web Search Settings</string>
+    <string name="web_search_search_hint">Search providers…</string>
+    <string name="web_search_section_config">Search Configuration</string>
+    <string name="web_search_test_connection">Test Search</string>
+    <string name="web_search_test_query">Latest AI advances</string>
+    <string name="web_search_enabled_label">Enable Web Search</string>
+    <string name="web_search_regex_filter">Multi-question Regex Filter</string>
+    <string name="web_search_regex_filter_desc">Skip web search when multiple questions detected</string>
+
+    <!-- Recording result card progress -->
+    <string name="recording_processing_header">Processing (%1$d/%2$d)</string>
+    <string name="recording_done_header">All Done (%1$d total)</string>
+    <string name="recording_more_coming">More coming…</string>
+</resources>
