@@ -105,6 +105,9 @@ com.hwb.aianswerer/
 
 ### Changelog
 
+#### v1.5.1 (Bug Fix)
+* **Parallel mode answer ordering fix**: Answers now appear in original question order instead of completion order
+
 #### v1.5.0 (Architecture Refactor & Experience Improvements)
 * **Architecture Refactor**
   - Split large files: CommonComponents(1256 lines)→5 files, OpenAIClient(996 lines)→2 files, AppConfig(1005 lines)→8 files (facade pattern)

@@ -1291,7 +1291,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val maxConcurrency = AppConfig.getMaxConcurrency()
         val completedCount = java.util.concurrent.atomic.AtomicInteger(0)
         val failedCount = java.util.concurrent.atomic.AtomicInteger(0)
-        val allAnswers = java.util.concurrent.ConcurrentLinkedQueue<com.hwb.aianswerer.models.AIAnswer>()
+        val allAnswers = arrayOfNulls<List<com.hwb.aianswerer.models.AIAnswer>>(questions.size)
 
         // 限制并发数
         val semaphore = Semaphore(maxConcurrency)
@@ -1317,7 +1317,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             val result = pipeline.askLlm(question.text, questionTypes, searchContext)
 
                             result.onSuccess { answers ->
-                                allAnswers.addAll(answers)
+                                allAnswers[idx] = answers
                                 AppLog.d("FWS", "题目${idx + 1}答题完成: ${answers.size}个答案")
                             }.onFailure { error ->
                                 AppLog.e("FWS", "题目${idx + 1}答题失败: ${error.message}")
@@ -1349,8 +1349,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             jobs.forEach { job -> job.join() }
         }
 
-        // 显示结果
-        if (allAnswers.isNotEmpty()) {
+        // 显示结果（按题号顺序排列）
+        val ordered = allAnswers.filterNotNull().flatten()
+        if (ordered.isNotEmpty()) {
             // 部分失败时显示提示
             if (failedCount.get() > 0) {
                 showStatusMessage(
@@ -1358,7 +1359,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     3000
                 )
             }
-            handleAnswerSuccess(allAnswers.toList(), autoCopy)
+            handleAnswerSuccess(ordered, autoCopy)
         } else {
             showErrorMessage(getString(R.string.status_ai_analysis_failed, "所有题目答题失败"))
         }
