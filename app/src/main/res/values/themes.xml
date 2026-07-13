@@ -7,6 +7,9 @@
 
     <style name="Theme.AIAnswerer" parent="Base.Theme.AIAnswerer" />
 
+    <!-- Android 11 fallback: 无启动屏动画，但主题名需存在以免崩溃 -->
+    <style name="Theme.AIAnswerer.Splash" parent="Theme.AIAnswerer" />
+
     <!-- 透明Activity主题 -->
     <style name="Theme.TransparentActivity" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>

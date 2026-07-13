@@ -26,8 +26,9 @@ object Constants {
     fun buildSystemPrompt(questionTypes: Set<String>, searchContext: String = ""): String {
         val basePrompt = getBaseSystemPrompt()
         val promptBuilder = StringBuilder(basePrompt)
+        val normalizedTypes = normalizeQuestionTypes(questionTypes)
 
-        val hasConstraints = questionTypes.isNotEmpty() || searchContext.isNotBlank()
+        val hasConstraints = normalizedTypes.isNotEmpty() || searchContext.isNotBlank()
         if (!hasConstraints) {
             // 即使没有约束，也添加输出语言
             val lang = AppConfig.getOutputLanguage()
@@ -45,11 +46,11 @@ object Constants {
         val essayType = MyApplication.getString(R.string.ai_question_type_essay)
 
         // 添加题型限制
-        if (questionTypes.isNotEmpty()) {
+        if (normalizedTypes.isNotEmpty()) {
             promptBuilder.append(
                 MyApplication.getString(
                     R.string.system_prompt_type_template,
-                    questionTypes.joinToString(typeSeparator),
+                    normalizedTypes.joinToString(typeSeparator),
                     essayType
                 )
             )
@@ -87,6 +88,8 @@ object Constants {
         val basePrompt = getBaseSystemPrompt()
         val promptBuilder = StringBuilder(basePrompt)
 
+        val normalizedTypes = normalizeQuestionTypes(questionTypes)
+
         // 批处理模式上下文
         promptBuilder.append("\n\n")
         promptBuilder.append(
@@ -98,7 +101,7 @@ object Constants {
         )
 
         // 题型限制
-        if (questionTypes.isNotEmpty()) {
+        if (normalizedTypes.isNotEmpty()) {
             promptBuilder.append("\n\n")
             promptBuilder.append(MyApplication.getString(R.string.system_prompt_limit_header))
             promptBuilder.append('\n')
@@ -107,7 +110,7 @@ object Constants {
             promptBuilder.append(
                 MyApplication.getString(
                     R.string.system_prompt_type_template,
-                    questionTypes.joinToString(typeSeparator),
+                    normalizedTypes.joinToString(typeSeparator),
                     essayType
                 )
             )
@@ -141,6 +144,20 @@ object Constants {
             essayType,
             blankType
         )
+    }
+
+    /**
+     * 将主页选择题的细粒度标签（单选题/多选题/不定项选择题）
+     * 翻译为 AI 认识的内部类型（选择题/填空题/问答题）。
+     */
+    private fun normalizeQuestionTypes(types: Set<String>): Set<String> {
+        val choiceType = MyApplication.getString(R.string.ai_question_type_choice) // "选择题"
+        return types.map { type ->
+            when {
+                type.contains("选") -> choiceType       // 单选题、多选题、不定项选择题 → 选择题
+                else -> type                            // 填空题、问答题 → 不变
+            }
+        }.toSet()
     }
 }
 

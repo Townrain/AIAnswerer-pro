@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -132,7 +134,159 @@ private val MODEL_PROVIDERS = listOf(
     ProviderDef("azure-openai", "Azure OpenAI", ModelProviderType.AZURE,
         "https://{resource}.openai.azure.com/openai/deployments/{deployment}",
         listOf("gpt-4o", "gpt-4", "gpt-35-turbo"),
-        "https://azure.microsoft.com/products/ai-services/openai-service")
+        "https://azure.microsoft.com/products/ai-services/openai-service"),
+    // 更多国内常用厂商
+    ProviderDef("minimax", "MiniMax (海螺)", ModelProviderType.OPENAI,
+        "https://api.minimaxi.com/v1",
+        listOf("MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1"),
+        "https://www.minimaxi.com", "https://platform.minimaxi.com/user-center/basic-information/interface-key"),
+    ProviderDef("doubao", "豆包 (字节)", ModelProviderType.OPENAI,
+        "https://ark.cn-beijing.volces.com/api/v3",
+        listOf("doubao-seed-1-8-251228", "doubao-1-5-pro-32k-250115", "doubao-1-5-vision-pro-32k-250115"),
+        "https://www.volcengine.com/product/doubao", "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey"),
+    ProviderDef("ai302", "302.AI", ModelProviderType.OPENAI,
+        "https://api.302.ai/v1",
+        listOf("deepseek-chat", "deepseek-reasoner", "gpt-4o", "claude-sonnet-4-20250514", "gemini-2.5-pro"),
+        "https://302.ai", "https://dash.302.ai/apis"),
+    ProviderDef("aihubmix", "AiHubMix", ModelProviderType.OPENAI,
+        "https://aihubmix.com/v1",
+        listOf("gpt-5", "gpt-4o", "claude-sonnet-4-20250514", "gemini-2.5-pro"),
+        "https://aihubmix.com", "https://aihubmix.com/token"),
+    ProviderDef("burncloud", "BurnCloud", ModelProviderType.OPENAI,
+        "https://api.burncloud.com/v1",
+        listOf("claude-opus-4-5-20251101", "claude-sonnet-4-5-20250929", "gemini-2.5-flash", "deepseek-chat"),
+        "https://burncloud.com", "https://burncloud.com/panel"),
+    ProviderDef("ppio", "PPIO", ModelProviderType.OPENAI,
+        "https://api.ppio.ai/v1",
+        listOf("deepseek/deepseek-v3.2", "minimax/minimax-m2", "qwen/qwen3-235b-a22b-instruct-2507"),
+        "https://ppio.ai", "https://ppio.ai/console"),
+    // ── 更多 OpenAI 兼容厂商 ──
+    ProviderDef("cherryin", "CherryIN", ModelProviderType.OPENAI,
+        "https://open.cherryin.cc",
+        listOf(), "https://open.cherryin.ai", "https://open.cherryin.ai/console/token"),
+    ProviderDef("ocoolai", "ocoolAI", ModelProviderType.OPENAI,
+        "https://api.ocoolai.com",
+        listOf("deepseek-chat", "deepseek-reasoner", "gpt-4o"),
+        "https://one.ocoolai.com", "https://one.ocoolai.com/token"),
+    ProviderDef("zai", "Z.ai", ModelProviderType.OPENAI,
+        "https://api.z.ai/api/paas/v4",
+        listOf("glm-5", "glm-4.7", "glm-4.6", "glm-4.6v"),
+        "https://z.ai", "https://z.ai/manage-apikey/apikey-list"),
+    ProviderDef("alayanew", "AlayaNew", ModelProviderType.OPENAI,
+        "https://deepseek.alayanew.com",
+        listOf(), "https://www.alayanew.com", "https://www.alayanew.com/backend/register"),
+    ProviderDef("dmxapi", "DMXAPI", ModelProviderType.OPENAI,
+        "https://www.dmxapi.cn",
+        listOf("Qwen/Qwen2.5-7B-Instruct", "ERNIE-Speed-128K", "gpt-4o"),
+        "https://www.dmxapi.cn", "https://www.dmxapi.cn/register"),
+    ProviderDef("aionly", "AIOnly", ModelProviderType.OPENAI,
+        "https://api.aiionly.com",
+        listOf("claude-opus-4-6", "claude-sonnet-4-6", "gpt-5.4", "gemini-3.1-pro-preview"),
+        "https://www.aiionly.com", "https://maas.aiionly.com/keyApi"),
+    ProviderDef("tokenflux", "TokenFlux", ModelProviderType.OPENAI,
+        "https://api.tokenflux.ai/openai/v1",
+        listOf("gpt-4.1", "claude-sonnet-4", "gemini-2.5-pro", "deepseek-v3"),
+        "https://tokenflux.ai"),
+    ProviderDef("cephalon", "Cephalon", ModelProviderType.OPENAI,
+        "https://cephalon.cloud/user-center/v1/model",
+        listOf("DeepSeek-R1", "DeepSeek-V3", "Qwen3-235B-A22B-Instruct-2507", "kimi-k2-0711-preview"),
+        "https://cephalon.cloud", "https://cephalon.cloud/api"),
+    ProviderDef("lanyun", "LANYUN (蓝云)", ModelProviderType.OPENAI,
+        "https://maas-api.lanyun.net",
+        listOf("deepseek-ai/DeepSeek-R1", "deepseek-ai/DeepSeek-V3", "Qwen2.5-72B-Instruct"),
+        "https://maas.lanyun.net", "https://maas.lanyun.net/#/system/apiKey"),
+    ProviderDef("ph8", "PH8", ModelProviderType.OPENAI,
+        "https://ph8.co",
+        listOf("deepseek-v3-241226", "deepseek-r1-250120"),
+        "https://ph8.co", "https://ph8.co/apiKey"),
+    ProviderDef("sophnet", "SophNet", ModelProviderType.OPENAI,
+        "https://www.sophnet.com/api/open-apis/v1",
+        listOf(), "https://sophnet.com"),
+    ProviderDef("minimax-global", "MiniMax Global", ModelProviderType.OPENAI,
+        "https://api.minimax.io/v1",
+        listOf("MiniMax-M2.7", "MiniMax-M2.5"),
+        "https://platform.minimax.io", "https://platform.minimax.io/user-center/basic-information/interface-key"),
+    ProviderDef("qiniu", "七牛云", ModelProviderType.OPENAI,
+        "https://api.qnaigc.com",
+        listOf("deepseek-r1", "deepseek-v3", "qwq-32b", "qwen2.5-72b-instruct"),
+        "https://qiniu.com", "https://portal.qiniu.com/ai-inference/api-key"),
+    // ── 国内大厂 ──
+    ProviderDef("baichuan", "百川智能", ModelProviderType.OPENAI,
+        "https://api.baichuan-ai.com",
+        listOf(), "https://www.baichuan-ai.com", "https://platform.baichuan-ai.com/console/apikey"),
+    ProviderDef("stepfun", "阶跃星辰", ModelProviderType.OPENAI,
+        "https://api.stepfun.com",
+        listOf(), "https://platform.stepfun.com", "https://platform.stepfun.com/interface-key"),
+    ProviderDef("yi", "零一万物", ModelProviderType.OPENAI,
+        "https://api.lingyiwanwu.com",
+        listOf(), "https://platform.lingyiwanwu.com", "https://platform.lingyiwanwu.com/apikeys"),
+    ProviderDef("hunyuan", "腾讯混元", ModelProviderType.OPENAI,
+        "https://api.hunyuan.cloud.tencent.com",
+        listOf(), "https://cloud.tencent.com/product/hunyuan", "https://console.cloud.tencent.com/hunyuan/api-key"),
+    ProviderDef("tencent-cloud-ti", "腾讯云 TI", ModelProviderType.OPENAI,
+        "https://api.lkeap.cloud.tencent.com",
+        listOf(), "https://cloud.tencent.com/product/ti", "https://console.cloud.tencent.com/lkeap/api"),
+    ProviderDef("baidu-cloud", "百度千帆", ModelProviderType.OPENAI,
+        "https://qianfan.baidubce.com/v2",
+        listOf(), "https://cloud.baidu.com", "https://console.bce.baidu.com/iam/#/iam/apikey/list"),
+    ProviderDef("xirang", "天翼云 (息壤)", ModelProviderType.OPENAI,
+        "https://wishub-x1.ctyun.cn",
+        listOf(), "https://www.ctyun.cn"),
+    ProviderDef("modelscope", "ModelScope", ModelProviderType.OPENAI,
+        "https://api-inference.modelscope.cn/v1",
+        listOf(), "https://modelscope.cn", "https://modelscope.cn/my/myaccesstoken"),
+    // ── 国际厂商 ──
+    ProviderDef("groq", "Groq", ModelProviderType.OPENAI,
+        "https://api.groq.com/openai",
+        listOf(), "https://groq.com", "https://console.groq.com/keys"),
+    ProviderDef("together", "Together AI", ModelProviderType.OPENAI,
+        "https://api.together.xyz",
+        listOf(), "https://www.together.ai", "https://api.together.ai/settings/api-keys"),
+    ProviderDef("fireworks", "Fireworks AI", ModelProviderType.OPENAI,
+        "https://api.fireworks.ai/inference",
+        listOf(), "https://fireworks.ai", "https://fireworks.ai/account/api-keys"),
+    ProviderDef("nvidia", "NVIDIA NIM", ModelProviderType.OPENAI,
+        "https://integrate.api.nvidia.com",
+        listOf(), "https://build.nvidia.com"),
+    ProviderDef("grok", "Grok (xAI)", ModelProviderType.OPENAI,
+        "https://api.x.ai",
+        listOf(), "https://x.ai"),
+    ProviderDef("hyperbolic", "Hyperbolic", ModelProviderType.OPENAI,
+        "https://api.hyperbolic.xyz",
+        listOf(), "https://app.hyperbolic.xyz", "https://app.hyperbolic.xyz/settings"),
+    ProviderDef("mistral", "Mistral AI", ModelProviderType.OPENAI,
+        "https://api.mistral.ai",
+        listOf(), "https://mistral.ai", "https://console.mistral.ai/api-keys"),
+    ProviderDef("jina", "Jina AI", ModelProviderType.OPENAI,
+        "https://api.jina.ai",
+        listOf(), "https://jina.ai"),
+    ProviderDef("perplexity", "Perplexity", ModelProviderType.OPENAI,
+        "https://api.perplexity.ai",
+        listOf(), "https://perplexity.ai", "https://www.perplexity.ai/settings/api"),
+    ProviderDef("infini", "Infini", ModelProviderType.OPENAI,
+        "https://cloud.infini-ai.com/maas",
+        listOf(), "https://cloud.infini-ai.com", "https://cloud.infini-ai.com/iam/secret/key"),
+    ProviderDef("poe", "Poe", ModelProviderType.OPENAI,
+        "https://api.poe.com/v1",
+        listOf(), "https://poe.com", "https://poe.com/api/keys"),
+    ProviderDef("longcat", "LongCat", ModelProviderType.OPENAI,
+        "https://api.longcat.chat/openai",
+        listOf(), "https://longcat.chat", "https://longcat.chat/platform/api_keys"),
+    ProviderDef("huggingface", "Hugging Face", ModelProviderType.OPENAI,
+        "https://router.huggingface.co/v1",
+        listOf(), "https://huggingface.co", "https://huggingface.co/settings/tokens"),
+    ProviderDef("cerebras", "Cerebras AI", ModelProviderType.OPENAI,
+        "https://api.cerebras.ai/v1",
+        listOf(), "https://www.cerebras.ai", "https://cloud.cerebras.ai"),
+    ProviderDef("voyageai", "Voyage AI", ModelProviderType.OPENAI,
+        "https://api.voyageai.com",
+        listOf(), "https://www.voyageai.com", "https://dashboard.voyageai.com/organization/api-keys"),
+    ProviderDef("github", "GitHub Models", ModelProviderType.OPENAI,
+        "https://models.github.ai/inference",
+        listOf("gpt-4o"), "https://github.com/marketplace/models", "https://github.com/settings/tokens"),
+    ProviderDef("copilot", "GitHub Copilot", ModelProviderType.OPENAI,
+        "https://api.githubcopilot.com",
+        listOf())
 )
 
 // =============================================================================
@@ -844,8 +998,8 @@ private fun ModelProviderCard(
 
                 // Links
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ps.def.officialUrl?.let { ModelLinkButton(t, "官方网站") }
-                    ps.def.apiKeyUrl?.let { ModelLinkButton(t, "获取 Key") }
+                    ps.def.officialUrl?.let { url -> ModelLinkButton(t, "官方网站", url) }
+                    ps.def.apiKeyUrl?.let { url -> ModelLinkButton(t, "获取 Key", url) }
                 }
                 Spacer(Modifier.height(12.dp))
 
@@ -941,18 +1095,36 @@ private fun ModelSaveButton(t: Th, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ModelLinkButton(t: Th, label: String) {
+private fun ModelLinkButton(t: Th, label: String, url: String) {
+    val context = LocalContext.current
+    val interactionSource = remember { MutableInteractionSource() }
+    var pressed by remember { mutableStateOf(false) }
     val scale = remember { Animatable(1f) }
-    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> { scale.snapTo(0.92f); pressed = true }
+                is PressInteraction.Cancel -> { scale.animateTo(1f, spring(dampingRatio = 0.15f, stiffness = 500f)); pressed = false }
+                is PressInteraction.Release -> { /* handled below */ }
+            }
+        }
+    }
+    LaunchedEffect(pressed) {
+        if (pressed) {
+            kotlinx.coroutines.delay(120)
+            scale.animateTo(1f, spring(dampingRatio = 0.15f, stiffness = 500f))
+            pressed = false
+        }
+    }
+
     Box(Modifier.scale(scale.value).clip(RoundedCornerShape(12.dp))
         .background(t.p.copy(alpha = if (t.isLight) 0.08f else 0.12f))
         .border(1.dp, t.p.copy(alpha = if (t.isLight) 0.2f else 0.15f), RoundedCornerShape(12.dp))
-        .pointerInput(Unit) {
-            detectTapGestures(onPress = {
-                scale.snapTo(0.92f); val released = tryAwaitRelease()
-                scope.launch { scale.animateTo(1f, spring(dampingRatio = 0.15f, stiffness = 500f)) }
-            })
-        }.padding(horizontal = 14.dp, vertical = 8.dp)) {
+        .clickable(interactionSource = interactionSource, indication = null) {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+        }
+        .padding(horizontal = 14.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(LocalIcons.Link, null, tint = t.p, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(5.dp))

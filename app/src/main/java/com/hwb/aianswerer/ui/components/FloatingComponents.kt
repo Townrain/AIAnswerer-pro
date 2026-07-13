@@ -24,8 +24,14 @@ data class QuickAction(
 // 状态枚举
 // =============================================================================
 
-enum class FloatingStatus {
-    Idle, Capturing, Recognizing, Searching, GettingAnswer, Success, Error
+sealed class FloatingStatus {
+    data object Idle : FloatingStatus()
+    data object Capturing : FloatingStatus()
+    data object Recognizing : FloatingStatus()
+    data object Searching : FloatingStatus()
+    data object GettingAnswer : FloatingStatus()
+    data object Success : FloatingStatus()
+    data object Error : FloatingStatus()
 }
 
 // =============================================================================
@@ -33,16 +39,16 @@ enum class FloatingStatus {
 // =============================================================================
 
 internal object FWDims {
-    val pillHeight = 36.dp
+    val pillHeight get() = com.hwb.aianswerer.config.AppConfig.getFloatButtonSize().dp
     val pillCornerRadius = 21.dp
-    val pillIconSize = 20.dp
-    val pillHPadding = 10.dp
-    val pillVPadding = 8.dp
+    val pillIconSize get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 20 / 36).dp
+    val pillHPadding get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 10 / 36).dp
+    val pillVPadding get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 8 / 36).dp
     val pillEdgeMargin = 8.dp
 
     val cardWidthRatio = 0.88f
     val cardCornerRadius = 20.dp
-    val cardMaxHeight = 460.dp
+    val cardMaxHeight = 560.dp
     val cardSectionSpacing = 10.dp
     val cardItemSpacing = 6.dp
     val cardPaddingH = 14.dp

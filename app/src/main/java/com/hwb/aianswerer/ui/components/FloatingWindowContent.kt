@@ -382,14 +382,14 @@ fun FloatingWindowContent(
         val sH = constraints.maxHeight.toFloat()
 
         val marginPxInit = with(density) { FWDims.pillEdgeMargin.toPx() }
-        val pillHInit = with(density) { FWDims.pillHeight.toPx() }
+        val pillHInit = with(density) { buttonSize.dp.toPx() }
         if (rightEdge < 0f) {
             rightEdge = sW - marginPxInit
             dragX = rightEdge - with(density) { 40.dp.toPx() }
             snapY = initialY.coerceIn(0f, (sH - pillHInit).coerceAtLeast(0f))
             dragY = snapY
         }
-        val pillH = with(density) { FWDims.pillHeight.toPx() }
+        val pillH = with(density) { buttonSize.dp.toPx() }
         val pillW = if (measuredPillW > 0f) measuredPillW else with(density) { 40.dp.toPx() }
         val marginPx = with(density) { FWDims.pillEdgeMargin.toPx() }
         val rightEdgeTarget = sW - marginPx
@@ -1152,7 +1152,7 @@ internal fun RecordingResultCard(
                 Column(Modifier
                     .padding(horizontal = FWDims.cardPaddingH)
                     .padding(bottom = FWDims.cardPaddingV)
-                    .heightIn(max = 380.dp)
+                    .heightIn(max = 480.dp)
                     .verticalScroll(rememberScrollState())
                 ) {
                     pageAnswers.forEach { (num, fullText) ->

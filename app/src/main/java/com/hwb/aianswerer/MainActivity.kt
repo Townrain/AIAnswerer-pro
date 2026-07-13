@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -41,12 +40,21 @@ class MainActivity : BaseActivity() {
     // Dialog state
     private var showLanguageDialog by mutableStateOf(false)
     private var showModelSetupDialog by mutableStateOf(false)
-    private var dialogQueue = mutableStateListOf<String>()
-
-    companion object {
-        const val DIALOG_LANGUAGE = "language"
-        const val DIALOG_MODEL_SETUP = "model_setup"
-    }
+    private val dialogQueue = DialogQueue(
+        showLanguageDialog = { showLanguageDialog },
+        setShowLanguageDialog = { showLanguageDialog = it },
+        showModelSetupDialog = { showModelSetupDialog },
+        setShowModelSetupDialog = { showModelSetupDialog = it },
+        restartActivity = {
+            val intent = Intent(this, MainActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+            finish()
+        },
+        navigateToSettings = {
+            startActivity(Intent(this, com.hwb.aianswerer.providers.ProviderSettingsActivity::class.java))
+        }
+    )
 
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -77,7 +85,7 @@ class MainActivity : BaseActivity() {
 
         selectedQuestionTypes = AppConfig.getQuestionTypes()
         cropMode = AppConfig.getCropMode()
-        checkAndQueueDialogs()
+        dialogQueue.checkAndQueueDialogs()
 
         setContent {
             val t = sandboxTheme()
@@ -106,16 +114,16 @@ class MainActivity : BaseActivity() {
                 // Language dialog
                 if (showLanguageDialog) {
                     LanguageSelectionDialog(
-                        onDismiss = { dismissLanguageDialog() },
-                        onLanguageConfirmed = { handleLanguageConfirmed() }
+                        onDismiss = { dialogQueue.dismissLanguageDialog() },
+                        onLanguageConfirmed = { dialogQueue.handleLanguageConfirmed() }
                     )
                 }
 
                 // Model setup dialog
                 if (showModelSetupDialog) {
                     ModelSetupReminderDialog(
-                        onDismiss = { dismissModelSetupDialog() },
-                        onGoToSettings = { navigateToModelSettings() }
+                        onDismiss = { dialogQueue.dismissModelSetupDialog() },
+                        onGoToSettings = { dialogQueue.navigateToModelSettings() }
                     )
                 }
             }
@@ -125,9 +133,9 @@ class MainActivity : BaseActivity() {
     private fun checkAndRequestPermissions() {
         if (!AppConfig.isApiConfigValid()) {
             Toast.makeText(this, getString(R.string.toast_model_not_configured), Toast.LENGTH_LONG).show()
-            if (!dialogQueue.contains(DIALOG_MODEL_SETUP)) {
-                dialogQueue.add(DIALOG_MODEL_SETUP)
-                processDialogQueue()
+            if (!dialogQueue.queue.contains(DialogQueue.DIALOG_MODEL_SETUP)) {
+                dialogQueue.queue.add(DialogQueue.DIALOG_MODEL_SETUP)
+                dialogQueue.processDialogQueue()
             }
             return
         }
@@ -198,53 +206,6 @@ class MainActivity : BaseActivity() {
         screenCaptureResultCode = null
         screenCaptureData = null
         Toast.makeText(this, getString(R.string.toast_mode_stopped), Toast.LENGTH_SHORT).show()
-    }
-
-    // ── Dialog management ──
-
-    private fun checkAndQueueDialogs() {
-        when {
-            AppConfig.isFirstLaunch() -> dialogQueue.add(DIALOG_LANGUAGE)
-            !AppConfig.isApiConfigValid() -> dialogQueue.add(DIALOG_MODEL_SETUP)
-        }
-        processDialogQueue()
-    }
-
-    private fun processDialogQueue() {
-        if (dialogQueue.isNotEmpty()) {
-            when (dialogQueue.first()) {
-                DIALOG_LANGUAGE -> showLanguageDialog = true
-                DIALOG_MODEL_SETUP -> showModelSetupDialog = true
-            }
-        }
-    }
-
-    private fun dismissLanguageDialog() {
-        showLanguageDialog = false
-        dialogQueue.remove(DIALOG_LANGUAGE)
-        processDialogQueue()
-    }
-
-    private fun handleLanguageConfirmed() {
-        dismissLanguageDialog()
-        if (dialogQueue.isEmpty() && !AppConfig.isApiConfigValid()) {
-            dialogQueue.add(DIALOG_MODEL_SETUP)
-        }
-        val intent = Intent(this, MainActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        startActivity(intent)
-        finish()
-    }
-
-    private fun dismissModelSetupDialog() {
-        showModelSetupDialog = false
-        dialogQueue.remove(DIALOG_MODEL_SETUP)
-        processDialogQueue()
-    }
-
-    private fun navigateToModelSettings() {
-        dismissModelSetupDialog()
-        startActivity(Intent(this, com.hwb.aianswerer.providers.ProviderSettingsActivity::class.java))
     }
 
     override fun onResume() {

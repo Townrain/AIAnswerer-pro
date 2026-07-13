@@ -105,6 +105,31 @@ com.hwb.aianswerer/
 
 ### Changelog
 
+#### v1.5.0 (Architecture Refactor & Experience Improvements)
+* **Architecture Refactor**
+  - Split large files: CommonComponents(1256 lines)→5 files, OpenAIClient(996 lines)→2 files, AppConfig(1005 lines)→8 files (facade pattern)
+  - Added 38 unit tests covering JSON parsing, dialog queue, prompt building
+  - Expanded provider list from 13 to 52, covering major domestic and international AI vendors
+* **Performance**
+  - System Prompt simplified by ~80%, significantly faster AI analysis
+  - maxTokens 1024→512, reduced redundant output
+  - Timeout 180s→60s, avoiding long waits
+  - Parallel mode enabled by default, max concurrency set to 10
+* **Bug Fixes**
+  - Recording mode captureCount not incrementing, causing results to not display
+  - Stealth mode/floating window appearance settings not taking immediate effect
+  - Floating window size slider not working
+  - Provider links/GitHub link on About page not responding to clicks
+  - Search toggle state lost after service restart
+  - Question type label mismatch causing AI to output wrong types
+  - Answer card content being clipped for long answers
+* **UI Improvements**
+  - Custom app icon (neural network nodes + checkmark design)
+  - Android 12+ splash screen with new icon
+  - Default floating button size 56→40
+  - VLM quick toggle defaults to ON when vision model is configured
+  - Recording mode window touch area optimized
+
 #### v1.4.1 (Quick Button Layout & Settings Optimization)
 * **Quick Button Layout Mode**
   - Added quick button layout setting: Arc Layout / Horizontal Layout, switchable in settings at any time

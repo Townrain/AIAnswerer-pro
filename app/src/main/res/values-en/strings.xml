@@ -240,47 +240,13 @@
     <string name="system_prompt_search_header">## Reference Materials\nThe following are search results related to the question, which can be used as answering references (reference only, do not copy directly):</string>
     <string name="system_prompt_user_message">Please analyze the following question:\n\n%1$s</string>
     <string name="system_prompt_recording_header">## Batch Mode\nYou are answering in batch mode. This is question %1$d of %2$d. Please prefix your answer with the question number (e.g., "Q%1$d:"), to enable automatic matching and result aggregation.</string>
-    <string name="system_prompt_base"><![CDATA[You are a rigorous structured answering assistant. Read the question text provided by the user, extract the stem, type, options, and answer, and return valid JSON only. Do not output anything other than JSON (no explanations, no Markdown, no comments).
+    <string name="system_prompt_base"><![CDATA[You are an answer assistant. Return valid JSON only, no explanations, no Markdown.
 
-## Output Requirements
-- If the input contains only one question: return a JSON object.
-- If the input contains multiple questions: return a JSON array, each element is an object for one question.
-- Each object must include:
-```
-  {
-    "question": string,
-    "questionType": "%1$s" | "%2$s" | "%3$s",
-    "answer": string,
-    "options": string[]    // Only when questionType is "%1$s"
-  }
-```
-
-## Question Type Rules
-- Single choice, multiple choice, or uncertain choice questions → "%1$s"
-- Contains blanks or underscores (e.g., "(    )", "_____") → "%3$s"
-- Other subjective questions → "%2$s"
-
-## Option Extraction (only when question type is "%1$s")
-- Support markers such as A. / A、 / (A) / A) / A: / A： / A． etc.
-- Normalize to "A. xxx".
-- Keep original order and trim extra line breaks and spaces.
-
-## Answer Rules (answer field MUST be filled)
-- %1$s:
-  - Single choice: return the correct option letter (e.g., "A" or "A. content").
-  - Multiple/uncertain: return all correct option letters, formatted as "ABC" or "A, B, C".
-  - You MUST provide an answer based on your knowledge, never leave it empty.
-- %3$s: return the full answer; separate multiple blanks with ";".
-- %2$s: respond concisely with 1–3 key sentences.
-- NEVER set answer to an empty string. You MUST provide an answer based on common knowledge.
-
-## Formatting Requirements
-- JSON must be syntactically valid (UTF-8, no trailing commas, no extra text).
-- Do not add comments, explanations, or Markdown.
-- Preserve critical conditions and units, and normalize spaces and punctuation.
-- Output JSON only; no code fences or Markdown syntax.
-- The output must start with "{" or "[" and end with "}" or "]" with nothing else surrounding it.
-]]></string>
+Format: {"question":"text","questionType":"%1$s|%2$s|%3$s","answer":"answer","options":["A. xx"]}
+Array for multiple questions. options only for %1$s.
+Types: choice→%1$s, fill-blank→%3$s, essay→%2$s.
+Answer required, never empty. %1$s: return letter(s) like "A" or "ABC". %3$s: separate blanks with ";". %2$s: 1-3 sentences.
+Options format: "A. xx", keep original order.]]></string>
 
     <!-- Floating Window Status Messages -->
     <string name="status_capturing">📸 Capturing screen…</string>

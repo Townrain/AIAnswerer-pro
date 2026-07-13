@@ -32,22 +32,21 @@ class ApiTimeoutRegressionTest {
 
     // ═══════════════════════════════════════════════════════════════════
     // BF-001: OpenAIClient readTimeout 与 withTimeout 对齐
-    // bug: readTimeout(60s) < withTimeout(120s) → HTTP/2 60s 先炸
-    // fix: readTimeout→120s, callTimeout→130s, stream=true + awaitStreamContent
+    // readTimeout(60s) = withTimeout(60s)，避免 OkHttp 先于协程炸
     // ═══════════════════════════════════════════════════════════════════
 
-    @Test fun `BF-001 OpenAIClient readTimeout 180s`() {
+    @Test fun `BF-001 OpenAIClient readTimeout 60s`() {
         val src = readSource(openAiClientPath)
         val clientBlock = src.substringAfter("private val client: OkHttpClient by lazy {")
             .substringBefore(".build()")
-        assertTrue("readTimeout 必须为 180", clientBlock.contains("readTimeout(180"))
+        assertTrue("readTimeout 必须为 60", clientBlock.contains("readTimeout(60"))
     }
 
-    @Test fun `BF-001 OpenAIClient callTimeout 190s`() {
+    @Test fun `BF-001 OpenAIClient callTimeout 65s`() {
         val src = readSource(openAiClientPath)
         val clientBlock = src.substringAfter("private val client: OkHttpClient by lazy {")
             .substringBefore(".build()")
-        assertTrue("callTimeout 必须为 190", clientBlock.contains("callTimeout(190"))
+        assertTrue("callTimeout 必须为 65", clientBlock.contains("callTimeout(65"))
     }
 
     @Test fun `BF-001 OpenAIClient stream 为 true`() {
@@ -71,11 +70,11 @@ class ApiTimeoutRegressionTest {
             analyzeBlock.contains("awaitStreamContent()"))
     }
 
-    @Test fun `BF-001 OpenAIClient withTimeout 为 180s`() {
+    @Test fun `BF-001 OpenAIClient withTimeout 为 60s`() {
         val src = readSource(openAiClientPath)
         val analyzeBlock = src.substringAfter("fun analyzeQuestion(")
             .substringBefore("fun countQuestions(")
-        assertTrue("withTimeout 必须为 180_000L", analyzeBlock.contains("withTimeout(180_000L)"))
+        assertTrue("withTimeout 必须为 60_000L", analyzeBlock.contains("withTimeout(60_000L)"))
     }
 
     @Test fun `BF-001 OpenAIClient readTimeout 与 withTimeout 一致`() {
@@ -84,8 +83,8 @@ class ApiTimeoutRegressionTest {
             .substringBefore(".build()")
         val analyzeBlock = src.substringAfter("fun analyzeQuestion(")
             .substringBefore("fun countQuestions(")
-        assertTrue("readTimeout 与 withTimeout 必须一致为 180s",
-            clientBlock.contains("readTimeout(180") && analyzeBlock.contains("withTimeout(180_000L)"))
+        assertTrue("readTimeout 与 withTimeout 必须一致为 60s",
+            clientBlock.contains("readTimeout(60") && analyzeBlock.contains("withTimeout(60_000L)"))
     }
 
     // ═══════════════════════════════════════════════════════════════════

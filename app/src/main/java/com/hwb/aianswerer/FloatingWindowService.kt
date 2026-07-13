@@ -1,20 +1,14 @@
 package com.hwb.aianswerer
 
 import android.app.Activity
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.PixelFormat
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
@@ -41,8 +35,6 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -57,10 +49,6 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.hwb.aianswerer.api.OpenAIClient
 import com.hwb.aianswerer.ui.components.FloatingStatus
-import com.hwb.aianswerer.api.TavilyClient
-import com.hwb.aianswerer.api.search.WebSearchClientFactory
-import com.hwb.aianswerer.api.search.WebSearchResult
-import com.hwb.aianswerer.api.vision.VisionProviderFactory
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.CropRect
 import com.hwb.aianswerer.models.formatAnswerWithConfig
@@ -120,21 +108,28 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         private const val COMPOSE_RECOMPOSITION_DELAY_MS = 50L
     }
 
-    private lateinit var windowManager: WindowManager
     private var floatingView: ComposeView? = null
     @Volatile private var destroyed = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var screenCaptureManager: ScreenCaptureManager? = null
     private val textRecognitionManager = TextRecognitionManager.getInstance()
+    private val pipeline = CapturePipeline(textRecognitionManager)
+    private lateinit var windowMgr: FloatingWindowManager
+    private lateinit var recorder: RecordingCoordinator
 
     private var answerText = mutableStateOf<String?>(null)
     private var showAnswer = mutableStateOf(false)
     private var statusMessage = mutableStateOf<String?>(null)
-    private var floatingStatus = mutableStateOf(FloatingStatus.Idle)
+    private var floatingStatus = mutableStateOf<FloatingStatus>(FloatingStatus.Idle)
 
     // 悬浮按钮透明度状态（响应式，支持长按垂直滑动实时调节）
     private var floatButtonAlpha = mutableStateOf(AppConfig.getFloatButtonAlpha())
+
+    // 悬浮窗外观状态（响应式，从设置刷新）
+    private var stealthMode = mutableStateOf(AppConfig.isStealthModeEnabled())
+    private var floatButtonSizeDp = mutableStateOf(AppConfig.getFloatButtonSize())
+    private var floatCardAlpha = mutableStateOf(AppConfig.getFloatCardAlpha())
 
     // 悬浮窗高度与状态管理
     private var isArcExpanded = false
@@ -150,8 +145,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var floatOffsetX = mutableFloatStateOf(0f)
     private var floatOffsetY = mutableFloatStateOf(200f)
 
-    // 使用线程安全的Set，因为onStartCommand可能在不同线程调用
-    private var questionTypes: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private var cropMode = AppConfig.CROP_MODE_FULL
     // savedCropRect: 单次模式(once)首次裁剪后缓存，后续截图直接复用
     // savedCropRectEach: 每次模式(each)缓存上一次坐标，作为裁剪 UI 的初始位置
@@ -164,7 +157,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     // 快捷开关状态：有配置模型则默认开，无则关
     private var visionEnabled = mutableStateOf(AppConfig.isVisionEnabled())
     private var searchEnabled = mutableStateOf(
-        com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
+        com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
+            && com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
     )
     private var reasoningEnabled = mutableStateOf(AppConfig.getReasoningEffort() != null)
 
@@ -181,17 +175,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var recordingAnswers = mutableStateOf<List<Pair<Int, String>>>(emptyList())
     private var recordingCopyTexts = mutableStateOf<List<Pair<Int, String>>>(emptyList())
     private var recordingSkippedCount = mutableStateOf(0)
+    private var recordingFailedCount = mutableStateOf(0)  // 录题失败（网络/API）计数
 
     // ── 翻页答案（普通模式）──
     // 所有答题结果（单题/多题）统一拆分为逐题列表，UI 层一页一题翻页显示
     private var paginatedAnswers = mutableStateOf<List<Pair<Int, String>>>(emptyList())
     private var paginatedCopyTexts = mutableStateOf<List<Pair<Int, String>>>(emptyList())
-    private val recordingJobs = java.util.concurrent.CopyOnWriteArrayList<Job>()
-    private val recordingActiveCount = java.util.concurrent.atomic.AtomicInteger(0)
-    private var recordingTextHashes = mutableSetOf<String>()
-    private var recordingSemaphore: kotlinx.coroutines.sync.Semaphore? = null
-    private var vlmSemaphore: kotlinx.coroutines.sync.Semaphore? = null
-    private var recordingTotalQuestions = 0  // 实际题目总数（含VLM多题）
 
     // 单次截图计数器（用于日志追踪）
     private var captureCounter = 0
@@ -289,8 +278,21 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
 
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         screenCaptureManager = ScreenCaptureManager(this)
+        windowMgr = FloatingWindowManager(this)
+        recorder = RecordingCoordinator(pipeline, serviceScope, object : RecordingCoordinator.Callbacks {
+            override fun onError(message: String) { showErrorMessage(message) }
+            override fun onToast(message: String) { Toast.makeText(this@FloatingWindowService, message, Toast.LENGTH_SHORT).show() }
+            override fun onResultsAvailable(answers: List<Pair<Int, String>>, copyTexts: List<Pair<Int, String>>, total: Int, skipped: Int, failed: Int) {
+                showRecordingResultsFromCoordinator(answers, copyTexts, total, skipped, failed)
+            }
+            override fun onProgressUpdate(processed: Int, total: Int) {
+                statusMessage.value = getString(R.string.recording_processing, processed, total)
+                recordingProcessedCount.value = processed
+            }
+            override fun getString(resId: Int, vararg args: Any?): String = this@FloatingWindowService.getString(resId, *args)
+            override fun isSearchEnabled(): Boolean = searchEnabled.value
+        })
 
         // 注册广播接收器
         val filter = IntentFilter(Constants.ACTION_SHOW_ANSWER)
@@ -303,9 +305,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             registerReceiver(answerReceiver, filter)
         }
 
-        createNotificationChannel()
-        ensureNotificationPermission()
-        val notification = createNotification()
+        NotificationHelper.createChannel(this)
+        NotificationHelper.ensurePermission(this)
+        val notification = NotificationHelper.buildNotification(this)
         if (Build.VERSION.SDK_INT >= 35) {
             startForeground(
                 Constants.NOTIFICATION_ID,
@@ -344,13 +346,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             }
 
             // 读取答题设置
-            if (it.hasExtra("questionTypes")) {
-                val typesList = it.getStringArrayListExtra("questionTypes")
-                if (typesList != null) {
-                    questionTypes = typesList.toMutableSet()
-                }
-            }
-
             if (it.hasExtra("cropMode")) {
                 cropMode = it.getStringExtra("cropMode")
                     ?: AppConfig.CROP_MODE_FULL
@@ -370,7 +365,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val screenW = metrics.widthPixels.toFloat()
         val screenH = metrics.heightPixels.toFloat()
         val density = metrics.density
-        val buttonSizePx = AppConfig.getFloatButtonSize() * density
+        val buttonSizePx = floatButtonSizeDp.value * density
         val buttonHalf = buttonSizePx / 2f
         // 初始化窗口高度为内容显示基准高度
         currentWindowHeightPx = 200 * density
@@ -392,26 +387,15 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             }
         }
 
-        val params = WindowManager.LayoutParams(
-            windowWidthPx.toInt(),
-            currentWindowHeightPx.toInt(),
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            },
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    or if (AppConfig.isStealthModeEnabled()) WindowManager.LayoutParams.FLAG_SECURE else 0,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = windowX()
-            y = floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - currentWindowHeightPx.toInt())
-            if (AppConfig.isStealthModeEnabled()) alpha = 0.99f
-        }
+        val params = windowMgr.createLayoutParams(
+            windowWidthPx = windowWidthPx.toInt(),
+            windowHeightPx = currentWindowHeightPx.toInt(),
+            isLeftSide = isLeftSide(),
+            offsetY = floatOffsetY.value,
+            screenW = screenW,
+            screenH = screenH,
+            isStealth = stealthMode.value
+        )
 
         floatingView = ComposeView(this).apply {
             // Prevent black flicker during system UI transitions
@@ -421,7 +405,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
-            if (AppConfig.isStealthModeEnabled()) {
+            if (stealthMode.value) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
 
@@ -431,9 +415,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         answerText = answerText.value,
                         showAnswer = showAnswer.value,
                         statusMessage = statusMessage.value,
-                        buttonSize = AppConfig.getFloatButtonSize(),
+                        buttonSize = floatButtonSizeDp.value,
                         buttonAlpha = floatButtonAlpha.value,
-                        cardAlpha = AppConfig.getFloatCardAlpha(),
+                        cardAlpha = floatCardAlpha.value,
                         isLeftSide = isLeftSide(),
                         floatingStatus = floatingStatus.value,
                         onCaptureClick = { handleCapture() },
@@ -451,8 +435,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onCloseStatus = {
                             currentFetchJob?.cancel()
                             currentFetchJob = null
-                            recordingJobs.forEach { it.cancel() }
-                            recordingJobs.clear()
+                            recorder.cancel()
                             isProcessingRecording.value = false
                             showAnswer.value = false
                             answerText.value = null
@@ -494,7 +477,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         },
                         onSearchToggle = {
                             searchEnabled.value = !searchEnabled.value
-                            AppConfig.saveTavilyEnabled(searchEnabled.value)
+                            com.hwb.aianswerer.providers.WebSearchStorage.saveSearchEnabled(searchEnabled.value)
                             Toast.makeText(this@FloatingWindowService,
                                 if (searchEnabled.value) "联网搜索已启用" else "联网搜索已关闭",
                                 Toast.LENGTH_SHORT).show()
@@ -538,7 +521,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         displayWindowX.floatValue = windowX().toFloat()
-        windowManager.addView(floatingView, params)
+        windowMgr.attach(floatingView!!, params)
     }
 
     /**
@@ -552,21 +535,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             displayWindowX.floatValue = targetX
             return
         }
-        windowXAnimJob = serviceScope.launch {
-            val from = displayWindowX.floatValue
-            val duration = 250L
-            val start = System.currentTimeMillis()
-            while (isActive) {
-                val elapsed = System.currentTimeMillis() - start
-                val fraction = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
-                // Ease-out cubic
-                val eased = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
-                displayWindowX.floatValue = from + (targetX - from) * eased
-                updateWindowPosition()
-                if (fraction >= 1f) break
-                delay(16)
-            }
-            windowXAnimJob = null
+        windowXAnimJob = windowMgr.animateWindowX(
+            scope = serviceScope,
+            from = displayWindowX.floatValue,
+            to = targetX
+        ) { currentX ->
+            displayWindowX.floatValue = currentX
+            updateWindowPosition()
         }
     }
 
@@ -576,13 +551,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val metrics = resources.displayMetrics
         val screenW = metrics.widthPixels.toFloat()
         val screenH = metrics.heightPixels.toFloat()
-        floatingView?.let { v ->
-            val p = v.layoutParams as WindowManager.LayoutParams
-            p.x = displayWindowX.floatValue.toInt().coerceIn(0, maxOf(0, screenW.toInt() - p.width))
-            p.y = floatOffsetY.value.toInt().coerceIn(0, maxOf(0, screenH.toInt() - p.height))
-            p.height = currentWindowHeightPx.toInt()
-            try { windowManager.updateViewLayout(v, p) } catch (e: Exception) { AppLog.e("FWS", "updateLayout failed", e) }
-        }
+        windowMgr.updateLayout(
+            view = floatingView,
+            windowX = displayWindowX.floatValue.toInt(),
+            windowY = floatOffsetY.value.toInt(),
+            windowHeight = currentWindowHeightPx.toInt(),
+            screenW = screenW,
+            screenH = screenH
+        )
     }
 
     /**
@@ -595,35 +571,22 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
      *   4. 空闲状态 → 仅按钮高度（避免多余透明区拦截触摸）
      */
     private fun updateFloatingWindowHeight() {
-        // 截图期间不响应 auto-height 回调，由截图流程手动控高
         if (captureInProgress) {
             AppLog.d("FWS", "HEIGHT | blocked by capture, cur=$currentWindowHeightPx")
             return
         }
-
-        val metrics = resources.displayMetrics
-        val density = metrics.density
-        val buttonSizePx = AppConfig.getFloatButtonSize() * density
-        val idleBaseHeightPx = buttonSizePx + 16 * density  // 按钮 + 8dp 上下边距
-        val progressHeightPx = buttonSizePx + 400 * density  // 状态卡足够空间
-        val contentBaseHeightPx = 520 * density  // 答案卡
-        val screenH = metrics.heightPixels.toFloat()
-
-        val branch = when {
-            isRecording.value || isProcessingRecording.value -> "rec"
-            hasContent && (showAnswer.value || recordingAnswers.value.isNotEmpty() || paginatedAnswers.value.isNotEmpty()) -> "content"
-            hasContent -> "progress"
-            else -> "idle"
-        }
-        val newHeight = (when (branch) {
-            "rec" -> progressHeightPx
-            "content" -> contentBaseHeightPx
-            "progress" -> progressHeightPx
-            else -> idleBaseHeightPx
-        }).toInt()
-
-        AppLog.d("FWS", "HEIGHT_CALC | branch=$branch hasContent=$hasContent btnDp=${(buttonSizePx/density).toInt()} newH=$newHeight curH=${currentWindowHeightPx.toInt()} rec=${isRecording.value}")
-
+        val density = resources.displayMetrics.density
+        val newHeight = windowMgr.calculateHeight(
+            density = density,
+            screenHeightPx = resources.displayMetrics.heightPixels,
+            buttonSizeDp = floatButtonSizeDp.value,
+            isRecording = isRecording.value,
+            isProcessingRecording = isProcessingRecording.value,
+            hasContent = hasContent,
+            showAnswer = showAnswer.value,
+            hasAnswers = recordingAnswers.value.isNotEmpty() || paginatedAnswers.value.isNotEmpty()
+        )
+        AppLog.d("FWS", "HEIGHT_CALC | newH=$newHeight curH=${currentWindowHeightPx.toInt()} rec=${isRecording.value}")
         if (newHeight.toFloat() != currentWindowHeightPx) {
             currentWindowHeightPx = newHeight.toFloat()
             AppLog.d("FWS", "HEIGHT | APPLY $newHeight")
@@ -631,36 +594,21 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
     }
 
-    /**
-     * 使用用户选中的联网搜索源执行搜索，返回格式化后的上下文文本
-     */
-    private suspend fun performWebSearch(query: String, maxResults: Int = 2): String {
-        if (!searchEnabled.value) return ""
-        val providers = com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders()
-        if (providers.isEmpty()) return ""
-        val selectedName = AppConfig.getWebSearchProvider()
-        val selected = providers.find { it.name == selectedName } ?: providers.first()
-        val provider = WebSearchClientFactory.create(selected)
-        val results = provider.search(query, maxResults)
-        if (results.isEmpty()) return ""
-        return results.joinToString("\n") { "【${it.title}】${it.snippet}" }
-    }
-
     /** Hide or show the floating window content during capture */
     private fun setWindowVisible(visible: Boolean) {
-        floatingView?.let { v ->
-            val p = v.layoutParams as WindowManager.LayoutParams
-            p.alpha = if (visible) (if (AppConfig.isStealthModeEnabled()) 0.99f else 1f) else 0f
-            try { windowManager.updateViewLayout(v, p) } catch (e: Exception) { AppLog.e("FWS", "updateLayout failed", e) }
-        }
+        windowMgr.setVisible(floatingView, visible, stealthMode.value)
     }
 
     /** Re-read all app settings and apply to local state */
     private fun refreshSettingsFromApp() {
         visionEnabled.value = AppConfig.isVisionEnabled()
-        searchEnabled.value = com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
+        searchEnabled.value = com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
+            && com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
         reasoningEnabled.value = AppConfig.getReasoningEffort() != null
         floatButtonAlpha.value = AppConfig.getFloatButtonAlpha()
+        stealthMode.value = AppConfig.isStealthModeEnabled()
+        floatButtonSizeDp.value = AppConfig.getFloatButtonSize()
+        floatCardAlpha.value = AppConfig.getFloatCardAlpha()
         AppLog.d("FWS", "SETTINGS | refreshed from app")
     }
 
@@ -673,7 +621,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         if (isRecording.value) {
             // 并发数限制：活跃处理任务数不能超过设置的最大并发数
             val maxConcurrency = AppConfig.getMaxConcurrency()
-            val activeJobs = recordingActiveCount.get()
+            val activeJobs = recorder.activeJobCount.get()
             AppLog.d("REC", "并发检查: activeJobs=$activeJobs, maxConcurrency=$maxConcurrency")
             if (activeJobs >= maxConcurrency) {
                 statusMessage.value = getString(R.string.recording_concurrency_limit, activeJobs, maxConcurrency)
@@ -689,40 +637,33 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 delay(COMPOSE_RECOMPOSITION_DELAY_MS)
                 // 缩窗到按钮高度 + FLAG_SECURE：按钮可见，卡被裁剪，截图仅按钮处有小遮罩
                 val savedH = currentWindowHeightPx
-                val idleH = AppConfig.getFloatButtonSize() * resources.displayMetrics.density + 16 * resources.displayMetrics.density
+                val idleH = floatButtonSizeDp.value * resources.displayMetrics.density + 16 * resources.displayMetrics.density
                 currentWindowHeightPx = idleH
                 updateWindowPosition()
-                val wasStealth = AppConfig.isStealthModeEnabled()
-                floatingView?.let { v ->
-                    val p = v.layoutParams as WindowManager.LayoutParams
-                    p.flags = p.flags or WindowManager.LayoutParams.FLAG_SECURE
-                    try { windowManager.updateViewLayout(v, p) } catch (e: Exception) { AppLog.e("FWS", "flag SECURE failed", e) }
-                }
+                val wasStealth = stealthMode.value
+                windowMgr.setFlagSecure(floatingView, enabled = true)
                 delay(33)  // 2 frames @ 60fps, FLAG_SECURE 生效足够
                 val bitmap = screenCaptureManager?.captureScreen()
                 // 去 FLAG_SECURE 合并到 updateFloatingWindowHeight 的同一次 updateViewLayout
                 if (!wasStealth) {
-                    floatingView?.let { v ->
-                        (v.layoutParams as WindowManager.LayoutParams).flags =
-                            (v.layoutParams as WindowManager.LayoutParams).flags and WindowManager.LayoutParams.FLAG_SECURE.inv()
-                    }
+                    windowMgr.setFlagSecure(floatingView, enabled = false)
                 }
                 captureInProgress = false
-                hasContent = true
-                updateFloatingWindowHeight()  // 一次 updateViewLayout：去旗 + 改高
 
                 if (bitmap == null) {
                     showErrorMessage(getString(R.string.status_capture_failed))
                     return@launch
                 }
+                hasContent = true
+                updateFloatingWindowHeight()
                 when (cropMode) {
-                    AppConfig.CROP_MODE_FULL -> recordingProcessBitmap(bitmap)
+                    AppConfig.CROP_MODE_FULL -> recorder.processBitmap(bitmap)
                     AppConfig.CROP_MODE_EACH -> {
                         savedCropRectEach?.let { rect ->
                             val cropped = try { ImageCropUtil.cropBitmap(bitmap, rect) }
                             catch (e: Exception) { bitmap.recycle(); throw e }
                             bitmap.recycle()
-                            recordingProcessBitmap(cropped)
+                            recorder.processBitmap(cropped)
                         } ?: launchCropActivity(bitmap, null)
                     }
                     AppConfig.CROP_MODE_ONCE -> {
@@ -730,7 +671,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             val cropped = try { ImageCropUtil.cropBitmap(bitmap, rect) }
                             catch (e: Exception) { bitmap.recycle(); throw e }
                             bitmap.recycle()
-                            recordingProcessBitmap(cropped)
+                            recorder.processBitmap(cropped)
                         } ?: launchCropActivity(bitmap, null)
                     }
                 }
@@ -788,16 +729,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
                 // 缩窗到按钮高度（卡被裁剪），加 FLAG_SECURE 掩掉按钮区域
                 // 截图中不显示状态卡（idleH 太小装不下），截图只需 ~100ms 用户无感
-                val idleH = AppConfig.getFloatButtonSize() * resources.displayMetrics.density + 16 * resources.displayMetrics.density
+                val idleH = floatButtonSizeDp.value * resources.displayMetrics.density + 16 * resources.displayMetrics.density
                 currentWindowHeightPx = idleH
                 updateWindowPosition()
 
-                val wasStealth = AppConfig.isStealthModeEnabled()
-                floatingView?.let { v ->
-                    val p = v.layoutParams as WindowManager.LayoutParams
-                    p.flags = p.flags or WindowManager.LayoutParams.FLAG_SECURE
-                    try { windowManager.updateViewLayout(v, p) } catch (e: Exception) { AppLog.e("FWS", "flag SECURE failed", e) }
-                }
+                val wasStealth = stealthMode.value
+                windowMgr.setFlagSecure(floatingView, enabled = true)
                 delay(33)  // 2 frames @ 60fps, FLAG_SECURE 生效足够
 
                 val bitmap = withTimeout(8_000L) {
@@ -807,19 +744,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
                 // 去 FLAG_SECURE（改内存 flags）+ 扩窗，合并为一次 updateViewLayout
                 if (!wasStealth) {
-                    floatingView?.let { v ->
-                        (v.layoutParams as WindowManager.LayoutParams).flags =
-                            (v.layoutParams as WindowManager.LayoutParams).flags and WindowManager.LayoutParams.FLAG_SECURE.inv()
-                    }
+                    windowMgr.setFlagSecure(floatingView, enabled = false)
                 }
                 captureInProgress = false
-                hasContent = true
-                updateFloatingWindowHeight()  // 一次调用：去旗 + x/y/height 全部到位
 
                 if (bitmap == null) {
                     showErrorMessage(getString(R.string.status_capture_failed))
                     return@launch
                 }
+                hasContent = true
+                updateFloatingWindowHeight()
 
                 // 根据裁剪模式决定是否需要裁剪步骤：
                 //   full  → 直接 OCR 全屏
@@ -993,16 +927,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     ) {
         serviceScope.launch {
             try {
-                // 加载图片
                 val bitmap = ImageCropUtil.loadBitmapFromFile(imagePath)
-
-                // 裁剪图片
-                val croppedBitmap =
-                    ImageCropUtil.cropBitmap(bitmap, cropRect)
-                bitmap.recycle()
-
-                // 处理裁剪后的图片（OCR）
-                processBitmap(croppedBitmap)
+                try {
+                    val croppedBitmap = ImageCropUtil.cropBitmap(bitmap, cropRect)
+                    processBitmap(croppedBitmap)
+                } finally {
+                    bitmap.recycle()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1014,280 +945,50 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     // ══════════════════════════════════════════════
-    //  录制模式
+    //  录制模式（核心逻辑已迁移至 RecordingCoordinator）
     // ══════════════════════════════════════════════
 
-    private fun normalizeForDedupe(text: String): String {
-        return text.trim()
-            .replace(Regex("\\s+"), "")
-            .replace(Regex("[,，。.、；;：:！!？?\"'`()（）\\[\\]【】]"), "")
-            .lowercase()
-    }
-
     private fun startRecording() {
+        // 取消进行中的普通答题，防止答案泄漏到录题模式
+        currentFetchJob?.cancel()
+        currentFetchJob = null
+        recorder.start()
+        // 同步 Compose 状态
         isRecording.value = true
         recordingCaptureCount.value = 0
-        recordingProcessedCount.value = 0
         recordingSkippedCount.value = 0
+        recordingFailedCount.value = 0
         recordingAnswers.value = emptyList()
         recordingCopyTexts.value = emptyList()
         paginatedAnswers.value = emptyList()
         paginatedCopyTexts.value = emptyList()
-        recordingTextHashes.clear()
-        recordingJobs.clear()
-        recordingActiveCount.set(0)
-        recordingTotalQuestions = 0
-        recordingSemaphore = kotlinx.coroutines.sync.Semaphore(AppConfig.getMaxConcurrency())
-        vlmSemaphore = kotlinx.coroutines.sync.Semaphore(AppConfig.getMaxConcurrency())
         showAnswer.value = false
         answerText.value = null
         floatingStatus.value = FloatingStatus.Idle
         statusMessage.value = getString(R.string.recording_indicator, 0)
         Toast.makeText(this, getString(R.string.recording_start), Toast.LENGTH_SHORT).show()
-        AppLog.i("REC", "startRecording maxConcurrency=${AppConfig.getMaxConcurrency()}")
     }
 
     private fun stopRecording() {
         isRecording.value = false
-        vlmSemaphore = null
-        val total = recordingCaptureCount.value
-        val processed = recordingProcessedCount.value
-        AppLog.i("REC", "stopRecording captured=$total processed=$processed answers=${recordingAnswers.value.size}")
-        if (total == 0) {
-            Toast.makeText(this, getString(R.string.recording_no_captures), Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (recordingJobs.isEmpty()) {
-            showRecordingResults()
-        } else {
-            isProcessingRecording.value = true
-            floatingStatus.value = FloatingStatus.GettingAnswer
-            statusMessage.value = getString(R.string.recording_processing, recordingProcessedCount.value, total)
-            Toast.makeText(this, getString(R.string.recording_stop, total), Toast.LENGTH_SHORT).show()
+        when (val result = recorder.stop()) {
+            is RecordingCoordinator.StopResult.NothingToShow -> {
+                Toast.makeText(this, getString(R.string.recording_no_captures), Toast.LENGTH_SHORT).show()
+            }
+            is RecordingCoordinator.StopResult.Completed -> {
+                showRecordingResults()
+            }
+            is RecordingCoordinator.StopResult.Processing -> {
+                isProcessingRecording.value = true
+                floatingStatus.value = FloatingStatus.GettingAnswer
+                statusMessage.value = getString(R.string.recording_processing, recordingProcessedCount.value, result.captureCount)
+                Toast.makeText(this, getString(R.string.recording_stop, result.captureCount), Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     private fun handleRecordingCroppedImage(imagePath: String, cropRect: CropRect) {
-        serviceScope.launch {
-            try {
-                val bitmap = ImageCropUtil.loadBitmapFromFile(imagePath)
-                val croppedBitmap = ImageCropUtil.cropBitmap(bitmap, cropRect)
-                bitmap.recycle()
-                recordingProcessBitmap(croppedBitmap)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                showErrorMessage(getString(R.string.status_crop_failed, e.message ?: ""))
-            } finally {
-                ImageCropUtil.deleteTempFile(imagePath)
-            }
-        }
-    }
-
-    private fun recordingProcessBitmap(bitmap: android.graphics.Bitmap) {
-        val captureIndex = recordingCaptureCount.value
-        AppLog.enter("REC", "recordingProcessBitmap Q$captureIndex")
-        val job = serviceScope.launch(Dispatchers.IO) {
-            try {
-                if (AppConfig.isVisionEnabled()) {
-                    recordingProcessWithVlm(bitmap, captureIndex)
-                } else {
-                    recordingProcessWithOcr(bitmap, captureIndex)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AppLog.e("REC", "process failed for Q$captureIndex", e)
-            } finally {
-                if (!bitmap.isRecycled) bitmap.recycle()
-            }
-        }
-        recordingJobs.add(job)
-        job.invokeOnCompletion { cause ->
-            recordingJobs.remove(job)
-            if (cause != null && cause is kotlinx.coroutines.CancellationException) return@invokeOnCompletion
-            if (isProcessingRecording.value) {
-                serviceScope.launch(Dispatchers.Main) {
-                    recordingProcessedCount.value++
-                    updateRecordingProgress()
-                }
-            }
-        }
-    }
-
-    private suspend fun recordingProcessWithOcr(bitmap: android.graphics.Bitmap, captureIndex: Int) {
-        val result = textRecognitionManager.recognizeText(bitmap)
-        bitmap.recycle()
-        result.onSuccess { recognizedText ->
-            val normalized = normalizeForDedupe(recognizedText)
-            val alreadyExists = withContext(Dispatchers.Main) {
-                if (recordingTextHashes.contains(normalized)) true
-                else { recordingTextHashes.add(normalized); false }
-            }
-            if (alreadyExists) {
-                AppLog.d("REC", "去重: 第$captureIndex 题与之前重复，跳过")
-                withContext(Dispatchers.Main) { recordingSkippedCount.value++ }
-                return
-            }
-            recordingFetchAnswer(recognizedText, captureIndex)
-            withContext(Dispatchers.Main) { recordingTotalQuestions++ }
-        }
-    }
-
-    private suspend fun recordingProcessWithVlm(bitmap: android.graphics.Bitmap, captureIndex: Int) {
-        AppLog.enter("REC", "recordingProcessWithVlm Q$captureIndex")
-        val provider = VisionProviderFactory.create()
-        if (provider == null) {
-            AppLog.w("REC", "VLM Provider创建失败，降级为OCR")
-            showErrorMessage(getString(R.string.status_vision_fallback))
-            recordingProcessWithOcr(bitmap, captureIndex)
-            return
-        }
-        vlmSemaphore?.withPermit {
-            val visionResult = provider.analyze(bitmap)
-            visionResult.onSuccess { filter ->
-                bitmap.recycle()
-                if (!filter.hasQuestions) {
-                    return@withPermit
-                }
-
-                if (filter.questions.size > 1) {
-                    AppLog.i("REC", "VLM found ${filter.questions.size} questions")
-                    var skipped = 0
-                    filter.questions.forEachIndexed { index, separatedQuestion ->
-                        val normalized = normalizeForDedupe(separatedQuestion.text)
-                        val alreadyExists = withContext(Dispatchers.Main) {
-                            if (recordingTextHashes.contains(normalized)) true
-                            else { recordingTextHashes.add(normalized); false }
-                        }
-                        if (alreadyExists) {
-                            skipped++
-                            return@forEachIndexed
-                        }
-                        recordingFetchAnswer(separatedQuestion.text, captureIndex, filter)
-                        withContext(Dispatchers.Main) { recordingTotalQuestions++ }
-                    }
-                    if (skipped > 0) {
-                        withContext(Dispatchers.Main) { recordingSkippedCount.value += skipped }
-                    }
-                } else {
-                    val text = filter.extractedText
-                    if (text.isBlank()) {
-                        return@withPermit
-                    }
-                    val normalized = normalizeForDedupe(text)
-                    val alreadyExists = withContext(Dispatchers.Main) {
-                        if (recordingTextHashes.contains(normalized)) true
-                        else { recordingTextHashes.add(normalized); false }
-                    }
-                    if (alreadyExists) {
-                        withContext(Dispatchers.Main) { recordingSkippedCount.value++ }
-                        return@withPermit
-                    }
-                    recordingFetchAnswer(text, captureIndex, filter)
-                    withContext(Dispatchers.Main) { recordingTotalQuestions++ }
-                }
-            }.onFailure {
-                AppLog.w("REC", "VLM分析失败，降级为OCR")
-                showErrorMessage(getString(R.string.status_vision_fallback))
-                recordingProcessWithOcr(bitmap, captureIndex)
-            }
-        }
-    }
-
-    private fun recordingFetchAnswer(
-        text: String, captureIndex: Int,
-        visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult? = null
-    ) {
-        recordingActiveCount.incrementAndGet()
-        AppLog.enter("REC", "recordingFetchAnswer Q$captureIndex")
-        val job = serviceScope.launch(Dispatchers.IO) {
-            recordingSemaphore?.withPermit {
-                try {
-                    if (!OpenAIClient.isNetworkAvailable()) { return@withPermit }
-                    val questionTypes = AppConfig.getQuestionTypes()
-
-                    var searchContext = ""
-                    if (visionResult != null && visionResult.searchKeywords.isNotBlank()
-                        && searchEnabled.value) {
-                        val results = performWebSearch(visionResult.searchKeywords)
-                        searchContext = results
-                    }
-
-                    val result = OpenAIClient.getInstance().analyzeQuestion(
-                        text, questionTypes, searchContext,
-                        systemPrompt = Constants.buildRecordingSystemPrompt(
-                            captureIndex,
-                            recordingCaptureCount.value,
-                            questionTypes,
-                            searchContext
-                        )
-                    )
-                    result.onSuccess { aiAnswers ->
-                        recordingStoreAnswer(aiAnswers, captureIndex)
-                    }.onFailure { error ->
-                        AppLog.e("REC", "answer failed for Q$captureIndex", error)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) { AppLog.e("REC", "fetch failed", e) }
-            }
-        }
-        recordingJobs.add(job)
-        job.invokeOnCompletion {
-            recordingJobs.remove(job)
-            recordingActiveCount.decrementAndGet()
-            AppLog.d("REC", "计数器-1(API完成): activeJobs=${recordingActiveCount.get()}")
-            if (isProcessingRecording.value && recordingJobs.isEmpty()) {
-                serviceScope.launch(Dispatchers.Main) {
-                    showRecordingResults()
-                }
-            }
-        }
-    }
-
-    private fun recordingStoreAnswer(aiAnswers: List<com.hwb.aianswerer.models.AIAnswer>?, captureIndex: Int) {
-        if (aiAnswers == null || aiAnswers.isEmpty()) return
-
-        val displayFormatted = if (aiAnswers.size == 1) {
-            aiAnswers.first().formatAnswerWithConfig(showQuestion = true, showOptions = true)
-        } else {
-            aiAnswers.mapIndexed { i, a ->
-                "━━━ 第 ${captureIndex}-${i + 1} 题 ━━━\n" +
-                    a.formatAnswerWithConfig(showQuestion = true, showOptions = true)
-            }.joinToString("\n\n")
-        }
-        val displayEntry = "━━━ 第 $captureIndex 题 ━━━\n$displayFormatted"
-
-        val copyFormatted = if (aiAnswers.size == 1) {
-            "第${captureIndex}题：${aiAnswers.first().answer}"
-        } else {
-            aiAnswers.mapIndexed { i, a ->
-                "第${captureIndex}-${i + 1}题：${a.answer}"
-            }.joinToString("\n")
-        }
-
-        serviceScope.launch(Dispatchers.Main) {
-            recordingAnswers.value = (recordingAnswers.value + (captureIndex to displayEntry))
-                .sortedBy { it.first }
-            recordingCopyTexts.value = (recordingCopyTexts.value + (captureIndex to copyFormatted))
-                .sortedBy { it.first }
-        }
-    }
-
-    private fun updateRecordingProgress() {
-        val total = recordingCaptureCount.value
-        val done = recordingProcessedCount.value
-        val answersSoFar = recordingAnswers.value.size
-        if (done >= total && recordingJobs.isEmpty()) {
-            showRecordingResults()
-        } else {
-            statusMessage.value = getString(
-                R.string.recording_processing,
-                answersSoFar,
-                recordingTotalQuestions
-            )
-        }
+        recorder.handleCroppedImage(imagePath, cropRect)
     }
 
     private fun showRecordingResults() {
@@ -1305,16 +1006,45 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         val total = recordingCaptureCount.value
         val skipped = recordingSkippedCount.value
-        statusMessage.value = if (skipped > 0) {
-            getString(R.string.recording_all_done_dedup, total, skipped, total - skipped)
-        } else {
-            getString(R.string.recording_all_done, total)
+        val failed = recordingFailedCount.value
+        val resultSummary = buildString {
+            append(getString(R.string.recording_all_done, total))
+            if (skipped > 0) append("，去除重复 ${skipped} 题")
+            if (failed > 0) append("，${failed} 题获取失败")
         }
+        statusMessage.value = resultSummary
 
         if (autoCopy) {
             val copyText = recordingCopyTexts.value.sortedBy { it.first }
                 .joinToString("\n") { it.second }
             ClipboardUtil.copyToClipboard(this@FloatingWindowService, copyText)
+        }
+        isProcessingRecording.value = false
+    }
+
+    /** 从 RecordingCoordinator 回调接收结果并更新 Compose 状态 */
+    private fun showRecordingResultsFromCoordinator(
+        answers: List<Pair<Int, String>>,
+        copyTexts: List<Pair<Int, String>>,
+        total: Int, skipped: Int, failed: Int
+    ) {
+        if (answers.isEmpty()) {
+            showErrorMessage(getString(R.string.recording_no_valid_answers))
+            isProcessingRecording.value = false
+            return
+        }
+        recordingAnswers.value = answers
+        recordingCopyTexts.value = copyTexts
+        showAnswer.value = true
+        floatingStatus.value = FloatingStatus.Success
+        val resultSummary = buildString {
+            append(getString(R.string.recording_all_done, total))
+            if (skipped > 0) append("，去除重复 ${skipped} 题")
+            if (failed > 0) append("，${failed} 题获取失败")
+        }
+        statusMessage.value = resultSummary
+        if (AppConfig.getAutoCopy()) {
+            ClipboardUtil.copyToClipboard(this, copyTexts.sortedBy { it.first }.joinToString("\n") { it.second })
         }
         isProcessingRecording.value = false
     }
@@ -1346,53 +1076,32 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     /**
-     * 判断识别文本是否像一道题目
-     * 特征：包含问号、选项标记(A/B/C/D)、常见题目关键词
-     */
-    private fun looksLikeQuestion(text: String): Boolean {
-        val t = text.trim()
-        if (t.length < 4) return false
-        // 包含问号
-        if (t.contains("?") || t.contains("？")) return true
-        // 包含选项标记 A. B. C. D. 或 A、B、C、D
-        if (Regex("""[A-Da-d][.、．)\s]""").containsMatchIn(t)) return true
-        // 包含常见题目关键词
-        val keywords = listOf("下列", "以下", "属于", "不属于", "正确", "错误", "哪个", "哪些",
-            "什么", "如何", "为什么", "原因是", "主要", "关于", "说法", "选项", "答案",
-            "which", "what", "how", "why", "correct", "incorrect", "true", "false")
-        val lower = t.lowercase()
-        if (keywords.any { lower.contains(it) }) return true
-        return false
-    }
-
-    /**
-     * OCR模式处理
+     * OCR模式处理 — 普通答题
      */
     private suspend fun processBitmapWithOcr(bitmap: android.graphics.Bitmap) {
         AppLog.enter("OCR", "processBitmapWithOcr")
         floatingStatus.value = FloatingStatus.Recognizing
         statusMessage.value = getString(R.string.status_recognizing)
 
-        val result = textRecognitionManager.recognizeText(bitmap)
-        bitmap.recycle()
-
-        result.onSuccess { recognizedText ->
-            AppLog.d("OCR", "recognized=${recognizedText.length} chars")
-            statusMessage.value = getString(R.string.status_recognized)
-
-            if (!looksLikeQuestion(recognizedText)) {
-                showErrorMessage("未识别到题目")
-                return@onSuccess
+        pipeline.recognizeOcr(bitmap)
+            .onSuccess { recognizedText ->
+                bitmap.recycle()
+                AppLog.d("OCR", "recognized=${recognizedText.length} chars")
+                statusMessage.value = getString(R.string.status_recognized)
+                if (!pipeline.looksLikeQuestion(recognizedText)) {
+                    showErrorMessage("未识别到题目")
+                    return
+                }
+                fetchAnswer(recognizedText)
             }
-
-            fetchAnswer(recognizedText)
-        }.onFailure { error ->
-            showErrorMessage(getString(R.string.status_recognition_failed, error.message ?: ""))
-        }
+            .onFailure { error ->
+                bitmap.recycle()
+                showErrorMessage(getString(R.string.status_recognition_failed, error.message ?: ""))
+            }
     }
 
     /**
-     * VLM模式处理：使用视觉模型提取文本和元数据
+     * VLM模式处理 — 普通答题
      */
     private suspend fun processBitmapWithVlm(bitmap: android.graphics.Bitmap) {
         AppLog.enter("VLM", "processBitmapWithVlm")
@@ -1400,50 +1109,23 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         floatingStatus.value = FloatingStatus.Recognizing
         statusMessage.value = getString(R.string.status_vision_analyzing)
 
-        val provider = VisionProviderFactory.create()
-        if (provider == null) {
-            // Provider未创建，降级为OCR
-            AppLog.w("FWS", "VisionProvider未创建，降级为OCR模式")
-            processBitmapWithOcr(bitmap)
-            return
-        }
-
-        AppLog.i("FWS", "VLM calling provider.analyze()...")
-        val visionResult = provider.analyze(bitmap)
-        AppLog.i("FWS", "VLM analyze() returned")
-
-        visionResult.onSuccess { filter ->
-            AppLog.i("FWS", "VLM success=${filter.hasQuestions}, questionCount=${filter.questionCount}")
-            // VLM成功，现在可以回收bitmap
-            bitmap.recycle()
-
-            if (!filter.hasQuestions) {
-                showErrorMessage("未识别到题目")
-                return
+        pipeline.recognizeVlm(bitmap)
+            .onSuccess { filter ->
+                AppLog.i("FWS", "VLM success=${filter.hasQuestions}, questionCount=${filter.questionCount}")
+                bitmap.recycle()
+                if (!filter.hasQuestions) { showErrorMessage("未识别到题目"); return }
+                statusMessage.value = if (filter.questionCount > 1)
+                    getString(R.string.status_vision_detected_multi, filter.questionCount)
+                else getString(R.string.status_vision_detected_single)
+                if (filter.extractedText.isBlank()) { showErrorMessage("视觉模型未提取到文本"); return }
+                fetchAnswer(filter.extractedText, filter)
             }
-
-            statusMessage.value = if (filter.questionCount > 1) {
-                getString(R.string.status_vision_detected_multi, filter.questionCount)
-            } else {
-                getString(R.string.status_vision_detected_single)
+            .onFailure { e ->
+                AppLog.i("FWS", "VLM failed, falling back to OCR")
+                AppLog.w("FWS", "VLM分析失败，降级为OCR模式", e)
+                statusMessage.value = getString(R.string.status_vision_fallback)
+                processBitmapWithOcr(bitmap)
             }
-
-            // 使用VLM提取的文本
-            val text = filter.extractedText
-            if (text.isBlank()) {
-                showErrorMessage("视觉模型未提取到文本")
-                return
-            }
-
-            fetchAnswer(text, filter)
-        }.onFailure { e ->
-            // VLM失败，bitmap仍可用于OCR降级
-            AppLog.i("FWS", "VLM failed, falling back to OCR")
-            AppLog.w("FWS", "VLM分析失败，降级为OCR模式", e)
-            statusMessage.value = getString(R.string.status_vision_fallback)
-            // 降级为OCR模式，复用现有的bitmap
-            processBitmapWithOcr(bitmap)
-        }
     }
 
     /**
@@ -1485,7 +1167,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             floatingStatus.value = FloatingStatus.Searching
                             statusMessage.value = getString(R.string.status_searching)
                             AppLog.d("FWS", "Web搜索(VLM关键词): ${visionResult.searchKeywords}")
-                            searchContext = performWebSearch(visionResult.searchKeywords)
+                            searchContext = pipeline.searchWeb(visionResult.searchKeywords)
                             AppLog.d("FWS", "Web搜索完成")
                         }
                         // VLM模式下不使用正则，直接进入LLM答题
@@ -1507,7 +1189,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                 text
                             }
                             AppLog.d("FWS", "Web搜索(正则提取): $searchQuery")
-                            searchContext = performWebSearch(searchQuery)
+                            searchContext = pipeline.searchWeb(searchQuery)
                             AppLog.d("FWS", "Web搜索结果已注入上下文")
                         }
                     }
@@ -1517,8 +1199,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     statusMessage.value = getString(R.string.status_getting_answer)
 
                     AppLog.i("FWS", "LLM calling analyzeQuestion, textLen=${text.length}")
-                    val apiClient = OpenAIClient.getInstance()
-                    val result = withTimeout(180_000L) { apiClient.analyzeQuestion(text, questionTypes, searchContext) }
+                    val result = withTimeout(60_000L) { pipeline.askLlm(text, questionTypes, searchContext) }
                     AppLog.i("FWS", "LLM analyzeQuestion returned, isSuccess=${result.isSuccess}")
                     AppLog.leave("FWS", "fetchAnswer", _start)
 
@@ -1574,15 +1255,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             if (question.searchKeywords.isNotBlank() && searchEnabled.value) {
                 statusMessage.value = getString(R.string.status_searching) + " (${idx + 1}/$totalQuestions)"
                 AppLog.d("FWS", "Web搜索(题目${idx + 1}): ${question.searchKeywords}")
-                searchContext = performWebSearch(question.searchKeywords, 2)
+                searchContext = pipeline.searchWeb(question.searchKeywords, 2)
                 AppLog.d("FWS", "题目${idx + 1}搜索完成")
             }
 
             // 调用LLM答题
             statusMessage.value = getString(R.string.status_getting_answer) + " (${idx + 1}/$totalQuestions)"
-
-            val apiClient = OpenAIClient.getInstance()
-            val result = apiClient.analyzeQuestion(question.text, questionTypes, searchContext)
+            val result = pipeline.askLlm(question.text, questionTypes, searchContext)
 
             result.onSuccess { answers ->
                 allAnswers.addAll(answers)
@@ -1630,13 +1309,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             var searchContext = ""
                             if (question.searchKeywords.isNotBlank() && searchEnabled.value) {
                                 AppLog.d("FWS", "Web搜索(题目${idx + 1}): ${question.searchKeywords}")
-                                searchContext = performWebSearch(question.searchKeywords, 2)
+                                searchContext = pipeline.searchWeb(question.searchKeywords, 2)
                                 AppLog.d("FWS", "题目${idx + 1}搜索完成")
                             }
 
                             // 调用LLM答题
-                            val apiClient = OpenAIClient.getInstance()
-                            val result = apiClient.analyzeQuestion(question.text, questionTypes, searchContext)
+                            val result = pipeline.askLlm(question.text, questionTypes, searchContext)
 
                             result.onSuccess { answers ->
                                 allAnswers.addAll(answers)
@@ -1733,53 +1411,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         statusMessage.value = null
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                Constants.NOTIFICATION_CHANNEL_ID,
-                getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = getString(R.string.notification_channel_name)
-            }
 
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-        }
-    }
-
-    /** Check notification permission on Android 13+; foreground service may be killed without it */
-    private fun ensureNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
-                AppLog.w("FWS", "Notifications disabled on API 33+; foreground service may be killed")
-            }
-        }
-    }
-
-    private fun createNotification(): Notification {
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        val stopIntent = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, FloatingWindowService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, Constants.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.notification_content))
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentIntent(pendingIntent)
-            .addAction(R.drawable.ic_launcher_foreground, getString(R.string.stop_service), stopIntent)
-            .setOngoing(true)
-            .build()
-    }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -1787,8 +1419,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         destroyed = true
 
         // 清理录制状态
-        recordingJobs.forEach { it.cancel() }
-        recordingJobs.clear()
+        recorder.cancel()
         isRecording.value = false
         isProcessingRecording.value = false
 
@@ -1808,7 +1439,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         floatingView?.let {
             it.disposeComposition()
-            windowManager.removeView(it)
+            windowMgr.detach(it)
         }
         floatingView = null
 

@@ -126,10 +126,13 @@ fun AboutPage(t: Th, onBack: () -> Unit) {
 
             // GitHub
             Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
+                val ctx = LocalContext.current
                 Text("开源地址", style = DW.LabelSmall.copy(color = t.osv), modifier = Modifier.padding(bottom = 8.dp))
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                     .background(t.p.copy(alpha = if (t.isLight) 0.08f else 0.1f))
-                    .clickable { }
+                    .clickable {
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/wb-hwang/AIAnswerer-Android")))
+                    }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

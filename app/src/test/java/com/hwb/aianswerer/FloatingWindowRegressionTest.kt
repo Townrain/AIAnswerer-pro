@@ -36,6 +36,7 @@ class FloatingWindowRegressionTest {
     }
 
     private val servicePath = "app/src/main/java/com/hwb/aianswerer/FloatingWindowService.kt"
+    private val managerPath = "app/src/main/java/com/hwb/aianswerer/FloatingWindowManager.kt"
     private val pillContentPath = "app/src/main/java/com/hwb/aianswerer/ui/components/FloatingPillContent.kt"
     private val windowContentPath = "app/src/main/java/com/hwb/aianswerer/ui/components/FloatingWindowContent.kt"
 
@@ -136,11 +137,10 @@ class FloatingWindowRegressionTest {
     }
 
     @Test fun `窗口 gravity 始终 G_START`() {
-        val src = readSource(servicePath)
-        val method = src.substringAfter("private fun showFloatingWindow()")
-            .substringBefore("private fun handleCapture()")
-        assertTrue("必须包含 G_START", method.contains("Gravity.START"))
-        assertFalse("不得包含 Gravity.END", method.contains("Gravity.END"))
+        // Gravity 已提取到 FloatingWindowManager.createLayoutParams
+        val src = readSource(managerPath)
+        assertTrue("必须包含 G_START", src.contains("Gravity.TOP or Gravity.START"))
+        assertFalse("不得包含 Gravity.END", src.contains("Gravity.END"))
     }
 
     @Test fun `窗口 pillView 为普通 FrameLayout`() {
