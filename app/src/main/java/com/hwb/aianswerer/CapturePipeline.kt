@@ -8,6 +8,7 @@ import com.hwb.aianswerer.api.vision.VisionProviderFactory
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.AIAnswer
 import com.hwb.aianswerer.providers.WebSearchStorage
+import com.hwb.aianswerer.utils.AppLog
 
 /**
  * 答题流水线 — 纯粹的识别、搜索、AI 调用逻辑。
@@ -53,12 +54,19 @@ class CapturePipeline(
      */
     suspend fun searchWeb(query: String, maxResults: Int = 2): String {
         val providers = WebSearchStorage.getEnabledProviders()
-        if (providers.isEmpty()) return ""
+        if (providers.isEmpty()) {
+            AppLog.w("CapturePipeline", "searchWeb: no enabled providers, skipping")
+            return ""
+        }
         val selectedName = AppConfig.getWebSearchProvider()
         val selected = providers.find { it.name == selectedName } ?: providers.first()
+        AppLog.d("CapturePipeline", "searchWeb: using provider=${selected.name}, query=$query")
         val provider = WebSearchClientFactory.create(selected)
         val results = provider.search(query, maxResults)
-        if (results.isEmpty()) return ""
+        if (results.isEmpty()) {
+            AppLog.w("CapturePipeline", "searchWeb: provider returned empty results")
+            return ""
+        }
         return results.joinToString("\n") { "【${it.title}】${it.snippet}" }
     }
 

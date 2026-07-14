@@ -164,7 +164,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var visionEnabled = mutableStateOf(AppConfig.isVisionEnabled())
     private var searchEnabled = mutableStateOf(
         com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
-            && com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
     )
     private var reasoningEnabled = mutableStateOf(AppConfig.getReasoningEffort() != null)
 
@@ -488,6 +487,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                 Toast.LENGTH_SHORT).show()
                         },
                         onSearchToggle = {
+                            val hasProviders = com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
+                            if (!hasProviders && !searchEnabled.value) {
+                                Toast.makeText(this@FloatingWindowService,
+                                    "请先在设置中启用至少一个搜索服务商",
+                                    Toast.LENGTH_SHORT).show()
+                                return@FloatingWindowContent
+                            }
                             searchEnabled.value = !searchEnabled.value
                             com.hwb.aianswerer.providers.WebSearchStorage.saveSearchEnabled(searchEnabled.value)
                             Toast.makeText(this@FloatingWindowService,
@@ -628,9 +634,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private fun refreshSettingsFromApp() {
         visionEnabled.value = AppConfig.isVisionEnabled()
         searchEnabled.value = com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
-            && com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
         reasoningEnabled.value = AppConfig.getReasoningEffort() != null
-        floatButtonAlpha.value = AppConfig.getFloatButtonAlpha()
         stealthMode.value = AppConfig.isStealthModeEnabled()
         floatButtonSizeDp.value = AppConfig.getFloatButtonSize()
         floatCardAlpha.value = AppConfig.getFloatCardAlpha()
@@ -1198,10 +1202,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         // VLM模式下不使用正则，直接进入LLM答题
                     } else {
                         // OCR模式：使用正则提取搜索关键词
-                        val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
-                        val isMultiQuestion = AppConfig.isRegexFilterEnabled() && multiQuestionPattern.containsMatchIn(text)
-
-                        if (!isMultiQuestion && searchEnabled.value) {
+                        // OCR模式：始终尝试搜索
+                        if (searchEnabled.value) {
                             floatingStatus.value = FloatingStatus.Searching
                             statusMessage.value = getString(R.string.status_searching)
                             val lines = text.lines()
@@ -1213,7 +1215,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             } else {
                                 text
                             }
-                            AppLog.d("FWS", "Web搜索(正则提取): $searchQuery")
+                            AppLog.d("FWS", "Web搜索(OCR): $searchQuery")
                             searchContext = pipeline.searchWeb(searchQuery)
                             AppLog.d("FWS", "Web搜索结果已注入上下文")
                         }

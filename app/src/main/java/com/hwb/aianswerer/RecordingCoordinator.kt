@@ -233,6 +233,24 @@ class RecordingCoordinator(
                     if (visionResult != null && visionResult.searchKeywords.isNotBlank()
                         && callbacks.isSearchEnabled()) {
                         searchContext = pipeline.searchWeb(visionResult.searchKeywords)
+                    } else if (visionResult == null && callbacks.isSearchEnabled()) {
+                        // OCR模式：从文本中提取搜索关键词
+                        val lines = text.lines()
+                        val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
+                        val isMultiQuestion = AppConfig.isRegexFilterEnabled() && multiQuestionPattern.containsMatchIn(text)
+                        if (!isMultiQuestion) {
+                            val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
+                            val optionLines = lines.filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }.map { it.trim() }
+                            val searchQuery = if (!questionLine.isNullOrBlank()) {
+                                (listOf(questionLine) + optionLines).joinToString(" ")
+                            } else {
+                                text
+                            }
+                            AppLog.d("REC", "Web搜索(OCR): $searchQuery")
+                            searchContext = pipeline.searchWeb(searchQuery)
+                        } else {
+                            AppLog.d("REC", "多题正则过滤: 跳过OCR搜索")
+                        }
                     }
                     val result = pipeline.askLlm(
                         text, questionTypes, searchContext,
