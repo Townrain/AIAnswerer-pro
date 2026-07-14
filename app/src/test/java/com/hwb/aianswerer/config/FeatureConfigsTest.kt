@@ -95,29 +95,6 @@ class FeatureConfigsTest {
     // SearchConfig
     // ─────────────────────────────────────────────
 
-    @Test
-    fun `SearchConfig默认Tavily未启用`() {
-        safelyInvoke {
-            assertFalse(SearchConfig.getTavilyEnabled())
-        }
-    }
-
-    @Test
-    fun `SearchConfig默认Tavily配置无效`() {
-        safelyInvoke {
-            assertFalse(SearchConfig.isTavilyConfigValid())
-        }
-    }
-
-    @Test
-    fun `SearchConfig启用Tavily但Key为空时配置仍无效`() {
-        safelyInvoke {
-            SearchConfig.saveTavilyEnabled(true)
-            assertFalse(SearchConfig.isTavilyConfigValid())
-            // 恢复默认
-            SearchConfig.saveTavilyEnabled(false)
-        }
-    }
 
     @Test
     fun `SearchConfig默认正则过滤已启用`() {

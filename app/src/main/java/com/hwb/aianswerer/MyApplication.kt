@@ -37,6 +37,9 @@ class MyApplication : Application() {
 
         // 清理残留的临时裁剪文件
         cleanupTempFiles()
+        // 迁移旧 Tavily 配置到新的多供应商 WebSearchStorage
+        AppConfig.migrateTavilyConfig()
+
     }
 
     /**

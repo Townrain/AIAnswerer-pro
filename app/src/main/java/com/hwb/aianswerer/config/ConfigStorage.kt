@@ -23,8 +23,6 @@ internal object ConfigStorage {
     internal const val KEY_CROP_MODE = "crop_mode"
     internal const val KEY_SHOW_ANSWER_CARD_QUESTION = "show_answer_card_question"
     internal const val KEY_SHOW_ANSWER_CARD_OPTIONS = "show_answer_card_options"
-    internal const val KEY_TAVILY_API_KEY = "tavily_api_key"
-    internal const val KEY_TAVILY_ENABLED = "tavily_enabled"
     internal const val KEY_FLOAT_BUTTON_SIZE = "float_button_size"
     internal const val KEY_FLOAT_BUTTON_ALPHA = "float_button_alpha"
     internal const val KEY_FLOAT_CARD_ALPHA = "float_card_alpha"

@@ -241,7 +241,5 @@ class WebSearchStorageTest {
         assertTrue("KEY_API_KEY 不应为空", ConfigStorage.KEY_API_KEY.isNotBlank())
         assertTrue("KEY_MODEL_NAME 不应为空", ConfigStorage.KEY_MODEL_NAME.isNotBlank())
         assertTrue("KEY_LANGUAGE 不应为空", ConfigStorage.KEY_LANGUAGE.isNotBlank())
-        assertTrue("KEY_TAVILY_API_KEY 不应为空", ConfigStorage.KEY_TAVILY_API_KEY.isNotBlank())
-        assertTrue("KEY_TAVILY_ENABLED 不应为空", ConfigStorage.KEY_TAVILY_ENABLED.isNotBlank())
     }
 }

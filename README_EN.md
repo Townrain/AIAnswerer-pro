@@ -29,7 +29,7 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 | UI | Jetpack Compose + Material3 |
 | OCR | Google ML Kit (Chinese + Latin) |
 | Vision Model | OpenAI Compatible API (DeepSeek/GPT-4o, etc.) |
-| Web Search | Tavily API |
+| Web Search | Multi-provider (Tavily/Bocha/Zhipu etc.) |
 | Network | OkHttp 4.12.0 |
 | Storage | MMKV + EncryptedSharedPreferences |
 | Build | Gradle (AGP 8.13.0) |
@@ -82,7 +82,7 @@ com.hwb.aianswerer/
 ├── Constants.kt              # Constants and system prompts
 ├── api/
 │   ├── OpenAIClient.kt       # OpenAI compatible API client
-│   ├── TavilyClient.kt       # Tavily web search client
+│   ├── WebSearchProviders.kt  # Multi-provider web search
 │   └── vision/               # Vision model module
 │       ├── VisionProvider.kt
 │       ├── VisionProviderFactory.kt

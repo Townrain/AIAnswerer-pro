@@ -21,7 +21,7 @@ data class VisionFilterResult(
     @SerializedName("question_types")
     val questionTypes: List<String> = emptyList(),
 
-    /** 提炼后的搜索关键词（用于 Tavily 搜索） */
+    /** 提炼后的搜索关键词（用于联网搜索） */
     @SerializedName("search_keywords")
     val searchKeywords: String = "",
 

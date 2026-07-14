@@ -39,7 +39,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.hwb.aianswerer.api.OpenAIClient
-import com.hwb.aianswerer.api.TavilyClient
 import com.hwb.aianswerer.api.vision.OpenAIVisionConfig
 import com.hwb.aianswerer.api.vision.OpenAIVisionProvider
 import com.hwb.aianswerer.config.AppConfig
@@ -115,10 +114,6 @@ fun ModelSettingsScreen(
     var modelName by remember { mutableStateOf(AppConfig.getModelName()) }
     var thinkingMode by remember { mutableStateOf(AppConfig.getReasoningEffort() != null) }
 
-    // Tavily 配置
-    var tavilyEnabled by remember { mutableStateOf(AppConfig.getTavilyEnabled()) }
-    var tavilyApiKey by remember { mutableStateOf(AppConfig.getTavilyApiKey()) }
-    var regexFilterEnabled by remember { mutableStateOf(AppConfig.isRegexFilterEnabled()) }
 
     // 视觉模型配置
     var visionEnabled by remember { mutableStateOf(AppConfig.isVisionEnabled()) }
@@ -128,21 +123,14 @@ fun ModelSettingsScreen(
 
     // 测试连接状态管理
     var testState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
-    var tavilyTestState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
     var visionTestState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
     val coroutineScope = rememberCoroutineScope()
 
     val isDark = LocalIsDarkMode.current
     val scrollState = rememberScrollState()
 
-    // Tavily/Vision 展开后自动滚动到新内容
-    LaunchedEffect(tavilyEnabled) {
-        if (tavilyEnabled) {
-            // 等待 AnimatedVisibility 展开动画完成（弹簧 ~350ms 稳定）
-            kotlinx.coroutines.delay(400)
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
-    }
+    // Vision 展开后自动滚动到新内容
+
     LaunchedEffect(visionEnabled) {
         if (visionEnabled) {
             kotlinx.coroutines.delay(400)
@@ -301,98 +289,6 @@ fun ModelSettingsScreen(
                 )
             }
 
-            // ========== Tavily 联网搜索配置 ==========
-            InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {
-                SectionLabel(stringResource(R.string.tavily_settings_title))
-                Text(
-                    text = stringResource(R.string.tavily_settings_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isDark) TextDarkSecondary else TextTertiary,
-                    modifier = Modifier.padding(bottom = Spacing.lg)
-                )
-
-                // 启用开关
-                SettingItem(
-                    title = stringResource(R.string.tavily_enable_label),
-                    description = stringResource(R.string.tavily_enable_desc),
-                    checked = tavilyEnabled,
-                    onCheckedChange = {
-                        tavilyEnabled = it
-                        AppConfig.saveTavilyEnabled(it)
-                    }
-                )
-
-                // 多题正则过滤开关（启用时显示）
-                AnimatedVisibility(
-                    visible = tavilyEnabled,
-                    enter = expandVertically(animationSpec = spring(dampingRatio = 0.45f, stiffness = 400f)) + fadeIn(animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f)),
-                    exit = shrinkVertically(animationSpec = spring(dampingRatio = 0.55f, stiffness = 500f)) + fadeOut(animationSpec = tween(120))
-                ) {
-                    Column {
-                        Spacer(modifier = Modifier.height(Spacing.lg))
-                        SettingItem(
-                            title = stringResource(R.string.setting_regex_filter),
-                            description = stringResource(R.string.setting_regex_filter_desc),
-                            checked = regexFilterEnabled,
-                            onCheckedChange = {
-                                regexFilterEnabled = it
-                                AppConfig.saveRegexFilterEnabled(it)
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(Spacing.lg))
-                        PasswordTextField(
-                            value = tavilyApiKey,
-                            onValueChange = { tavilyApiKey = it },
-                            label = stringResource(R.string.label_tavily_api_key),
-                            placeholder = stringResource(R.string.hint_tavily_api_key),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(Spacing.lg))
-
-                        // 测试连接按钮
-                        AnimatedButton(
-                            text = if (tavilyTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
-                            onClick = {
-                            if (tavilyTestState is TestConnectionState.Testing) return@AnimatedButton
-                            coroutineScope.launch {
-                                tavilyTestState = TestConnectionState.Testing
-                                val result = TavilyClient.getInstance().testConnection(tavilyApiKey)
-                                result.onSuccess {
-                                    tavilyTestState = TestConnectionState.Success()
-                                }.onFailure { error ->
-                                    tavilyTestState = TestConnectionState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        variant = ButtonVariant.Tonal,
-                        enabled = tavilyTestState !is TestConnectionState.Testing
-                    )
-
-                    if (tavilyTestState is TestConnectionState.Success) {
-                        Spacer(Modifier.height(Spacing.sm))
-                        Text(text = stringResource(R.string.toast_connection_success), style = MaterialTheme.typography.bodySmall, color = SuccessGreen)
-                    } else if (tavilyTestState is TestConnectionState.Error) {
-                        Spacer(Modifier.height(Spacing.sm))
-                        Text(text = stringResource(R.string.toast_connection_failed).format((tavilyTestState as TestConnectionState.Error).message), style = MaterialTheme.typography.bodySmall, color = ErrorRed)
-                    }
-
-                    Spacer(modifier = Modifier.height(Spacing.lg))
-
-                    // 保存按钮
-                    AnimatedButton(
-                        text = stringResource(R.string.button_save),
-                        onClick = {
-                            AppConfig.saveTavilyApiKey(tavilyApiKey)
-                            Toast.makeText(MyApplication.getAppContext(), MyApplication.getString(R.string.toast_settings_saved), Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        variant = ButtonVariant.Primary
-                    )
-                    }
-                }
-            }
 
             // ========== 视觉模型配置 ==========
             InfoCard(modifier = Modifier.padding(bottom = Spacing.xl)) {

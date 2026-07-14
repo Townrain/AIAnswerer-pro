@@ -1,55 +1,9 @@
 package com.hwb.aianswerer.config
 
 /**
- * Web search / Tavily 配置
+ * Web search 配置（多供应商通用）
  */
 internal object SearchConfig {
-
-    // ========== Tavily 联网搜索相关 ==========
-
-    /**
-     * 保存 Tavily API Key（加密存储，降级时使用MMKV）
-     */
-    fun saveTavilyApiKey(key: String) {
-        val prefs = ConfigStorage.getSecurePrefs()
-        if (prefs != null) {
-            prefs.edit().putString(ConfigStorage.KEY_TAVILY_API_KEY, key).apply()
-        } else {
-            ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_TAVILY_API_KEY, key)
-        }
-    }
-
-    /**
-     * 获取 Tavily API Key（优先从加密存储读取，降级时从MMKV读取）
-     */
-    fun getTavilyApiKey(): String {
-        val prefs = ConfigStorage.getSecurePrefs()
-        val stored = prefs?.getString(ConfigStorage.KEY_TAVILY_API_KEY, null)
-            ?: ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_TAVILY_API_KEY, null)
-        return stored?.takeIf { it.isNotEmpty() } ?: ""
-    }
-
-    /**
-     * 保存 Tavily 启用状态
-     */
-    fun saveTavilyEnabled(enabled: Boolean) {
-        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_TAVILY_ENABLED, enabled)
-    }
-
-    /**
-     * 获取 Tavily 启用状态，默认为 false
-     */
-    fun getTavilyEnabled(): Boolean {
-        return ConfigStorage.requireMmkv().decodeBool(ConfigStorage.KEY_TAVILY_ENABLED, false)
-    }
-
-    /**
-     * 验证 Tavily 配置是否完整且启用
-     */
-    fun isTavilyConfigValid(): Boolean {
-        return getTavilyEnabled() && getTavilyApiKey().isNotBlank()
-    }
-
     // ── Web search / Output language ──
 
     fun saveWebSearchProvider(name: String) {

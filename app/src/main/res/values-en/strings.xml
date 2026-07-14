@@ -99,14 +99,6 @@
     <string name="toast_settings_error_empty_fields">Please fill in all required fields</string>
     <string name="toast_settings_error_invalid_url">API URL must start with http</string>
 
-    <!-- Tavily Search Settings -->
-    <string name="tavily_settings_title">Web Search Enhancement</string>
-    <string name="tavily_settings_desc">Use Tavily search engine to fetch real-time references for more accurate AI answers</string>
-    <string name="tavily_enable_label">Enable Web Search</string>
-    <string name="tavily_enable_desc">Automatically search for references before answering</string>
-    <string name="label_tavily_api_key">Tavily API Key</string>
-    <string name="hint_tavily_api_key">tvly-xxxxxxxx</string>
-
     <!-- About screen -->
     <string name="about_title">About</string>
     <string name="about_app_intro_title">App Introduction</string>

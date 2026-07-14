@@ -37,10 +37,14 @@ import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.providers.WebSearchStorage
 import com.hwb.aianswerer.ui.icons.LocalIcons
 import com.hwb.aianswerer.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 // =============================================================================
@@ -172,10 +176,11 @@ fun WebSearchPage(t: Th, onBack: () -> Unit) {
                         if (idx >= 0) {
                             val newEnabled = !ps.enabled
                             providers[idx] = ps.copy(enabled = newEnabled)
-                            WebSearchStorage.saveUserConfig(ps.def.id, WebSearchStorage.UserWebSearchConfig(
-                                enabled = newEnabled, apiKey = ps.apiKey,
-                                customApiHost = ps.customApiHost.ifBlank { null },
-                                basicAuthUsername = ps.basicAuthUser, basicAuthPassword = ps.basicAuthPass
+                            val p = providers[idx]
+                            WebSearchStorage.saveUserConfig(p.def.id, WebSearchStorage.UserWebSearchConfig(
+                                enabled = newEnabled, apiKey = p.apiKey,
+                                customApiHost = p.customApiHost.ifBlank { null },
+                                basicAuthUsername = p.basicAuthUser, basicAuthPassword = p.basicAuthPass
                             ))
                         }
                     },
@@ -196,37 +201,50 @@ fun WebSearchPage(t: Th, onBack: () -> Unit) {
                         if (idx >= 0) providers[idx] = ps.copy(basicAuthPass = v)
                     },
                     onTest = {
-                        val endpoint = ps.def.testEndpoint ?: ps.def.apiHost
+                        val idx = providers.indexOfFirst { it.def.id == ps.def.id }
+                        if (idx < 0) return@WebSearchCard
+                        val p = providers[idx]
+                        val endpoint = p.def.testEndpoint ?: p.def.apiHost
                         if (endpoint.isBlank()) {
-                            testStates = testStates + (ps.def.id to TestState.Success(0))
+                            testStates = testStates + (p.def.id to TestState.Success(0))
                             return@WebSearchCard
                         }
-                        testStates = testStates + (ps.def.id to TestState.Testing)
+                        testStates = testStates + (p.def.id to TestState.Testing)
                         scope.launch {
                             val result = runCatching {
                                 val client = OkHttpClient.Builder()
                                     .connectTimeout(10, TimeUnit.SECONDS)
                                     .readTimeout(10, TimeUnit.SECONDS).build()
-                                val reqBuilder = Request.Builder().url(endpoint).get()
-                                if (ps.apiKey.isNotBlank()) reqBuilder.addHeader("Authorization", "Bearer ${ps.apiKey}")
+                                val jsonBody = """{"query":"test","max_results":1}""".toRequestBody("application/json".toMediaType())
+                                val reqBuilder = Request.Builder().url(endpoint).post(jsonBody)
+                                    .addHeader("Content-Type", "application/json")
+                                if (p.apiKey.isNotBlank()) reqBuilder.addHeader("Authorization", "Bearer ${p.apiKey}")
                                 val start = System.currentTimeMillis()
-                                client.newCall(reqBuilder.build()).execute().use { resp ->
-                                    val elapsed = System.currentTimeMillis() - start
-                                    if (resp.isSuccessful) Result.success(elapsed.toInt())
-                                    else Result.failure(Exception("HTTP ${resp.code}"))
+                                withContext(Dispatchers.IO) {
+                                    client.newCall(reqBuilder.build()).execute().use { resp ->
+                                        val elapsed = System.currentTimeMillis() - start
+                                        if (resp.isSuccessful) Result.success(elapsed.toInt())
+                                        else Result.failure(Exception("HTTP ${resp.code}"))
+                                    }
                                 }
                             }.getOrElse { Result.failure(it) }
-                            testStates = if (result.isSuccess) testStates + (ps.def.id to TestState.Success(result.getOrNull() ?: 0))
-                            else testStates + (ps.def.id to TestState.Error(result.exceptionOrNull()?.message ?: "未知错误"))
+                            val errMsg = result.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "未知错误"
+                            testStates = if (result.isSuccess) testStates + (p.def.id to TestState.Success(result.getOrNull() ?: 0))
+                            else testStates + (p.def.id to TestState.Error(errMsg))
                         }
                     },
                     onSave = {
-                        WebSearchStorage.saveUserConfig(ps.def.id, WebSearchStorage.UserWebSearchConfig(
-                            enabled = ps.enabled, apiKey = ps.apiKey,
-                            customApiHost = ps.customApiHost.ifBlank { null },
-                            basicAuthUsername = ps.basicAuthUser, basicAuthPassword = ps.basicAuthPass
-                        ))
-                        showSaveToast = ps.def.name
+                        val idx = providers.indexOfFirst { it.def.id == ps.def.id }
+                        if (idx >= 0) {
+                            val p = providers[idx]
+                            android.util.Log.d("WebSearchPage", "onSave: apiKey='${p.apiKey}', enabled=${p.enabled}")
+                            WebSearchStorage.saveUserConfig(p.def.id, WebSearchStorage.UserWebSearchConfig(
+                                enabled = p.enabled, apiKey = p.apiKey,
+                                customApiHost = p.customApiHost.ifBlank { null },
+                                basicAuthUsername = p.basicAuthUser, basicAuthPassword = p.basicAuthPass
+                            ))
+                            showSaveToast = p.def.name
+                        }
                     }
                 )
             }

@@ -33,7 +33,11 @@ object WebSearchStorage {
         val configs = loadAllConfigs().toMutableMap()
         configs[providerId] = config
         val json = JsonUtil.gson.toJson(configs)
+        android.util.Log.d("WebSearchStorage", "saveUserConfig: providerId=$providerId, json=$json")
         mmkv().encode(KEY_USER_CONFIGS, json)
+        // 回读验证
+        val verify = mmkv().decodeString(KEY_USER_CONFIGS)
+        android.util.Log.d("WebSearchStorage", "verify readback: $verify")
     }
 
     fun getUserConfig(providerId: String): UserWebSearchConfig {
@@ -41,14 +45,18 @@ object WebSearchStorage {
     }
 
     private fun loadAllConfigs(): Map<String, UserWebSearchConfig> {
-        val json = mmkv().decodeString(KEY_USER_CONFIGS) ?: return emptyMap()
+        val json = mmkv().decodeString(KEY_USER_CONFIGS)
+        android.util.Log.d("WebSearchStorage", "loadAllConfigs: raw=$json")
+        if (json == null) return emptyMap()
         return try {
             val type = com.google.gson.reflect.TypeToken
                 .getParameterized(Map::class.java, String::class.java, UserWebSearchConfig::class.java)
                 .type
-            JsonUtil.gson.fromJson(json, type) ?: emptyMap()
+            val result = JsonUtil.gson.fromJson<Map<String, UserWebSearchConfig>>(json, type)
+            android.util.Log.d("WebSearchStorage", "loadAllConfigs: parsed=$result")
+            result ?: emptyMap()
         } catch (e: Exception) {
-            AppLog.e("WebSearchStorage: Failed to parse configs", e)
+            android.util.Log.e("WebSearchStorage", "Failed to parse configs: $json", e)
             emptyMap()
         }
     }

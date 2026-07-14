@@ -72,6 +72,7 @@
 -keep class com.hwb.aianswerer.api.** { *; }
 -keep class com.hwb.aianswerer.config.** { *; }
 -keep class com.hwb.aianswerer.models.** { *; }
+-keep class com.hwb.aianswerer.providers.** { *; }
 
 # Gson 的内部类
 -keep class * implements com.google.gson.TypeAdapterFactory

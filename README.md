@@ -30,7 +30,7 @@ AI答题助手是一款基于 OCR/视觉模型与大语言模型的安卓答题�
 | UI | Jetpack Compose + Material3 |
 | OCR | Google ML Kit (中文+拉丁文) |
 | 视觉模型 | OpenAI 兼容接口 (DeepSeek/GPT-4o 等) |
-| 联网搜索 | Tavily API |
+| 联网搜索 | 多供应商 (Tavily/Bocha/Zhipu等) |
 | 网络 | OkHttp 4.12.0 |
 | 存储 | MMKV + EncryptedSharedPreferences |
 | 构建 | Gradle (AGP 8.13.0) |
@@ -85,7 +85,7 @@ com.hwb.aianswerer/
 ├── Constants.kt              # 常量与系统提示词
 ├── api/
 │   ├── OpenAIClient.kt       # OpenAI 兼容 API 客户端
-│   ├── TavilyClient.kt       # Tavily 联网搜索客户端
+│   ├── WebSearchProviders.kt  # 多供应商联网搜索
 │   └── vision/               # 视觉模型模块
 │       ├── VisionProvider.kt
 │       ├── VisionProviderFactory.kt
