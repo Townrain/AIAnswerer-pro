@@ -408,4 +408,18 @@ class FeatureConfigsTest {
             assertTrue(CaptureConfig.isStealthModeEnabled())
         }
     }
+
+    // ─────────────────────────────────────────────
+    // WebSearch config 集成
+    // ─────────────────────────────────────────────
+
+    @Test
+    fun `正则过滤开关保存后读取应一致`() {
+        safelyInvoke {
+            SearchConfig.saveRegexFilterEnabled(false)
+            assertFalse(SearchConfig.isRegexFilterEnabled())
+            SearchConfig.saveRegexFilterEnabled(true)
+            assertTrue(SearchConfig.isRegexFilterEnabled())
+        }
+    }
 }

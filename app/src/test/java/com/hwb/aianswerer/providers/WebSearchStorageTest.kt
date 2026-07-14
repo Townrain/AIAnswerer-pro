@@ -242,4 +242,55 @@ class WebSearchStorageTest {
         assertTrue("KEY_MODEL_NAME 不应为空", ConfigStorage.KEY_MODEL_NAME.isNotBlank())
         assertTrue("KEY_LANGUAGE 不应为空", ConfigStorage.KEY_LANGUAGE.isNotBlank())
     }
+
+    // ── 集成验证 ──
+
+    @Test
+    fun `getEnabledProviders仅返回已启用的服务商`() {
+        safelyInvoke {
+            val config = WebSearchStorage.UserWebSearchConfig(enabled = true, apiKey = "sk-test")
+            WebSearchStorage.saveUserConfig("tavily", config)
+            WebSearchStorage.saveUserConfig("bocha", WebSearchStorage.UserWebSearchConfig(enabled = false))
+
+            val enabled = WebSearchStorage.getEnabledProviders()
+            val ids = enabled.map { it.id }
+            assertTrue("tavily应该被包含", ids.contains("tavily"))
+            assertFalse("bocha不应该被包含", ids.contains("bocha"))
+            assertTrue("所有返回的provider都应已启用", enabled.all { it.enabled })
+        }
+    }
+
+    @Test
+    fun `搜索开关独立于服务商启用状态`() {
+        safelyInvoke {
+            WebSearchStorage.saveSearchEnabled(true)
+            assertTrue("开关应保存为true", WebSearchStorage.isSearchEnabled())
+
+            WebSearchStorage.saveSearchEnabled(false)
+            assertFalse("开关应保存为false", WebSearchStorage.isSearchEnabled())
+
+            // 开关状态不影响服务商配置
+            val tavily = WebSearchStorage.getUserConfig("tavily")
+            assertNotNull("服务商配置应始终可读", tavily)
+        }
+    }
+
+    @Test
+    fun `saveUserConfig round-trip保留所有字段`() {
+        safelyInvoke {
+            val config = WebSearchStorage.UserWebSearchConfig(
+                enabled = true, apiKey = "sk-abc123",
+                customApiHost = "https://custom.example.com",
+                basicAuthUsername = "user1", basicAuthPassword = "pass1"
+            )
+            WebSearchStorage.saveUserConfig("test-provider", config)
+
+            val loaded = WebSearchStorage.getUserConfig("test-provider")
+            assertTrue(loaded.enabled)
+            assertEquals("sk-abc123", loaded.apiKey)
+            assertEquals("https://custom.example.com", loaded.customApiHost)
+            assertEquals("user1", loaded.basicAuthUsername)
+            assertEquals("pass1", loaded.basicAuthPassword)
+        }
+    }
 }
