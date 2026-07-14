@@ -325,9 +325,9 @@ class FeatureConfigsTest {
     }
 
     @Test
-    fun `CaptureConfig默认隐身模式为true`() {
+    fun `隐身模式默认为true`() {
         safelyInvoke {
-            assertTrue(CaptureConfig.isStealthModeEnabled())
+            assertTrue(UIConfig.isStealthModeEnabled())
         }
     }
 
@@ -400,12 +400,12 @@ class FeatureConfigsTest {
     }
 
     @Test
-    fun `CaptureConfig隐身模式保存后应一致`() {
+    fun `隐身模式保存后应一致`() {
         safelyInvoke {
-            CaptureConfig.saveStealthMode(false)
-            assertFalse(CaptureConfig.isStealthModeEnabled())
-            CaptureConfig.saveStealthMode(true)
-            assertTrue(CaptureConfig.isStealthModeEnabled())
+            UIConfig.saveStealthMode(false)
+            assertFalse(UIConfig.isStealthModeEnabled())
+            UIConfig.saveStealthMode(true)
+            assertTrue(UIConfig.isStealthModeEnabled())
         }
     }
 

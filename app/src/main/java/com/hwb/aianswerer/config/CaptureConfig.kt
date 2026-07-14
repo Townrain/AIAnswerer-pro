@@ -139,19 +139,5 @@ internal object CaptureConfig {
         return ConfigStorage.requireMmkv().decodeBool(ConfigStorage.KEY_AUTO_COPY, false)
     }
 
-    /**
-     * 获取隐身模式是否启用
-     * @return true表示启用隐身模式，false表示关闭，默认为true
-     */
-    fun isStealthModeEnabled(): Boolean {
-        return ConfigStorage.requireMmkv().decodeBool(ConfigStorage.KEY_STEALTH_MODE, true)
-    }
 
-    /**
-     * 保存隐身模式启用状态
-     * @param enabled 是否启用隐身模式
-     */
-    fun saveStealthMode(enabled: Boolean) {
-        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_STEALTH_MODE, enabled)
-    }
 }

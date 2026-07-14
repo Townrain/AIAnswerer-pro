@@ -90,7 +90,7 @@ internal object FWAnim {
 // 图标定义
 // =============================================================================
 
-val IcVision: ImageVector by lazy {
+internal val IcVision: ImageVector by lazy {
     ImageVector.Builder("IcVision", 24.dp, 24.dp, 24f, 24f).apply {
         path(fill = SolidColor(Color(0xFF22C55E))) {
             moveTo(12f, 4.5f)
@@ -115,7 +115,7 @@ val IcVision: ImageVector by lazy {
     }.build()
 }
 
-val IcGlobe: ImageVector by lazy {
+internal val IcGlobe: ImageVector by lazy {
     ImageVector.Builder("IcGlobe", 24.dp, 24.dp, 24f, 24f).apply {
         path(fill = SolidColor(Color(0xFF3B82F6))) {
             moveTo(12f, 2f)
@@ -152,7 +152,7 @@ val IcGlobe: ImageVector by lazy {
     }.build()
 }
 
-val IcBulb: ImageVector by lazy {
+internal val IcBulb: ImageVector by lazy {
     ImageVector.Builder("IcBulb", 24.dp, 24.dp, 24f, 24f).apply {
         path(fill = SolidColor(Color(0xFFF59E0B))) {
             moveTo(9f, 21f)
@@ -178,7 +178,7 @@ val IcBulb: ImageVector by lazy {
     }.build()
 }
 
-val IcRecord: ImageVector by lazy {
+internal val IcRecord: ImageVector by lazy {
     ImageVector.Builder("IcRecord", 24.dp, 24.dp, 24f, 24f).apply {
         path(fill = SolidColor(Color(0xFFEF4444))) {
             moveTo(12f, 2f)

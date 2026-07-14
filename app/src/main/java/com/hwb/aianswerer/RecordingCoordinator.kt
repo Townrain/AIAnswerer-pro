@@ -64,7 +64,8 @@ class RecordingCoordinator(
     private val copyTexts = mutableListOf<Pair<Int, String>>()
     private val textHashes = mutableSetOf<String>()
     private val jobs = CopyOnWriteArrayList<Job>()
-    val activeJobCount = AtomicInteger(0)
+    private val activeJobCount = AtomicInteger(0)
+    fun getActiveJobCount(): Int = activeJobCount.get()
     private var llmSemaphore: Semaphore? = null
     private var vlmSemaphore: Semaphore? = null
 

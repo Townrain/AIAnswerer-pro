@@ -49,6 +49,23 @@
     <string name="setting_float_button_size">Button size: %d dp</string>
     <string name="setting_float_button_alpha">Button transparency: %d%%</string>
     <string name="setting_float_card_alpha">Card transparency: %d%%</string>
+    <string name="float_toggle_vlm_on">VLM enabled</string>
+    <string name="float_toggle_vlm_off">VLM disabled</string>
+    <string name="float_toggle_search_on">Search enabled</string>
+    <string name="float_toggle_search_off">Search disabled</string>
+    <string name="float_toggle_reasoning_on">Reasoning enabled</string>
+    <string name="float_toggle_reasoning_off">Reasoning disabled</string>
+    <string name="float_toggle_search_no_provider">Please enable at least one search provider in settings</string>
+
+    <!-- Floating window card and buttons -->
+    <string name="float_answer_title">Answer</string>
+    <string name="float_quick_vlm">VLM</string>
+    <string name="float_quick_search">Search</string>
+    <string name="float_quick_reasoning">Reason</string>
+    <string name="float_quick_record">Record</string>
+    <string name="float_prev_page">Prev</string>
+    <string name="float_next_page">Next</string>
+    <string name="float_question_index">Q%1$d</string>
 
     <!-- Theme Mode -->
     <string name="setting_theme_title">Appearance</string>

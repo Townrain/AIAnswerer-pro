@@ -88,6 +88,15 @@ internal object UIConfig {
         ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_FLOAT_CARD_ALPHA, alpha.coerceIn(0.1f, 1.0f))
     }
 
+    /** 悬浮窗隐身模式是否启用，默认 true */
+    fun isStealthModeEnabled(): Boolean {
+        return ConfigStorage.requireMmkv().decodeBool(ConfigStorage.KEY_STEALTH_MODE, true)
+    }
+
+    fun saveStealthMode(enabled: Boolean) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_STEALTH_MODE, enabled)
+    }
+
     /**
      * 检查是否为首次启动
      * @return true表示首次启动，false表示已启动过

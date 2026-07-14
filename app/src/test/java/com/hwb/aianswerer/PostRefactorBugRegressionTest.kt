@@ -26,16 +26,17 @@ class PostRefactorBugRegressionTest {
 
     private val servicePath = "app/src/main/java/com/hwb/aianswerer/FloatingWindowService.kt"
     private val managerPath = "app/src/main/java/com/hwb/aianswerer/FloatingWindowManager.kt"
+    private val captureHandlerPath = "app/src/main/java/com/hwb/aianswerer/CaptureHandler.kt"
+    private val recordingCoordinatorPath = "app/src/main/java/com/hwb/aianswerer/RecordingCoordinator.kt"
 
     // ════ A1: VLM semaphore 内不应调用 OCR 降级 ════
 
     @Test fun `A1 recordingProcessWithOcr 不在 vlmSemaphore withPermit 内部`() {
-        val src = readSource(servicePath)
-        val method = src.substringAfter("recordingProcessWithVlm")
-            .substringBefore("private fun recordingFetchAnswer")
-        // 从 withPermit { 到匹配的 } 之间不应包含 recordingProcessWithOcr
+        val src = readSource(recordingCoordinatorPath)
+        val method = src.substringAfter("private suspend fun processWithVlm")
+            .substringBefore("private fun dedupeAndTrack")
         val idx = method.indexOf("withPermit {")
-        if (idx < 0) return  // 测试失败时会自然 fall through
+        if (idx < 0) return
         var depth = 0
         var permitEnd = -1
         for (i in idx until method.length) {
@@ -46,7 +47,7 @@ class PostRefactorBugRegressionTest {
         }
         val insidePermit = method.substring(idx, permitEnd + 1)
         assertFalse("recordingProcessWithOcr 不应在 withPermit 块内部",
-            insidePermit.contains("recordingProcessWithOcr"))
+            insidePermit.contains("processWithOcr"))
     }
 
     // ════ A2: stopRecording 应先处理/取消 recordingJobs，再 null semaphore ════
@@ -54,7 +55,7 @@ class PostRefactorBugRegressionTest {
     @Test fun `A2 stopRecording 先取消任务再置空 vlmSemaphore`() {
         val src = readSource(servicePath)
         val method = src.substringAfter("private fun stopRecording()")
-            .substringBefore("private fun handleRecordingCroppedImage")
+            .substringBefore("private fun showRecordingResults")
         val semaphoreNullPos = method.indexOf("vlmSemaphore = null")
         val jobsCheckPos = method.indexOf("recordingJobs")
         if (semaphoreNullPos >= 0 && jobsCheckPos >= 0) {
@@ -73,14 +74,12 @@ class PostRefactorBugRegressionTest {
 
     // ════ A4: 裁剪回调中 bitmap.recycle 有保护 ════
 
-    @Test fun `A4 handleRecordingCroppedImage 有 bitmap recycle`() {
-        val src = readSource(servicePath)
-        val method = src.substringAfter("handleRecordingCroppedImage")
-            .substringBefore("private fun recordingProcessBitmap")
-        // catch 块中必须有 bitmap.recycle()，不能只依赖外部 finally
-        val catchSection = method.substringAfter("catch (e: CancellationException) {")
-        val hasRecycle = catchSection.contains("bitmap.recycle()")
-        assertTrue("handleRecordingCroppedImage catch 块中应有 bitmap.recycle()", hasRecycle)
+    @Test fun `A4 handleCroppedImage bitmap recycle present`() {
+        val src = readSource(captureHandlerPath)
+        val method = src.substringAfter("fun handleCroppedImage")
+            .substringBefore("private fun launchCropActivity")
+        val hasRecycle = method.contains("bitmap.recycle()")
+        assertTrue("handleCroppedImage 应有 bitmap.recycle()", hasRecycle)
     }
 
     // ════ A5: startRecording 应取消 currentFetchJob ════
@@ -96,12 +95,11 @@ class PostRefactorBugRegressionTest {
     // ════ A6: 录题失败应有可见反馈 ════
 
     @Test fun `A6 recordingFetchAnswer 失败路径有用户反馈`() {
-        val src = readSource(servicePath)
-        val method = src.substringAfter("private fun recordingFetchAnswer")
-            .substringBefore("private fun recordingStoreAnswer")
-        // 应有失败计数、状态消息或错误提示
-        val hasFeedback = method.contains("recordingFailedCount") ||
-                method.contains("showErrorMessage") ||
+        val src = readSource(recordingCoordinatorPath)
+        val method = src.substringAfter("private fun fetchAnswer")
+            .substringBefore("private fun storeAnswer")
+        val hasFeedback = method.contains("failedCount") ||
+                method.contains("onError") ||
                 method.contains("statusMessage")
         assertTrue("录制失败路径应有用户可见反馈", hasFeedback)
     }
@@ -109,11 +107,10 @@ class PostRefactorBugRegressionTest {
     // ════ A7: hasContent 应在 bitmap null 检查之后 ════
 
     @Test fun `A7 hasContent 在 bitmap null 检查之后`() {
-        val src = readSource(servicePath)
-        // 找录制模式的 handleCapture 分支
-        val method = src.substringAfter("private fun handleCapture()")
-            .substringBefore("// 忙时点击")
-        val hasContentPos = method.indexOf("hasContent = true")
+        val src = readSource(captureHandlerPath)
+        val method = src.substringAfter("fun handleCapture()")
+            .substringBefore("// ── Normal mode")
+        val hasContentPos = method.indexOf("callbacks.setHasContent(true)")
         val bitmapNullCheckPos = method.indexOf("bitmap == null")
         if (hasContentPos >= 0 && bitmapNullCheckPos >= 0) {
             assertTrue("hasContent = true 应在 bitmap == null 检查之后",

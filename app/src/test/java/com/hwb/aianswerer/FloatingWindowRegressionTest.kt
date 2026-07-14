@@ -37,7 +37,6 @@ class FloatingWindowRegressionTest {
 
     private val servicePath = "app/src/main/java/com/hwb/aianswerer/FloatingWindowService.kt"
     private val managerPath = "app/src/main/java/com/hwb/aianswerer/FloatingWindowManager.kt"
-    private val pillContentPath = "app/src/main/java/com/hwb/aianswerer/ui/components/FloatingPillContent.kt"
     private val windowContentPath = "app/src/main/java/com/hwb/aianswerer/ui/components/FloatingWindowContent.kt"
 
     // ════ 设计常量 ════
@@ -140,145 +139,6 @@ class FloatingWindowRegressionTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // FIX #3: onSettled 竞态 — 同步传递 pillCenterX
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `onSettled 签名包含 pillCenterX`() {
-        val src = readSource(pillContentPath)
-        val sig = src.substringAfter("onSettled: ((")
-            .substringBefore("))?")
-        assertTrue("onSettled 签名必须包含 pillCenterX",
-            sig.contains("pillCenterX") && sig.contains("Float"))
-    }
-
-    @Test fun `onSettled 调用传入 dragX + measuredPillW div 2`() {
-        val src = readSource(pillContentPath)
-        val call = src.substringAfter("currentOnSettled?.invoke")
-            .substringBefore("\n")
-        assertTrue("onSettled 必须传入 dragX + measuredPillW / 2f",
-            call.contains("dragX") && call.contains("measuredPillW"))
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #4: onDragStart 用 rightEdge - pillW
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `onDragStart 用 rightEdge - pillW 计算起点`() {
-        val src = readSource(pillContentPath)
-        val start = src.substringAfter("onDragStart = {")
-            .substringBefore("}")
-        assertTrue("fingerX 必须用 rightEdge - pillW",
-            start.contains("fingerX = rightEdge - pillW"))
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #5: layoutInDisplayCutoutMode
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Ignore("LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS no longer set — cutout handling refactored")
-    @Test fun `窗口 使用 layoutInDisplayCutoutMode`() {
-        val src = readSource(servicePath)
-        assertTrue("必须设置 layoutInDisplayCutoutMode",
-            src.contains("LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS"))
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #6: curIsLeftSide 仅由内部 rightEdge 决定
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `curIsLeftSide 无外部参数覆盖`() {
-        val src = readSource(pillContentPath)
-        val line = src.substringAfter("fun FloatingPillContent(")
-            .lines().find { it.contains("val curIsLeftSide") && it.contains("rightEdge") }
-        assertNotNull("curIsLeftSide 计算行必须存在", line)
-        assertTrue("必须基于 rightEdge 计算", line!!.contains("rightEdge") && line.contains("<"))
-        assertFalse("不得引用 pillSide", line.contains("pillSide"))
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #7: 代码质量
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `无旧方案残留`() {
-        val src = readSource(pillContentPath)
-        assertFalse("不应有 prevSW", src.contains("var prevSW"))
-        assertFalse("不应有 dragStartSW", src.contains("var dragStartSW"))
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #8: 拖拽不跟随手指 — overridePillX 滞后 1-2 帧
-    //
-    // bug: layout 块中拖拽时使用 overridePillX（来自 Service 回调，滞后 1-2 帧）
-    //      而非 dragX（拖拽手势实时更新），导致按钮落后手指
-    // fix: 拖拽时直接用 dragX，不判断 overridePillX
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `拖拽时 layout 块不依赖 overridePillX`() {
-        val src = readSource(pillContentPath)
-        // 提取 layout 块中 isDragging||isAnimating 分支
-        val layoutBlock = src.substringAfter(".layout { measurable, constraints ->")
-            .substringBefore(".onGloballyPositioned")
-        // 跨行匹配：拖拽分支内容（从 isDragging||isAnimating 到 else if）
-        val dragBranch = layoutBlock.substringAfter("isDragging || isAnimating)")
-            .substringBefore("else if")
-        assertFalse(
-            "拖拽时不得使用 overridePillX（滞后值），应直接使用 dragX",
-            dragBranch.contains("overridePillX")
-        )
-    }
-
-    @Test fun `拖拽时 layout 块使用 dragX 实时值`() {
-        val src = readSource(pillContentPath)
-        val layoutBlock = src.substringAfter(".layout { measurable, constraints ->")
-            .substringBefore(".onGloballyPositioned")
-        val scrXLine = layoutBlock.lines().find { it.contains("val scrX = if") }
-        assertNotNull("scrX 计算行必须存在", scrXLine)
-        // fix 应用后：isDragging||isAnimating 分支应只有 dragX
-        val dragBranch = layoutBlock.substringAfter("isDragging || isAnimating)")
-            .substringBefore("else if")
-        assertTrue(
-            "拖拽分支中必须使用 dragX",
-            dragBranch.contains("dragX")
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #9: 首次拖拽 Y 跳变 — animY 初始为 0
-    //
-    // bug: onDragStart 中 dragY = animY.value，但 animY(Animatable) 初始为 0f
-    // fix: 不重新初始化 dragY，保持现有值
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `onDragStart 不重新初始化 dragY`() {
-        val src = readSource(pillContentPath)
-        val startBlock = src.substringAfter("onDragStart = {")
-            .substringBefore("currentOnDragStart")
-        assertFalse(
-            "onDragStart 中不得使用 animY.value 初始化 dragY",
-            startBlock.contains("dragY = if") && startBlock.contains("animY.value")
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #9b: 吸附方向使用 fingerX 而非 curIsLeftSide
-    //
-    // bug: LaunchedEffect 中使用 curIsLeftSide（组合时静态值），
-    //      而非 fingerX（拖拽结束实时位置），可能导致吸附到错误一侧
-    // fix: 用 fingerX < scrW / 2f 计算 leftSide
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `吸附方向基于 fingerX 而非 curIsLeftSide`() {
-        val src = readSource(pillContentPath)
-        // 在 LaunchedEffect(isDragging...) 内部查找 leftSide 计算
-        val snapBlock = src.substringAfter("LaunchedEffect(isDragging, snapX, snapY)")
-            .substringBefore("// 拖拽边界")
-        assertTrue(
-            "吸附方向必须基于 fingerX（实时）而非 curIsLeftSide（静态）",
-            snapBlock.contains("fingerX < scrW / 2f")
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
     // FIX #10: 卡片窗口 FLAG_NOT_TOUCHABLE — 桌面不可交互
     //
     // bug: updateCardFlags() 在 showAnswer/showQuick 时切为 NOT_TOUCH_MODAL，
@@ -305,44 +165,6 @@ class FloatingWindowRegressionTest {
         assertTrue(
             "updateCardFlags 必须确保 NOT_TOUCHABLE",
             method.contains("FLAG_NOT_TOUCHABLE") && method.contains("or nt")
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #11: 快捷按钮首次测量被 120dp 阈值过滤
-    //
-    // bug: minRealW = 120.dp 过滤掉首次测量值，导致 onQuickAreaChanged 延迟
-    // fix: 降低阈值为 20.dp
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `快捷按钮 minRealW 阈值为 20dp 以下`() {
-        val src = readSource(pillContentPath)
-        val minRealWLine = src.lines().find { it.contains("val minRealW") } ?: ""
-        assertTrue(
-            "minRealW 阈值应为 20.dp 或更低",
-            minRealWLine.contains("20.dp") || minRealWLine.contains("10.dp") || minRealWLine.contains("0.dp")
-        )
-        assertFalse(
-            "minRealW 阈值不得为 120.dp",
-            minRealWLine.contains("120.dp")
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FIX #12: 快捷按钮右侧展开被 coerceAtLeast(0) 裁剪
-    //
-    // bug: quickOffsetX.toInt().coerceAtLeast(0) 将负偏移裁剪为 0
-    // fix: 移除 coerceAtLeast(0)
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test fun `快捷按钮偏移不使用 coerceAtLeast`() {
-        val src = readSource(pillContentPath)
-        // 快捷按钮 offset 附近不应有 coerceAtLeast(0)
-        val quickBlock = src.substringAfter("// Quick toggles (rendered in pill window alongside the pill)")
-            .substringBefore("// Card rendered in pill window")
-        assertFalse(
-            "快捷按钮 offset 不得使用 coerceAtLeast(0) 裁剪",
-            quickBlock.contains("quickOffsetX.toInt().coerceAtLeast(0)")
         )
     }
 

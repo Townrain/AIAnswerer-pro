@@ -77,8 +77,8 @@ object AppConfig {
     fun getShowAnswerCardQuestion(): Boolean = CaptureConfig.getShowAnswerCardQuestion()
     fun saveShowAnswerCardOptions(show: Boolean) = CaptureConfig.saveShowAnswerCardOptions(show)
     fun getShowAnswerCardOptions(): Boolean = CaptureConfig.getShowAnswerCardOptions()
-    fun saveStealthMode(enabled: Boolean) = CaptureConfig.saveStealthMode(enabled)
-    fun isStealthModeEnabled(): Boolean = CaptureConfig.isStealthModeEnabled()
+    fun saveStealthMode(enabled: Boolean) = UIConfig.saveStealthMode(enabled)
+    fun isStealthModeEnabled(): Boolean = UIConfig.isStealthModeEnabled()
 
     // ── UI ──
     fun saveLanguage(code: String) = UIConfig.saveLanguage(code)

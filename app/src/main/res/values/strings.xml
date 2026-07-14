@@ -49,6 +49,23 @@
     <string name="setting_float_button_size">按钮大小：%d dp</string>
     <string name="setting_float_button_alpha">按钮透明度：%d%%</string>
     <string name="setting_float_card_alpha">卡片透明度：%d%%</string>
+    <string name="float_toggle_vlm_on">VLM模式已启用</string>
+    <string name="float_toggle_vlm_off">VLM模式已关闭</string>
+    <string name="float_toggle_search_on">联网搜索已启用</string>
+    <string name="float_toggle_search_off">联网搜索已关闭</string>
+    <string name="float_toggle_reasoning_on">深度思考已启用</string>
+    <string name="float_toggle_reasoning_off">深度思考已关闭</string>
+    <string name="float_toggle_search_no_provider">请先在设置中启用至少一个搜索服务商</string>
+
+    <!-- 悬浮窗卡片与按钮 -->
+    <string name="float_answer_title">答案</string>
+    <string name="float_quick_vlm">VLM</string>
+    <string name="float_quick_search">联网</string>
+    <string name="float_quick_reasoning">深度</string>
+    <string name="float_quick_record">录制</string>
+    <string name="float_prev_page">上一页</string>
+    <string name="float_next_page">下一页</string>
+    <string name="float_question_index">第%1$d题</string>
 
     <!-- 外观模式设置 -->
     <string name="setting_theme_title">外观模式</string>
