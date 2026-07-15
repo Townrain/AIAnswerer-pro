@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kover)
 }
 
 // 读取local.properties
@@ -179,4 +180,16 @@ dependencies {
 
     // Security - EncryptedSharedPreferences for API Key storage
     implementation(libs.security.crypto)
+}
+
+// Kover code coverage configuration
+kover {
+    reports {
+        filters {
+            excludes {
+                classes("com.hwb.aianswerer.ui.theme.*")
+                classes("com.hwb.aianswerer.BuildConfig")
+            }
+        }
+    }
 }

@@ -43,7 +43,10 @@ class OpenAIClient {
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
-            .callTimeout(65, TimeUnit.SECONDS)
+            .callTimeout(CALL_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .connectTimeout(CONNECT_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .readTimeout(READ_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .writeTimeout(WRITE_TIMEOUT_SEC, TimeUnit.SECONDS)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
@@ -124,7 +127,7 @@ class OpenAIClient {
                 .build()
 
             // 流式请求，60s Kotlin 层超时兜底
-            val answerContent = withTimeout(60_000L) {
+            val answerContent = withTimeout(WITH_TIMEOUT_MS) {
                 client.newCall(request).awaitStreamContent()
             }
 
@@ -244,7 +247,7 @@ class OpenAIClient {
                 .build()
 
             // 异步请求 + 30s 超时兜底
-            val response = withTimeout(30_000L) {
+            val response = withTimeout(TEST_TIMEOUT_MS) {
                 client.newCall(request).awaitCancellable()
             }
 
@@ -359,7 +362,7 @@ class OpenAIClient {
                 .post(requestBody)
                 .build()
 
-            val response = withTimeout(30_000L) {
+            val response = withTimeout(TEST_TIMEOUT_MS) {
                 client.newCall(request).awaitCancellable()
             }
             response.use { resp ->
@@ -382,6 +385,17 @@ class OpenAIClient {
     }
 
     companion object {
+        // 超时常量：readTimeout 与 Kotlin 层 withTimeout 必须对齐，
+        // 避免 OkHttp 先于协程超时导致不可取消的 SocketTimeoutException。
+        const val READ_TIMEOUT_SEC = 60L
+        const val CALL_TIMEOUT_SEC = 65L
+        const val WITH_TIMEOUT_MS = 60_000L
+        const val CONNECT_TIMEOUT_SEC = 15L
+        const val WRITE_TIMEOUT_SEC = 15L
+        const val TEST_TIMEOUT_MS = 30_000L
+
+        // 使用全局共享的Gson实例
+        private val gson = JsonUtil.gson
         // 使用全局共享的Gson实例
         private val gson = JsonUtil.gson
 

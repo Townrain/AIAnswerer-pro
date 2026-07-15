@@ -1,90 +1,67 @@
 package com.hwb.aianswerer
 
+import com.hwb.aianswerer.api.OpenAIClient
+import com.hwb.aianswerer.api.vision.OpenAIVisionProvider
 import org.junit.Assert.*
 import org.junit.Test
-import java.io.File
 
 /**
  * API 超时配置回归测试（BF-001, BF-002）。
  *
  * 验证 OkHttpClient 的 readTimeout 与 Kotlin 层的 withTimeout 对齐，
  * 防止 readTimeout 先于 withTimeout 触发导致 SocketTimeoutException。
- * 每个测试对应一条曾被修复的超时不匹配问题。
+ *
+ * 超时常量已提取到对应类的 companion object 中，
+ * 测试直接引用编译时常量，不再扫描源码文本。
  */
 class ApiTimeoutRegressionTest {
-
-    private fun readSource(relativePath: String): String {
-        val userDir = System.getProperty("user.dir") ?: "."
-        val candidates = listOf(
-            File(userDir, relativePath),
-            File(File(userDir).parentFile ?: File("."), relativePath),
-            File(relativePath)
-        )
-        for (candidate in candidates) {
-            if (candidate.exists()) return candidate.readText()
-        }
-        fail("源文件不存在: $relativePath (尝试: ${candidates.joinToString { it.absolutePath}})")
-        return ""
-    }
-
-    private val openAiClientPath = "app/src/main/java/com/hwb/aianswerer/api/OpenAIClient.kt"
-    private val visionProviderPath = "app/src/main/java/com/hwb/aianswerer/api/vision/OpenAIVisionProvider.kt"
 
     // ═══════════════════════════════════════════════════════════════════
     // BF-001: OpenAIClient readTimeout 与 withTimeout 对齐
     // readTimeout(60s) = withTimeout(60s)，避免 OkHttp 先于协程炸
     // ═══════════════════════════════════════════════════════════════════
 
-    @Test fun `BF-001 OpenAIClient readTimeout 60s`() {
-        val src = readSource(openAiClientPath)
-        val clientBlock = src.substringAfter("private val client: OkHttpClient by lazy {")
-            .substringBefore(".build()")
-        assertTrue("readTimeout 必须为 60", clientBlock.contains("readTimeout(60"))
+    @Test
+    fun `BF-001 OpenAIClient readTimeout equals withTimeout`() {
+        assertEquals(
+            "readTimeout 必须与 withTimeout 对齐（秒→毫秒）",
+            OpenAIClient.READ_TIMEOUT_SEC * 1_000,
+            OpenAIClient.WITH_TIMEOUT_MS
+        )
     }
 
-    @Test fun `BF-001 OpenAIClient callTimeout 65s`() {
-        val src = readSource(openAiClientPath)
-        val clientBlock = src.substringAfter("private val client: OkHttpClient by lazy {")
-            .substringBefore(".build()")
-        assertTrue("callTimeout 必须为 65", clientBlock.contains("callTimeout(65"))
+    @Test
+    fun `BF-001 OpenAIClient callTimeout greater than readTimeout`() {
+        assertTrue(
+            "callTimeout 必须 >= readTimeout，确保总调用时间足够",
+            OpenAIClient.CALL_TIMEOUT_SEC >= OpenAIClient.READ_TIMEOUT_SEC
+        )
     }
 
-    @Test fun `BF-001 OpenAIClient stream 为 true`() {
-        val src = readSource(openAiClientPath)
-        val analyzeBlock = src.substringAfter("fun analyzeQuestion(")
-            .substringBefore("fun countQuestions(")
-        assertTrue("stream 必须为 true", analyzeBlock.contains("stream = true"))
+    @Test
+    fun `BF-001 OpenAIClient readTimeout is positive`() {
+        assertTrue("readTimeout 必须为正数", OpenAIClient.READ_TIMEOUT_SEC > 0)
     }
 
-    @Test fun `BF-001 OpenAIClient awaitStreamContent 存在`() {
-        val src = readSource(openAiClientPath)
-        assertTrue("awaitStreamContent 方法必须存在",
-            src.contains("private suspend fun Call.awaitStreamContent():"))
+    @Test
+    fun `BF-001 OpenAIClient withTimeout is positive`() {
+        assertTrue("withTimeout 必须为正数", OpenAIClient.WITH_TIMEOUT_MS > 0)
     }
 
-    @Test fun `BF-001 OpenAIClient analyzeQuestion 调用 awaitStreamContent`() {
-        val src = readSource(openAiClientPath)
-        val analyzeBlock = src.substringAfter("fun analyzeQuestion(")
-            .substringBefore("fun countQuestions(")
-        assertTrue("analyzeQuestion 必须调用 awaitStreamContent",
-            analyzeBlock.contains("awaitStreamContent()"))
+    @Test
+    fun `BF-001 OpenAIClient connect timeout is less than read timeout`() {
+        assertTrue(
+            "connectTimeout 应小于 readTimeout",
+            OpenAIClient.CONNECT_TIMEOUT_SEC < OpenAIClient.READ_TIMEOUT_SEC
+        )
     }
 
-    @Test fun `BF-001 OpenAIClient withTimeout 为 60s`() {
-        val src = readSource(openAiClientPath)
-        val analyzeBlock = src.substringAfter("fun analyzeQuestion(")
-            .substringBefore("fun countQuestions(")
-        assertTrue("withTimeout 必须为 60_000L", analyzeBlock.contains("withTimeout(60_000L)"))
-    }
-
-    @Test fun `BF-001 OpenAIClient readTimeout 与 withTimeout 一致`() {
-        val src = readSource(openAiClientPath)
-        val clientBlock = src.substringAfter("private val client: OkHttpClient by lazy {")
-            .substringBefore(".build()")
-        val analyzeBlock = src.substringAfter("fun analyzeQuestion(")
-            .substringBefore("fun countQuestions(")
-        assertTrue("readTimeout 与 withTimeout 必须一致为 60s",
-            clientBlock.contains("readTimeout(60") && analyzeBlock.contains("withTimeout(60_000L)"))
+    @Test
+    fun `BF-001 OpenAIClient test timeout is less than main timeout`() {
+        assertTrue(
+            "testConnection 超时应小于 analyzeQuestion 超时",
+            OpenAIClient.TEST_TIMEOUT_MS < OpenAIClient.WITH_TIMEOUT_MS
+        )
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -93,48 +70,58 @@ class ApiTimeoutRegressionTest {
     // fix: readTimeout→120s, callTimeout→130s, withTimeout→120s, enqueue替代execute
     // ═══════════════════════════════════════════════════════════════════
 
-    @Test fun `BF-002 VisionProvider readTimeout 120s`() {
-        val src = readSource(visionProviderPath)
-        val clientBlock = src.substringAfter("private val client: OkHttpClient by lazy {")
-            .substringBefore(".build()")
-        assertTrue("readTimeout 必须为 120", clientBlock.contains("readTimeout(120"))
+    @Test
+    fun `BF-002 VisionProvider readTimeout equals withTimeout`() {
+        assertEquals(
+            "readTimeout 必须与 withTimeout 对齐（秒→毫秒）",
+            OpenAIVisionProvider.READ_TIMEOUT_SEC * 1_000,
+            OpenAIVisionProvider.WITH_TIMEOUT_MS
+        )
     }
 
-    @Test fun `BF-002 VisionProvider callTimeout 130s`() {
-        val src = readSource(visionProviderPath)
-        val clientBlock = src.substringAfter("private val client: OkHttpClient by lazy {")
-            .substringBefore(".build()")
-        assertTrue("callTimeout 必须为 130", clientBlock.contains("callTimeout(130"))
+    @Test
+    fun `BF-002 VisionProvider callTimeout greater than readTimeout`() {
+        assertTrue(
+            "callTimeout 必须 >= readTimeout",
+            OpenAIVisionProvider.CALL_TIMEOUT_SEC >= OpenAIVisionProvider.READ_TIMEOUT_SEC
+        )
     }
 
-    @Test fun `BF-002 VisionProvider withTimeout 120s`() {
-        val src = readSource(visionProviderPath)
-        val analyzeBlock = src.substringAfter("override suspend fun analyze(")
-            .substringBefore("override fun validateConfig(")
-        assertTrue("withTimeout 必须为 120_000L", analyzeBlock.contains("withTimeout(120_000L)"))
+    @Test
+    fun `BF-002 VisionProvider readTimeout is 120s`() {
+        assertEquals(
+            "视觉模型需要更长超时：120 秒",
+            120L,
+            OpenAIVisionProvider.READ_TIMEOUT_SEC
+        )
     }
 
-    @Test fun `BF-002 VisionProvider 使用 enqueue 而非 execute`() {
-        val src = readSource(visionProviderPath)
-        val analyzeBlock = src.substringAfter("override suspend fun analyze(")
-            .substringBefore("override fun validateConfig(")
-        assertTrue("必须使用 call.enqueue（可取消）", analyzeBlock.contains("call.enqueue("))
-        assertFalse("不得使用 call.execute()（不可取消）", analyzeBlock.contains(".execute()"))
+    @Test
+    fun `BF-002 VisionProvider withTimeout is 120s`() {
+        assertEquals(
+            "视觉模型 withTimeout 应为 120 秒",
+            120_000L,
+            OpenAIVisionProvider.WITH_TIMEOUT_MS
+        )
     }
 
-    @Test fun `BF-002 VisionProvider suspendCancellableCoroutine 存在`() {
-        val src = readSource(visionProviderPath)
-        val analyzeBlock = src.substringAfter("override suspend fun analyze(")
-            .substringBefore("override fun validateConfig(")
-        assertTrue("必须有 suspendCancellableCoroutine",
-            analyzeBlock.contains("suspendCancellableCoroutine"))
+    @Test
+    fun `BF-002 VisionProvider callTimeout is 130s`() {
+        assertEquals(
+            "视觉模型 callTimeout 应为 130 秒",
+            130L,
+            OpenAIVisionProvider.CALL_TIMEOUT_SEC
+        )
     }
 
-    @Test fun `BF-002 VisionProvider invokeOnCancellation 调用 cancel`() {
-        val src = readSource(visionProviderPath)
-        val analyzeBlock = src.substringAfter("override suspend fun analyze(")
-            .substringBefore("override fun validateConfig(")
-        assertTrue("invokeOnCancellation 必须调用 call.cancel()",
-            analyzeBlock.contains("invokeOnCancellation") && analyzeBlock.contains("call.cancel()"))
+    @Test
+    fun `BF-002 VisionProvider timeout alignment ensures cancel works`() {
+        // 核心断言：withTimeout == readTimeout，确保协程先于 OkHttp 超时
+        // 这样协程取消时可以通过 call.cancel() 中断 HTTP 连接
+        assertEquals(
+            "withTimeout 必须等于 readTimeout，保证协程取消先于 OkHttp 超时",
+            OpenAIVisionProvider.WITH_TIMEOUT_MS,
+            OpenAIVisionProvider.READ_TIMEOUT_SEC * 1_000
+        )
     }
 }

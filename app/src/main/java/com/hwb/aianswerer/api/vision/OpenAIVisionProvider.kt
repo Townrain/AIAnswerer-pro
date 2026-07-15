@@ -60,12 +60,21 @@ class OpenAIVisionProvider(
 
     private val gson = JsonUtil.gson
 
+    companion object {
+        const val READ_TIMEOUT_SEC = 120L
+        const val CALL_TIMEOUT_SEC = 130L
+        const val WITH_TIMEOUT_MS = 120_000L
+        const val CONNECT_TIMEOUT_SEC = 15L
+        const val WRITE_TIMEOUT_SEC = 15L
+        const val TEST_TIMEOUT_SEC = 30L
+    }
+
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .callTimeout(130, TimeUnit.SECONDS)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(CALL_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .connectTimeout(CONNECT_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .readTimeout(READ_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .writeTimeout(WRITE_TIMEOUT_SEC, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
             .build()
     }
@@ -111,7 +120,7 @@ class OpenAIVisionProvider(
                     .build()
 
                 AppLog.net("VLM", "request to ${config.baseUrl} model=${config.modelName}")
-                val response = withTimeout(120_000L) {
+                val response = withTimeout(WITH_TIMEOUT_MS) {
                     val call = client.newCall(httpRequest)
                     suspendCancellableCoroutine { cont ->
                         cont.invokeOnCancellation {
