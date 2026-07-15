@@ -1,9 +1,6 @@
 package com.hwb.aianswerer.config
 
 import android.content.Context
-import com.hwb.aianswerer.providers.WebSearchStorage
-import com.tencent.mmkv.MMKV
-
 object AppConfig {
     // ── Storage init ──
     fun init(context: Context) = ConfigStorage.init(context)
@@ -108,33 +105,4 @@ object AppConfig {
     fun getDynamicProviderModels(providerId: String): List<String> = ModelWhitelistConfig.getDynamicProviderModels(providerId)
     fun saveDynamicProviderConfigs(configs: List<com.hwb.aianswerer.utils.ModelWhitelistUpdater.ProviderConfig>) = ModelWhitelistConfig.saveDynamicProviderConfigs(configs)
     fun getDynamicProviderConfigs(): List<com.hwb.aianswerer.utils.ModelWhitelistUpdater.ProviderConfig> = ModelWhitelistConfig.getDynamicProviderConfigs()
-    // ── Migration ──
-    /**
-     * 一次性迁移：将旧 Tavily 配置迁移到新的多供应商 WebSearchStorage。
-     * 仅在首次升级时执行，通过 migrate flag 保证只执行一次。
-     */
-    fun migrateTavilyConfig() {
-        try {
-            val mmkv = MMKV.defaultMMKV()
-            if (mmkv.decodeBool("migrated_tavily_to_websearch", false)) return
-
-            val oldApiKey = ConfigStorage.getSecurePrefs()?.getString("tavily_api_key", null)
-                ?: mmkv.decodeString("tavily_api_key", null)
-            val oldEnabled = mmkv.decodeBool("tavily_enabled", false)
-
-            if (oldEnabled || !oldApiKey.isNullOrBlank()) {
-                val existingConfig = WebSearchStorage.getUserConfig("tavily")
-                if (!existingConfig.enabled && existingConfig.apiKey.isBlank()) {
-                    WebSearchStorage.saveUserConfig("tavily", WebSearchStorage.UserWebSearchConfig(
-                        enabled = oldEnabled,
-                        apiKey = oldApiKey ?: ""
-                    ))
-                    WebSearchStorage.saveSearchEnabled(oldEnabled)
-                }
-            }
-            mmkv.encode("migrated_tavily_to_websearch", true)
-        } catch (e: Exception) {
-            android.util.Log.w("AppConfig", "Tavily config migration failed", e)
-        }
-    }
 }

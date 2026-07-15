@@ -266,7 +266,7 @@ object ProviderStorage {
         android.util.Log.d("ProviderStorage", "isAnyProviderConfigured: ${allConfigs.size} configs found, ids=${allConfigs.keys}")
         for ((id, config) in allConfigs) {
             val apiKey = getUserApiKey(id)
-            android.util.Log.d("ProviderStorage", "  $id: enabled=${config.enabled}, apiKey=${apiKey.take(8)}...")
+            android.util.Log.d("ProviderStorage", "  $id: enabled=${config.enabled}, apiKey=${if (apiKey.isNotBlank()) "present" else "absent"}")
             if (apiKey.isNotBlank()) return true
         }
         return false

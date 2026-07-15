@@ -68,6 +68,7 @@ import com.hwb.aianswerer.ui.components.PasswordTextField
 import com.hwb.aianswerer.ui.components.PremiumToggle
 import com.hwb.aianswerer.ui.components.SectionLabel
 import com.hwb.aianswerer.ui.components.TopBarWithBack
+import com.hwb.aianswerer.ui.pages.TestState
 import com.hwb.aianswerer.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -329,7 +330,7 @@ private fun VisionExpandedContent(
 ) {
     var apiKey by remember(provider.id) { mutableStateOf(AppConfig.getVisionApiKey()) }
     var apiHost by remember(provider.id) { mutableStateOf(if (AppConfig.getVisionBaseUrl().isNotBlank()) AppConfig.getVisionBaseUrl() else provider.apiHost) }
-    var testState by remember { mutableStateOf<VisionTestState>(VisionTestState.Idle) }
+    var testState by remember { mutableStateOf<TestState>(TestState.Idle) }
     var selectedModel by remember(provider.id) { mutableStateOf(AppConfig.getVisionModelName().ifBlank { null }) }
     val coroutineScope = rememberCoroutineScope()
 
@@ -370,10 +371,10 @@ private fun VisionExpandedContent(
 
         // 测试连接
         AnimatedButton(
-            text = if (testState is VisionTestState.Testing) "测试中…" else stringResource(R.string.button_test_connection),
+            text = if (testState is TestState.Testing) "测试中…" else stringResource(R.string.button_test_connection),
             onClick = {
                 coroutineScope.launch {
-                    testState = VisionTestState.Testing
+                    testState = TestState.Testing
                     try {
                         val config = OpenAIVisionConfig(
                             baseUrl = apiHost,
@@ -383,35 +384,35 @@ private fun VisionExpandedContent(
                         val pv = OpenAIVisionProvider.getInstance(config)
                         val result = pv.testConnection()
                         testState = result.fold(
-                            onSuccess = { VisionTestState.Success(0) },
-                            onFailure = { VisionTestState.Error(it.message ?: "Unknown") }
+                            onSuccess = { TestState.Success(0) },
+                            onFailure = { TestState.Error(it.message ?: "Unknown") }
                         )
                     } catch (e: Exception) {
-                        testState = VisionTestState.Error(e.message ?: "Unknown")
+                        testState = TestState.Error(e.message ?: "Unknown")
                     }
                 }
             },
             modifier = Modifier.fillMaxWidth(),
             variant = ButtonVariant.Tonal,
-            enabled = testState !is VisionTestState.Testing && apiKey.isNotBlank()
+            enabled = testState !is TestState.Testing && apiKey.isNotBlank()
         )
 
         when (val s = testState) {
-            is VisionTestState.Success -> {
+            is TestState.Success -> {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Spacing.sm)) {
                     Box(Modifier.size(6.dp).clip(CircleShape).background(SuccessGreen))
                     Spacer(Modifier.width(Spacing.sm))
                     Text(
-                        text = if (s.latencyMs > 0) "连接成功 · ${s.latencyMs}ms" else "连接成功",
+                        text = if (s.ms > 0) "连接成功 · ${s.ms}ms" else "连接成功",
                         style = MaterialTheme.typography.bodyMedium, color = SuccessGreen, fontWeight = FontWeight.Medium
                     )
                 }
             }
-            is VisionTestState.Error -> {
+            is TestState.Error -> {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Spacing.sm)) {
                     Box(Modifier.size(6.dp).clip(CircleShape).background(ErrorRed))
                     Spacer(Modifier.width(Spacing.sm))
-                    Text(text = s.message, style = MaterialTheme.typography.bodyMedium, color = ErrorRed, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(text = s.msg, style = MaterialTheme.typography.bodyMedium, color = ErrorRed, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             else -> {}
@@ -614,12 +615,6 @@ private fun animateColorAsState(targetValue: Color, animationSpec: androidx.comp
     return androidx.compose.animation.animateColorAsState(targetValue = targetValue, animationSpec = animationSpec, label = label).value
 }
 
-private sealed class VisionTestState {
-    object Idle : VisionTestState()
-    object Testing : VisionTestState()
-    data class Success(val latencyMs: Long = 0) : VisionTestState()
-    data class Error(val message: String) : VisionTestState()
-}
 
 private fun loadVisionProviders(): List<LocalProviderConfig> {
     return ProviderStorage.getMergedProviders().ifEmpty {

@@ -3,7 +3,7 @@ package com.hwb.aianswerer.providers
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import com.hwb.aianswerer.BaseActivity
-import com.hwb.aianswerer.ui.pages.ModelsPage
+import com.hwb.aianswerer.ui.pages.models.ModelsPage
 import com.hwb.aianswerer.ui.theme.sandboxTheme
 
 class ProviderSettingsActivity : BaseActivity() {

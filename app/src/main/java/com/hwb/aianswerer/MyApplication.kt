@@ -3,6 +3,7 @@ package com.hwb.aianswerer
 import android.app.Application
 import android.content.Context
 import com.hwb.aianswerer.config.AppConfig
+import com.hwb.aianswerer.providers.TavilyMigration
 import com.hwb.aianswerer.providers.ProviderStorage
 import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.LanguageUtil
@@ -38,7 +39,7 @@ class MyApplication : Application() {
         // 清理残留的临时裁剪文件
         cleanupTempFiles()
         // 迁移旧 Tavily 配置到新的多供应商 WebSearchStorage
-        AppConfig.migrateTavilyConfig()
+        TavilyMigration.run()
 
     }
 

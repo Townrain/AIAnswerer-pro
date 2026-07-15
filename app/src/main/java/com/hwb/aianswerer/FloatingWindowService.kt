@@ -65,6 +65,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.ViewModelProvider
 
 /**
  * Floating window service — the runtime core of answer mode.
@@ -112,53 +113,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private lateinit var settings: SettingsService
     private lateinit var captureHandler: CaptureHandler
     private lateinit var answerFetcher: AnswerFetcher
-
-    // ── Compose state ───────────────────────────────────────────────────
-
-    private var answerText = mutableStateOf<String?>(null)
-    private var showAnswer = mutableStateOf(false)
-    private var statusMessage = mutableStateOf<String?>(null)
-    private var floatingStatus = mutableStateOf<FloatingStatus>(FloatingStatus.Idle)
-
-    // ── Window geometry ─────────────────────────────────────────────────
-
-    private var isArcExpanded = false
-    private var hasContent = false
-    private var currentWindowHeightPx = 0f
-    private var measuredContentHeightPx = 0f
-    private var captureInProgress = false
-
-    private var displayWindowX = mutableFloatStateOf(0f)
-    private var windowXAnimJob: Job? = null
-
-    private var floatOffsetX = mutableFloatStateOf(0f)
-    private var floatOffsetY = mutableFloatStateOf(200f)
-
-    // ── Crop state ──────────────────────────────────────────────────────
-
-    private var cropMode = AppConfig.CROP_MODE_FULL
-    @Volatile private var savedCropRect: CropRect? = null
-    @Volatile private var savedCropRectEach: CropRect? = null
-
-    // ── Network ─────────────────────────────────────────────────────────
-
-    private var currentFetchJob: Job? = null
-
-    // ── Recording mode state ────────────────────────────────────────────
-
-    private var isRecording = mutableStateOf(false)
-    private var recordingCaptureCount = mutableStateOf(0)
-    private var isProcessingRecording = mutableStateOf(false)
-    private var recordingProcessedCount = mutableStateOf(0)
-    private var recordingAnswers = mutableStateOf<List<Pair<Int, String>>>(emptyList())
-    private var recordingCopyTexts = mutableStateOf<List<Pair<Int, String>>>(emptyList())
-    private var recordingSkippedCount = mutableStateOf(0)
-    private var recordingFailedCount = mutableStateOf(0)
-
-    // ── Paginated answers (normal mode) ─────────────────────────────────
-
-    private var paginatedAnswers = mutableStateOf<List<Pair<Int, String>>>(emptyList())
-    private var paginatedCopyTexts = mutableStateOf<List<Pair<Int, String>>>(emptyList())
+    private lateinit var viewModel: FloatingWindowViewModel
 
     // ── LifecycleOwner / ViewModelStoreOwner / SavedStateRegistryOwner ──
 
@@ -180,14 +135,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 Constants.ACTION_SHOW_ANSWER -> {
                     val answer = intent.getStringExtra(Constants.EXTRA_ANSWER_TEXT)
                     if (!answer.isNullOrBlank()) {
-                        answerText.value = answer
-                        showAnswer.value = true
+                        viewModel.answerText.value = answer
+                        viewModel.showAnswer.value = true
                     }
                 }
                 Constants.ACTION_REQUEST_ANSWER -> {
                     val questionText = intent.getStringExtra(Constants.EXTRA_QUESTION_TEXT)
                     if (!questionText.isNullOrBlank()) {
-                        onTextRecognized(questionText, null)
+                        viewModel.onTextRecognized(questionText, null, answerFetcher)
                     }
                 }
                 ACTION_CROP_RESULT -> {
@@ -202,18 +157,18 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             topLeft = android.graphics.PointF(tlX, tlY),
                             bottomRight = android.graphics.PointF(brX, brY)
                         )
-                        when (cropMode) {
-                            AppConfig.CROP_MODE_ONCE -> { savedCropRect = cropRect }
-                            AppConfig.CROP_MODE_EACH -> { savedCropRectEach = cropRect }
+                        when (viewModel.cropMode) {
+                            AppConfig.CROP_MODE_ONCE -> { viewModel.savedCropRect = cropRect }
+                            AppConfig.CROP_MODE_EACH -> { viewModel.savedCropRectEach = cropRect }
                         }
-                        if (isRecording.value) {
+                        if (viewModel.isRecording.value) {
                             recorder.handleCroppedImage(imagePath, cropRect)
                         } else {
                             captureHandler.handleCroppedImage(imagePath, cropRect)
                         }
                     }
                 }
-                Constants.ACTION_REFRESH_SETTINGS -> refreshSettingsFromApp()
+                Constants.ACTION_REFRESH_SETTINGS -> viewModel.refreshSettingsFromApp()
             }
         }
     }
@@ -237,32 +192,37 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         windowMgr = FloatingWindowManager(this)
         settings = SettingsService()
 
-        recorder = RecordingCoordinator(pipeline, serviceScope, object : RecordingCoordinator.Callbacks {
-            override fun onError(message: String) { showErrorMessage(message) }
-            override fun onToast(message: String) { Toast.makeText(this@FloatingWindowService, message, Toast.LENGTH_SHORT).show() }
-            override fun onResultsAvailable(answers: List<Pair<Int, String>>, copyTexts: List<Pair<Int, String>>, total: Int, skipped: Int, failed: Int) {
-                showRecordingResultsFromCoordinator(answers, copyTexts, total, skipped, failed)
+        viewModel = ViewModelProvider(this).get(FloatingWindowViewModel::class.java)
+        viewModel.initialize(object : FloatingWindowViewModel.ServiceContext {
+            override fun showToast(msg: String) { Toast.makeText(this@FloatingWindowService, msg, Toast.LENGTH_SHORT).show() }
+            override fun getString(id: Int) = this@FloatingWindowService.getString(id)
+            override fun getString(id: Int, vararg args: Any) = this@FloatingWindowService.getString(id, *args)
+            override fun showErrorToUser(msg: String) {
+                viewModel.floatingStatus.value = FloatingStatus.Error
+                serviceScope.launch {
+                    viewModel.statusMessage.value = msg
+                    delay(5000)
+                    if (viewModel.statusMessage.value == msg) { viewModel.statusMessage.value = null }
+                }
             }
-            override fun onProgressUpdate(processed: Int, total: Int) {
-                statusMessage.value = getString(R.string.recording_processing, processed, total)
-                recordingProcessedCount.value = processed
-            }
-            override fun getString(resId: Int, vararg args: Any?): String =
-                this@FloatingWindowService.getString(resId, *args)
-            override fun isSearchEnabled(): Boolean = settings.searchEnabled.value
+            override fun copyToClipboard(text: String) { ClipboardUtil.copyToClipboard(this@FloatingWindowService, text) }
+            override fun isLeftSide(): Boolean { val w = resources.displayMetrics.widthPixels.toFloat(); return viewModel.floatOffsetX.value < w / 2f }
+            override fun getDensity() = resources.displayMetrics.density
+            override fun setFlagSecure(enabled: Boolean) { windowMgr.setFlagSecure(touchLayout, enabled) }
+            override fun updateWindowPosition() { this@FloatingWindowService.updateWindowPosition() }
+            override fun updateWindowHeight() { updateFloatingWindowHeight() }
+            override fun animateWindowX(targetX: Float, animated: Boolean) { this@FloatingWindowService.animateWindowX(targetX, animated) }
+            override fun getCurrentWindowHeightPx() = viewModel.currentWindowHeightPx
+            override fun setCurrentWindowHeightPx(h: Float) { viewModel.currentWindowHeightPx = h }
+            override fun setHasContent(has: Boolean) { viewModel.hasContent = has }
+            override fun onRecordingBitmap(bitmap: Bitmap) { recorder.processBitmap(bitmap) }
+            override fun updateFloatingWindowHeight() { this@FloatingWindowService.updateFloatingWindowHeight() }
         })
 
-        answerFetcher = AnswerFetcher(pipeline, serviceScope, object : AnswerFetcherCallbacks {
-            override fun onStatus(status: FloatingStatus, message: String?) {
-                floatingStatus.value = status
-                statusMessage.value = message
-            }
-            override fun onToast(message: String) {
-                Toast.makeText(this@FloatingWindowService, message, Toast.LENGTH_SHORT).show()
-            }
-            override fun onError(message: String) { showErrorMessage(message) }
-            override fun isSearchEnabled(): Boolean = settings.searchEnabled.value
-        })
+        recorder = RecordingCoordinator(pipeline, serviceScope, viewModel.recordingCallbacks)
+
+        answerFetcher = AnswerFetcher(pipeline, serviceScope, viewModel.answerCallbacks)
+        viewModel.answerFetcher = answerFetcher
 
         captureHandler = CaptureHandler(
             screenCaptureManager, pipeline, recorder, serviceScope,
@@ -316,80 +276,19 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     screenCaptureManager?.initMediaProjection(resultCode, data)
                 }
             }
-            if (it.hasExtra("cropMode")) {
-                cropMode = it.getStringExtra("cropMode") ?: AppConfig.CROP_MODE_FULL
+            if (it.hasExtra("viewModel.cropMode")) {
+                viewModel.cropMode = it.getStringExtra("viewModel.cropMode") ?: AppConfig.CROP_MODE_FULL
             }
-            savedCropRect = null
-            savedCropRectEach = null
+            viewModel.savedCropRect = null
+            viewModel.savedCropRectEach = null
         }
         return START_NOT_STICKY
     }
 
     // ── CaptureHandlerCallbacks implementation ──────────────────────────
 
-    private val captureCallbacks = object : CaptureHandlerCallbacks {
-        override fun isRecording() = isRecording.value
-        override fun getCropMode() = cropMode
-        override fun getSavedCropRect() = savedCropRect
-        override fun getSavedCropRectEach() = savedCropRectEach
-        override fun isVisionEnabled() = settings.visionEnabled.value
-        override fun isSearchEnabled() = settings.searchEnabled.value
-        override fun isStealthModeEnabled() = settings.stealthMode.value
-        override fun getFloatButtonSizeDp() = settings.floatButtonSizeDp.value
-        override fun getDensity() = resources.displayMetrics.density
+    private val captureCallbacks get() = viewModel.captureCallbacks
 
-        override fun setSavedCropRect(rect: CropRect?) { savedCropRect = rect }
-        override fun setSavedCropRectEach(rect: CropRect?) { savedCropRectEach = rect }
-        override fun setHasContent(has: Boolean) { hasContent = has }
-        override fun setCaptureInProgress(enabled: Boolean) { captureInProgress = enabled }
-        override fun setShowAnswer(show: Boolean) { showAnswer.value = show }
-        override fun getCurrentWindowHeightPx() = currentWindowHeightPx
-        override fun setCurrentWindowHeightPx(h: Float) { currentWindowHeightPx = h }
-
-        override fun setFlagSecure(enabled: Boolean) {
-            windowMgr.setFlagSecure(touchLayout, enabled)
-        }
-        override fun updateWindowPosition() { this@FloatingWindowService.updateWindowPosition() }
-        override fun updateWindowHeight() { updateFloatingWindowHeight() }
-
-        override fun showError(message: String) { showErrorMessage(message) }
-        override fun showToast(message: String) {
-            Toast.makeText(this@FloatingWindowService, message, Toast.LENGTH_SHORT).show()
-        }
-        override fun setStatus(status: FloatingStatus) { floatingStatus.value = status }
-        override fun setStatusMessage(msg: String?) { statusMessage.value = msg }
-        override fun getString(resId: Int, vararg args: Any?) =
-            this@FloatingWindowService.getString(resId, *args)
-
-        override fun onTextRecognized(text: String, visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult?) {
-            this@FloatingWindowService.onTextRecognized(text, visionResult)
-        }
-        override fun onRecordingBitmap(bitmap: Bitmap) {
-            recorder.processBitmap(bitmap)
-        }
-        override fun incRecordingCaptureCount(): Int {
-            recordingCaptureCount.value++
-            return recordingCaptureCount.value
-        }
-        override fun getCurrentFetchJob() = currentFetchJob
-        override fun setCurrentFetchJob(job: Job?) { currentFetchJob = job }
-    }
-
-    // ── Recognized text → answer dispatch ──────────────────────────────
-
-    /**
-     * Central handler called when [CaptureHandler] finishes recognition
-     * (or when a question-text broadcast arrives).
-     */
-    private fun onTextRecognized(text: String, visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult?) {
-        val autoCopy = AppConfig.getAutoCopy()
-        answerFetcher.fetchAnswer(text, visionResult) { result ->
-            when (result) {
-                is AnswerResult.Success -> serviceScope.launch { handleAnswerSuccess(result.answers, autoCopy) }
-                is AnswerResult.Error -> showErrorMessage(result.message)
-            }
-        }
-    }
 
     // ── Floating window UI ──────────────────────────────────────────────
 
@@ -401,11 +300,11 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val buttonSizePx = settings.floatButtonSizeDp.value * density
         val buttonHalf = buttonSizePx / 2f
 
-        currentWindowHeightPx = 200 * density
-        floatOffsetX.value = screenW - buttonHalf
-        floatOffsetY.value = screenH * 0.30f
+        viewModel.currentWindowHeightPx = 200 * density
+        viewModel.floatOffsetX.value = screenW - buttonHalf
+        viewModel.floatOffsetY.value = screenH * 0.30f
 
-        fun isLeftSide() = floatOffsetX.value < screenW / 2f
+        fun isLeftSide() = viewModel.floatOffsetX.value < screenW / 2f
 
         val windowWidthPx = 360 * density
 
@@ -416,9 +315,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         val params = windowMgr.createLayoutParams(
             windowWidthPx = windowWidthPx.toInt(),
-            windowHeightPx = currentWindowHeightPx.toInt(),
+            windowHeightPx = viewModel.currentWindowHeightPx.toInt(),
             isLeftSide = isLeftSide(),
-            offsetY = floatOffsetY.value,
+            offsetY = viewModel.floatOffsetY.value,
             screenW = screenW,
             screenH = screenH,
             isStealth = settings.stealthMode.value
@@ -444,54 +343,54 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             setContent {
                 AIAnswererTheme {
                     FloatingWindowContent(
-                        answerText = answerText.value,
-                        showAnswer = showAnswer.value,
-                        statusMessage = statusMessage.value,
+                        answerText = viewModel.answerText.value,
+                        showAnswer = viewModel.showAnswer.value,
+                        statusMessage = viewModel.statusMessage.value,
                         buttonSize = settings.floatButtonSizeDp.value,
                         buttonAlpha = settings.floatButtonAlpha.value,
                         cardAlpha = settings.floatCardAlpha.value,
                         isLeftSide = isLeftSide(),
-                        floatingStatus = floatingStatus.value,
+                        floatingStatus = viewModel.floatingStatus.value,
                         onCaptureClick = { captureHandler.handleCapture() },
                         onCloseAnswer = {
-                            currentFetchJob?.cancel()
-                            currentFetchJob = null
-                            showAnswer.value = false
-                            answerText.value = null
-                            recordingAnswers.value = emptyList()
-                            paginatedAnswers.value = emptyList()
-                            paginatedCopyTexts.value = emptyList()
-                            floatingStatus.value = FloatingStatus.Idle
-                            statusMessage.value = null
+                            viewModel.currentFetchJob?.cancel()
+                            viewModel.currentFetchJob = null
+                            viewModel.showAnswer.value = false
+                            viewModel.answerText.value = null
+                            viewModel.recordingAnswers.value = emptyList()
+                            viewModel.paginatedAnswers.value = emptyList()
+                            viewModel.paginatedCopyTexts.value = emptyList()
+                            viewModel.floatingStatus.value = FloatingStatus.Idle
+                            viewModel.statusMessage.value = null
                         },
                         onCloseStatus = {
-                            currentFetchJob?.cancel()
-                            currentFetchJob = null
+                            viewModel.currentFetchJob?.cancel()
+                            viewModel.currentFetchJob = null
                             recorder.cancel()
-                            isProcessingRecording.value = false
-                            showAnswer.value = false
-                            answerText.value = null
-                            recordingAnswers.value = emptyList()
-                            paginatedAnswers.value = emptyList()
-                            paginatedCopyTexts.value = emptyList()
-                            floatingStatus.value = FloatingStatus.Idle
-                            statusMessage.value = null
+                            viewModel.isProcessingRecording.value = false
+                            viewModel.showAnswer.value = false
+                            viewModel.answerText.value = null
+                            viewModel.recordingAnswers.value = emptyList()
+                            viewModel.paginatedAnswers.value = emptyList()
+                            viewModel.paginatedCopyTexts.value = emptyList()
+                            viewModel.floatingStatus.value = FloatingStatus.Idle
+                            viewModel.statusMessage.value = null
                         },
                         onCopyAnswer = {
-                            ClipboardUtil.copyToClipboard(this@FloatingWindowService, answerText.value ?: "")
+                            ClipboardUtil.copyToClipboard(this@FloatingWindowService, viewModel.answerText.value ?: "")
                         },
                         onMove = { deltaX, deltaY ->
-                            val prevX = floatOffsetX.value
-                            val prevY = floatOffsetY.value
-                            floatOffsetX.value = (floatOffsetX.value + deltaX)
+                            val prevX = viewModel.floatOffsetX.value
+                            val prevY = viewModel.floatOffsetY.value
+                            viewModel.floatOffsetX.value = (viewModel.floatOffsetX.value + deltaX)
                                 .coerceIn(buttonHalf, screenW - buttonHalf)
-                            floatOffsetY.value = (floatOffsetY.value + deltaY)
-                                .coerceIn(0f, screenH - currentWindowHeightPx)
+                            viewModel.floatOffsetY.value = (viewModel.floatOffsetY.value + deltaY)
+                                .coerceIn(0f, screenH - viewModel.currentWindowHeightPx)
                             animateWindowX(windowX().toFloat(), false)
                             updateWindowPosition()
                         },
                         onDragEnd = { leftSide ->
-                            floatOffsetX.value = if (leftSide) buttonHalf else screenW - buttonHalf
+                            viewModel.floatOffsetX.value = if (leftSide) buttonHalf else screenW - buttonHalf
                             animateWindowX(windowX().toFloat(), true)
                         },
                         visionEnabled = settings.visionEnabled.value,
@@ -525,31 +424,31 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                 if (settings.reasoningEnabled.value) getString(R.string.float_toggle_reasoning_on) else getString(R.string.float_toggle_reasoning_off),
                                 Toast.LENGTH_SHORT).show()
                         },
-                        isRecording = isRecording.value,
-                        isProcessingRecording = isProcessingRecording.value,
-                        recordingCaptureCount = recordingCaptureCount.value,
-                        recordingProcessedCount = recordingProcessedCount.value,
-                        recordingAnswers = recordingAnswers.value,
-                        paginatedAnswers = paginatedAnswers.value,
-                        paginatedCopyTexts = paginatedCopyTexts.value,
+                        isRecording = viewModel.isRecording.value,
+                        isProcessingRecording = viewModel.isProcessingRecording.value,
+                        recordingCaptureCount = viewModel.recordingCaptureCount.value,
+                        recordingProcessedCount = viewModel.recordingProcessedCount.value,
+                        recordingAnswers = viewModel.recordingAnswers.value,
+                        paginatedAnswers = viewModel.paginatedAnswers.value,
+                        paginatedCopyTexts = viewModel.paginatedCopyTexts.value,
                         onCopyRecordingAnswer = { text ->
                             ClipboardUtil.copyToClipboard(this@FloatingWindowService, text)
                         },
                         onRecordingToggle = {
-                            if (isRecording.value) stopRecording() else startRecording()
+                            if (viewModel.isRecording.value) viewModel.stopRecording(recorder) else viewModel.startRecording(recorder)
                         },
                         onArcExpandChanged = { expanded ->
-                            isArcExpanded = expanded
+                            viewModel.isArcExpanded = expanded
                             updateFloatingWindowHeight()
                         },
                         onContentVisibilityChanged = { visible ->
-                            hasContent = visible
+                            viewModel.hasContent = visible
                             updateFloatingWindowHeight()
                         },
                         onInteractiveAreaChanged = { left, top, right, bottom ->
                             val contentH = (bottom - top).toInt()
-                            if (contentH > 0 && showAnswer.value) {
-                                measuredContentHeightPx = contentH.toFloat()
+                            if (contentH > 0 && viewModel.showAnswer.value) {
+                                viewModel.measuredContentHeightPx = contentH.toFloat()
                                 updateFloatingWindowHeight()
                             }
                         }
@@ -558,7 +457,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             }
         }
 
-        displayWindowX.floatValue = windowX().toFloat()
+        viewModel.displayWindowX.floatValue = windowX().toFloat()
         windowMgr.attach(touchLayout!!, params)
         touchLayout!!.addView(floatingView)
     }
@@ -566,15 +465,15 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     // ── Window animation & position ─────────────────────────────────────
 
     private fun animateWindowX(targetX: Float, animated: Boolean) {
-        windowXAnimJob?.cancel()
+        viewModel.windowXAnimJob?.cancel()
         if (!animated) {
-            displayWindowX.floatValue = targetX
+            viewModel.displayWindowX.floatValue = targetX
             return
         }
-        windowXAnimJob = windowMgr.animateWindowX(
-            scope = serviceScope, from = displayWindowX.floatValue, to = targetX
+        viewModel.windowXAnimJob = windowMgr.animateWindowX(
+            scope = serviceScope, from = viewModel.displayWindowX.floatValue, to = targetX
         ) { currentX ->
-            displayWindowX.floatValue = currentX
+            viewModel.displayWindowX.floatValue = currentX
             updateWindowPosition()
         }
     }
@@ -586,30 +485,30 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val screenH = metrics.heightPixels.toFloat()
         windowMgr.updateLayout(
             view = touchLayout,
-            windowX = displayWindowX.floatValue.toInt(),
-            windowY = floatOffsetY.value.toInt(),
-            windowHeight = currentWindowHeightPx.toInt(),
+            windowX = viewModel.displayWindowX.floatValue.toInt(),
+            windowY = viewModel.floatOffsetY.value.toInt(),
+            windowHeight = viewModel.currentWindowHeightPx.toInt(),
             screenW = screenW,
             screenH = screenH
         )
     }
 
     private fun updateFloatingWindowHeight() {
-        if (captureInProgress || destroyed) return
+        if (viewModel.captureInProgress || destroyed) return
         val density = resources.displayMetrics.density
         val newHeight = windowMgr.calculateHeight(
             density = density,
             screenHeightPx = resources.displayMetrics.heightPixels,
             buttonSizeDp = settings.floatButtonSizeDp.value,
-            isRecording = isRecording.value,
-            isProcessingRecording = isProcessingRecording.value,
-            hasContent = hasContent,
-            showAnswer = showAnswer.value,
-            hasAnswers = recordingAnswers.value.isNotEmpty() || paginatedAnswers.value.isNotEmpty(),
-            measuredCardHeightPx = measuredContentHeightPx
+            isRecording = viewModel.isRecording.value,
+            isProcessingRecording = viewModel.isProcessingRecording.value,
+            hasContent = viewModel.hasContent,
+            showAnswer = viewModel.showAnswer.value,
+            hasAnswers = viewModel.recordingAnswers.value.isNotEmpty() || viewModel.paginatedAnswers.value.isNotEmpty(),
+            measuredCardHeightPx = viewModel.measuredContentHeightPx
         )
-        if (newHeight.toFloat() != currentWindowHeightPx) {
-            currentWindowHeightPx = newHeight.toFloat()
+        if (newHeight.toFloat() != viewModel.currentWindowHeightPx) {
+            viewModel.currentWindowHeightPx = newHeight.toFloat()
             updateWindowPosition()
         }
     }
@@ -618,200 +517,24 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         windowMgr.setVisible(touchLayout, visible, settings.stealthMode.value)
     }
 
-    // ── Settings refresh ────────────────────────────────────────────────
-
-    private fun refreshSettingsFromApp() {
-        settings.refresh()
-        AppLog.d("FWS", "settings refreshed")
-    }
-
-    // ── Recording mode orchestration ────────────────────────────────────
-
-    private fun startRecording() {
-        currentFetchJob?.cancel()
-        currentFetchJob = null
-        recorder.start()
-        isRecording.value = true
-        recordingCaptureCount.value = 0
-        recordingSkippedCount.value = 0
-        recordingFailedCount.value = 0
-        recordingAnswers.value = emptyList()
-        recordingCopyTexts.value = emptyList()
-        paginatedAnswers.value = emptyList()
-        paginatedCopyTexts.value = emptyList()
-        showAnswer.value = false
-        answerText.value = null
-        floatingStatus.value = FloatingStatus.Idle
-        statusMessage.value = getString(R.string.recording_indicator, 0)
-        Toast.makeText(this, getString(R.string.recording_start), Toast.LENGTH_SHORT).show()
-    }
-
-    private fun stopRecording() {
-        isRecording.value = false
-        when (val result = recorder.stop()) {
-            is RecordingCoordinator.StopResult.NothingToShow -> {
-                Toast.makeText(this, getString(R.string.recording_no_captures), Toast.LENGTH_SHORT).show()
-            }
-            is RecordingCoordinator.StopResult.Completed -> {
-                showRecordingResults()
-            }
-            is RecordingCoordinator.StopResult.Processing -> {
-                isProcessingRecording.value = true
-                floatingStatus.value = FloatingStatus.GettingAnswer
-                statusMessage.value = getString(R.string.recording_processing, recordingProcessedCount.value, result.captureCount)
-                Toast.makeText(this, getString(R.string.recording_stop, result.captureCount), Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun showRecordingResults() {
-        val autoCopy = AppConfig.getAutoCopy()
-        val allEntries = recordingAnswers.value.sortedBy { it.first }
-        if (allEntries.isEmpty()) {
-            showErrorMessage(getString(R.string.recording_no_valid_answers))
-            isProcessingRecording.value = false
-            return
-        }
-        showAnswer.value = true
-        floatingStatus.value = FloatingStatus.Success
-        val total = recordingCaptureCount.value
-        val skipped = recordingSkippedCount.value
-        val failed = recordingFailedCount.value
-        val resultSummary = buildString {
-            append(getString(R.string.recording_all_done, total))
-            if (skipped > 0) append("，去除重复 ${skipped} 题")
-            if (failed > 0) append("，${failed} 题获取失败")
-        }
-        statusMessage.value = resultSummary
-        if (autoCopy) {
-            val copyText = recordingCopyTexts.value.sortedBy { it.first }
-                .joinToString("\n") { it.second }
-            ClipboardUtil.copyToClipboard(this@FloatingWindowService, copyText)
-        }
-        isProcessingRecording.value = false
-    }
-
-    private fun showRecordingResultsFromCoordinator(
-        answers: List<Pair<Int, String>>,
-        copyTexts: List<Pair<Int, String>>,
-        total: Int, skipped: Int, failed: Int
-    ) {
-        if (answers.isEmpty()) {
-            showErrorMessage(getString(R.string.recording_no_valid_answers))
-            isProcessingRecording.value = false
-            return
-        }
-        recordingAnswers.value = answers
-        recordingCopyTexts.value = copyTexts
-        showAnswer.value = true
-        floatingStatus.value = FloatingStatus.Success
-        val resultSummary = buildString {
-            append(getString(R.string.recording_all_done, total))
-            if (skipped > 0) append("，去除重复 ${skipped} 题")
-            if (failed > 0) append("，${failed} 题获取失败")
-        }
-        statusMessage.value = resultSummary
-        if (AppConfig.getAutoCopy()) {
-            ClipboardUtil.copyToClipboard(this, copyTexts.sortedBy { it.first }.joinToString("\n") { it.second })
-        }
-        isProcessingRecording.value = false
-    }
-
-    // ── Answer display ──────────────────────────────────────────────────
-
-    private suspend fun handleAnswerSuccess(
-        aiAnswers: List<com.hwb.aianswerer.models.AIAnswer>,
-        autoCopy: Boolean
-    ) {
-        val showQuestion = AppConfig.getShowAnswerCardQuestion()
-        val showOptions = AppConfig.getShowAnswerCardOptions()
-
-        paginatedAnswers.value = aiAnswers.mapIndexed { index, answer ->
-            (index + 1) to answer.formatAnswerWithConfig(showQuestion, showOptions)
-        }
-        paginatedCopyTexts.value = aiAnswers.mapIndexed { index, ans ->
-            (index + 1) to "第 ${index + 1} 题：${ans.answer}"
-        }
-
-        val formattedAnswer = if (aiAnswers.size == 1) {
-            aiAnswers.first().formatAnswerWithConfig(showQuestion, showOptions)
-        } else {
-            aiAnswers.mapIndexed { index, answer ->
-                val header = "━━━ 第 ${index + 1} 题 ━━━\n"
-                header + answer.formatAnswerWithConfig(showQuestion, showOptions)
-            }.joinToString("\n\n")
-        }
-
-        if (autoCopy) {
-            val copyText = if (aiAnswers.size == 1) {
-                aiAnswers.first().answer
-            } else {
-                aiAnswers.mapIndexed { index, ans ->
-                    "第 ${index + 1} 题：${ans.answer}"
-                }.joinToString("\n")
-            }
-            ClipboardUtil.copyToClipboard(this@FloatingWindowService, copyText)
-        }
-
-        answerText.value = formattedAnswer
-        showAnswer.value = true
-        floatingStatus.value = FloatingStatus.Success
-        statusMessage.value = if (autoCopy) "答案已复制" else "答案已生成"
-        delay(2000)
-        statusMessage.value = null
-    }
-
-    // ── Cleanup ─────────────────────────────────────────────────────────
-
     override fun onDestroy() {
-        super.onDestroy()
-        isRunning = false
         destroyed = true
-
+        isRunning = false
         recorder.cancel()
-        isRecording.value = false
-        isProcessingRecording.value = false
-
-        currentFetchJob?.cancel()
-        currentFetchJob = null
+        viewModel.isRecording.value = false
+        viewModel.isProcessingRecording.value = false
+        viewModel.currentFetchJob?.cancel()
+        viewModel.currentFetchJob = null
         serviceScope.cancel()
-
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
-
-        try {
-            unregisterReceiver(answerReceiver)
-        } catch (e: IllegalArgumentException) {
-            AppLog.w("FWS", "Receiver not registered", e)
-        }
-
+        try { unregisterReceiver(answerReceiver) } catch (_: IllegalArgumentException) {}
         floatingView?.disposeComposition()
         touchLayout?.let { windowMgr.detach(it) }
         touchLayout = null
         floatingView = null
-
         screenCaptureManager?.releaseAll()
         _viewModelStore.clear()
-    }
-
-    // ── Status helpers ──────────────────────────────────────────────────
-
-    private fun showStatusMessage(message: String, durationMs: Long = 2000) {
-        serviceScope.launch {
-            statusMessage.value = message
-            delay(durationMs)
-            if (statusMessage.value == message) {
-                statusMessage.value = null
-                if (floatingStatus.value == FloatingStatus.Error) {
-                    floatingStatus.value = FloatingStatus.Idle
-                }
-            }
-        }
-    }
-
-    private fun showErrorMessage(message: String) {
-        floatingStatus.value = FloatingStatus.Error
-        showStatusMessage(message, 5000)
-        AppLog.e("FWS", message)
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -1,7 +1,7 @@
 package com.hwb.aianswerer.config
 
 import com.hwb.aianswerer.BuildConfig
-
+import com.hwb.aianswerer.providers.ProviderConfigResolver
 /**
  * API URL / Key / Model 配置
  */
@@ -24,48 +24,11 @@ internal object ApiConfig {
         val stored = ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_API_URL, BuildConfig.API_URL) ?: ""
         // If user hasn't explicitly set a custom URL, try provider system
         if (stored == BuildConfig.API_URL || stored.isBlank()) {
-            return resolveProviderApiUrl() ?: stored
+            return ProviderConfigResolver.resolveApiUrl() ?: stored
         }
         return stored
     }
 
-    /** Resolve API URL from first enabled provider in the provider system */
-    private fun resolveProviderApiUrl(): String? {
-        return try {
-            val provider = resolveTargetProvider() ?: return null
-            val host = provider.apiHost.trimEnd('/')
-            when {
-                host.endsWith("/v1") -> "$host/chat/completions"
-                host.contains("/v1/") -> "${host}chat/completions"
-                else -> "$host/v1/chat/completions"
-            }
-        } catch (_: Exception) { null }
-    }
-
-    /**
-     * Find the enabled provider that owns the currently selected model.
-     * Falls back to the first enabled provider if no match.
-     */
-    private fun resolveTargetProvider(): com.hwb.aianswerer.providers.LocalProviderConfig? {
-        return try {
-            val modelName = getModelName()
-            val mergedProviders = com.hwb.aianswerer.providers.ProviderStorage.getMergedProviders()
-                .filter { it.enabled && it.apiKey.isNotBlank() }
-            if (mergedProviders.isEmpty()) return null
-
-            if (modelName.isNotBlank()) {
-                val userConfigs = com.hwb.aianswerer.providers.ProviderStorage.getEnabledProvidersFromUserConfigs()
-                val targetId = userConfigs.firstOrNull { it.selectedModels.contains(modelName) }?.id
-                if (targetId != null) {
-                    mergedProviders.firstOrNull { it.id == targetId } ?: mergedProviders.first()
-                } else {
-                    mergedProviders.first()
-                }
-            } else {
-                mergedProviders.first()
-            }
-        } catch (_: Exception) { null }
-    }
 
     /**
      * 保存API Key（加密存储，降级时使用MMKV）
@@ -91,9 +54,7 @@ internal object ApiConfig {
         val result = stored?.takeIf { it.isNotEmpty() } ?: ""
         // If no API key set in old config, try provider system
         if (result.isBlank()) {
-            return try {
-                resolveTargetProvider()?.apiKey ?: ""
-            } catch (_: Exception) { "" }
+            return ProviderConfigResolver.resolveApiKey()
         }
         return result
     }
@@ -113,10 +74,7 @@ internal object ApiConfig {
         val stored = ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_MODEL_NAME, BuildConfig.API_MODEL) ?: ""
         // If user hasn't explicitly set a model, try provider system
         if (stored == BuildConfig.API_MODEL || stored.isBlank()) {
-            return try {
-                com.hwb.aianswerer.providers.ProviderStorage.getEnabledProviders()
-                    .firstOrNull()?.selectedModels?.firstOrNull() ?: stored
-            } catch (_: Exception) { stored }
+            return ProviderConfigResolver.resolveModelName().ifEmpty { stored }
         }
         return stored
     }
@@ -134,7 +92,7 @@ internal object ApiConfig {
         if (url.isNotBlank() && key.isNotBlank() && model.isNotBlank() && url.startsWith("http")) return true
         // 新系统：直接检查 ProviderStorage 里的用户配置
         return try {
-            val result = com.hwb.aianswerer.providers.ProviderStorage.isAnyProviderConfigured()
+            val result = ProviderConfigResolver.isAnyProviderConfigured()
             android.util.Log.d("AppConfig", "isApiConfigValid: ProviderStorage check = $result")
             result
         } catch (e: Exception) {

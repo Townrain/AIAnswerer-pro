@@ -51,6 +51,7 @@ import com.hwb.aianswerer.ui.components.PasswordTextField
 import com.hwb.aianswerer.ui.components.SectionLabel
 import com.hwb.aianswerer.ui.components.SettingItem
 import com.hwb.aianswerer.ui.components.TopBarWithBack
+import com.hwb.aianswerer.ui.pages.TestState
 import com.hwb.aianswerer.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -88,15 +89,6 @@ class ModelSettingsActivity : BaseActivity() {
     }
 }
 
-/**
- * 测试连接状态
- */
-sealed class TestConnectionState {
-    object Idle : TestConnectionState()
-    object Testing : TestConnectionState()
-    data class Success(val latencyMs: Long = 0) : TestConnectionState()
-    data class Error(val message: String) : TestConnectionState()
-}
 
 /**
  * 模型设置界面
@@ -122,8 +114,8 @@ fun ModelSettingsScreen(
     var visionModelName by remember { mutableStateOf(AppConfig.getVisionModelName()) }
 
     // 测试连接状态管理
-    var testState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
-    var visionTestState by remember { mutableStateOf<TestConnectionState>(TestConnectionState.Idle) }
+    var testState by remember { mutableStateOf<TestState>(TestState.Idle) }
+    var visionTestState by remember { mutableStateOf<TestState>(TestState.Idle) }
     val coroutineScope = rememberCoroutineScope()
 
     val isDark = LocalIsDarkMode.current
@@ -233,35 +225,35 @@ fun ModelSettingsScreen(
 
                 // 测试连接按钮
                 AnimatedButton(
-                    text = if (testState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
+                    text = if (testState is TestState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
                     onClick = {
-                        if (testState is TestConnectionState.Testing) return@AnimatedButton
+                        if (testState is TestState.Testing) return@AnimatedButton
                         coroutineScope.launch {
-                            testState = TestConnectionState.Testing
+                            testState = TestState.Testing
                             val result = OpenAIClient.getInstance().testConnection(apiUrl, apiKey, modelName)
                             result.onSuccess {
-                                testState = TestConnectionState.Success()
+                                testState = TestState.Success()
                             }.onFailure { error ->
-                                testState = TestConnectionState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
+                                testState = TestState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
                             }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     variant = ButtonVariant.Tonal,
-                    enabled = testState !is TestConnectionState.Testing
+                    enabled = testState !is TestState.Testing
                 )
 
-                if (testState is TestConnectionState.Success) {
+                if (testState is TestState.Success) {
                     Spacer(Modifier.height(Spacing.sm))
                     Text(
                         text = stringResource(R.string.toast_connection_success),
                         style = MaterialTheme.typography.bodySmall,
                         color = SuccessGreen
                     )
-                } else if (testState is TestConnectionState.Error) {
+                } else if (testState is TestState.Error) {
                     Spacer(Modifier.height(Spacing.sm))
                     Text(
-                        text = stringResource(R.string.toast_connection_failed).format((testState as TestConnectionState.Error).message),
+                        text = stringResource(R.string.toast_connection_failed).format((testState as TestState.Error).msg),
                         style = MaterialTheme.typography.bodySmall,
                         color = ErrorRed
                     )
@@ -348,32 +340,32 @@ fun ModelSettingsScreen(
 
                         // 测试连接按钮
                         AnimatedButton(
-                            text = if (visionTestState is TestConnectionState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
+                            text = if (visionTestState is TestState.Testing) stringResource(R.string.button_testing) else stringResource(R.string.button_test_connection),
                             onClick = {
-                                if (visionTestState is TestConnectionState.Testing) return@AnimatedButton
+                                if (visionTestState is TestState.Testing) return@AnimatedButton
                                 coroutineScope.launch {
-                                    visionTestState = TestConnectionState.Testing
+                                    visionTestState = TestState.Testing
                                     val config = OpenAIVisionConfig(baseUrl = visionApiUrl, apiKey = visionApiKey, modelName = visionModelName)
                                     val provider = OpenAIVisionProvider.getInstance(config)
                                     val result = provider.testConnection()
                                     result.onSuccess {
-                                        visionTestState = TestConnectionState.Success()
+                                        visionTestState = TestState.Success()
                                     }.onFailure { error ->
-                                        visionTestState = TestConnectionState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
+                                        visionTestState = TestState.Error(error.message ?: MyApplication.getString(R.string.error_unknown))
                                     }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
                             variant = ButtonVariant.Tonal,
-                            enabled = visionTestState !is TestConnectionState.Testing
+                            enabled = visionTestState !is TestState.Testing
                         )
 
-                        if (visionTestState is TestConnectionState.Success) {
+                        if (visionTestState is TestState.Success) {
                             Spacer(Modifier.height(Spacing.sm))
                             Text(text = stringResource(R.string.toast_connection_success), style = MaterialTheme.typography.bodySmall, color = SuccessGreen)
-                        } else if (visionTestState is TestConnectionState.Error) {
+                        } else if (visionTestState is TestState.Error) {
                             Spacer(Modifier.height(Spacing.sm))
-                            Text(text = stringResource(R.string.toast_connection_failed).format((visionTestState as TestConnectionState.Error).message), style = MaterialTheme.typography.bodySmall, color = ErrorRed)
+                            Text(text = stringResource(R.string.toast_connection_failed).format((visionTestState as TestState.Error).msg), style = MaterialTheme.typography.bodySmall, color = ErrorRed)
                         }
 
                         Spacer(modifier = Modifier.height(Spacing.lg))

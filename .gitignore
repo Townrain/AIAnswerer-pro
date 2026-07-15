@@ -110,3 +110,6 @@ CLAUDE.md
 SKILL.md
 docs/
 scripts/
+
+# MCP tool workspace (local SSH keys etc)
+data/

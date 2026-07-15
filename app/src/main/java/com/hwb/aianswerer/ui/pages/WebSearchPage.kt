@@ -107,17 +107,6 @@ private fun badgeFor(p: SearchProviderDef) = when {
 
 @Preview(showSystemUi = true, showBackground = true, name = "联网搜索 — Dark")
 @Composable private fun WSPDarkPreview() { Themed(DH) { WebSearchPage(it, {}) } }
-
-// =============================================================================
-// TestState
-// =============================================================================
-sealed class TestState {
-    data object Idle : TestState()
-    data object Testing : TestState()
-    data class Success(val ms: Int) : TestState()
-    data class Error(val msg: String) : TestState()
-}
-
 // =============================================================================
 // Page
 // =============================================================================
@@ -206,7 +195,7 @@ fun WebSearchPage(t: Th, onBack: () -> Unit) {
                         val p = providers[idx]
                         val endpoint = p.def.testEndpoint ?: p.def.apiHost
                         if (endpoint.isBlank()) {
-                            testStates = testStates + (p.def.id to TestState.Success(0))
+                            testStates = testStates + (p.def.id to TestState.Success(0L))
                             return@WebSearchCard
                         }
                         testStates = testStates + (p.def.id to TestState.Testing)
@@ -229,7 +218,7 @@ fun WebSearchPage(t: Th, onBack: () -> Unit) {
                                 }
                             }.getOrElse { Result.failure(it) }
                             val errMsg = result.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "未知错误"
-                            testStates = if (result.isSuccess) testStates + (p.def.id to TestState.Success(result.getOrNull() ?: 0))
+                            testStates = if (result.isSuccess) testStates + (p.def.id to TestState.Success(result.getOrNull()?.toLong() ?: 0L))
                             else testStates + (p.def.id to TestState.Error(errMsg))
                         }
                     },
