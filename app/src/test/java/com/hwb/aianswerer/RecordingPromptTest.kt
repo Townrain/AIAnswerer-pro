@@ -1,4 +1,4 @@
-package com.hwb.aianswerer
+﻿package com.hwb.aianswerer
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,8 +12,8 @@ class RecordingPromptTest {
     @Test
     fun recordingPrompt_containsBatchContext() {
         val prompt = safelyInvoke { Constants.buildRecordingSystemPrompt(3, 8, setOf("选择题")) }
-        assertTrue("Should contain question index", prompt.contains("第3题") || prompt.contains("Q3"))
-        assertTrue("Should mention batch", prompt.contains("8") || prompt.contains("总") || prompt.contains("题"))
+        assertTrue("Should contain question index", prompt.contains("第3题"))
+        assertTrue("Should mention batch total", prompt.contains("共 8 题"))
     }
 
     @Test
@@ -25,7 +25,8 @@ class RecordingPromptTest {
     @Test
     fun buildSystemPrompt_containsQuestionTypes() {
         val prompt = safelyInvoke { Constants.buildSystemPrompt(setOf("选择题", "填空题"), "") }
-        assertTrue("Should mention question types", prompt.contains("选择") || prompt.contains("填空"))
+        assertTrue("Should mention choice type", prompt.contains("选择题"))
+        assertTrue("Should mention fill-blank type", prompt.contains("填空题"))
     }
 
     @Test
@@ -55,14 +56,14 @@ class RecordingPromptTest {
     @Test
     fun buildRecordingSystemPrompt_containsBatchInfo() {
         val prompt = safelyInvoke { Constants.buildRecordingSystemPrompt(5, 10, setOf("选择题"), "") }
-        assertTrue("Should contain index", prompt.contains("5") || prompt.contains("第5"))
-        assertTrue("Should contain total", prompt.contains("10") || prompt.contains("总"))
+        assertTrue("Should contain question index", prompt.contains("第5题"))
+        assertTrue("Should contain batch total", prompt.contains("共 10 题"))
     }
 
     @Test
     fun buildRecordingSystemPrompt_withSearchContext_hasBoth() {
         val prompt = safelyInvoke { Constants.buildRecordingSystemPrompt(1, 3, setOf("问答题"), "参考资料：太阳是恒星") }
-        assertTrue("Should have batch context", prompt.contains("第1") || prompt.contains("1"))
+        assertTrue("Should have batch context", prompt.contains("第1题"))
         assertTrue("Should have search context", prompt.contains("太阳"))
     }
 
@@ -70,24 +71,25 @@ class RecordingPromptTest {
     fun buildSystemPrompt_withChineseQuestionTypes() {
         val prompt = safelyInvoke { Constants.buildSystemPrompt(setOf("单选题", "多选题", "判断题"), "") }
         assertTrue("Prompt should be generated", prompt.isNotBlank())
-        // Types should appear somewhere
-        val hasAny = prompt.contains("单选") || prompt.contains("多选") || prompt.contains("判断")
-        assertTrue("Should reference at least one question type", hasAny)
+        // Normalized: 单选题/多选题 → 选择题, 判断题 stays unchanged
+        assertTrue("Should contain choice type (normalized)", prompt.contains("选择题"))
+        assertTrue("Should contain judgment type", prompt.contains("判断题"))
     }
+
     @Test
-    fun `录制模式多题型不崩溃`() {
+    fun 录制模式多题型不崩溃() {
         val prompt = safelyInvoke { Constants.buildRecordingSystemPrompt(2, 10, setOf("选择题", "填空题", "问答题"), "") }
         assertTrue("Multi-type recording prompt should be non-blank", prompt.isNotBlank())
     }
 
     @Test
-    fun `构建提示词空类型空搜索不崩溃`() {
+    fun 构建提示词空类型空搜索不崩溃() {
         val prompt = safelyInvoke { Constants.buildSystemPrompt(emptySet(), "") }
         assertTrue("Minimal prompt should be non-blank", prompt.isNotBlank())
     }
 
     @Test
-    fun `录制模式边界题号正常`() {
+    fun 录制模式边界题号正常() {
         val promptSingle = safelyInvoke { Constants.buildRecordingSystemPrompt(1, 1, emptySet(), "") }
         assertTrue("Single-batch recording should work", promptSingle.isNotBlank())
         val promptHundred = safelyInvoke { Constants.buildRecordingSystemPrompt(100, 100, emptySet(), "") }
@@ -95,11 +97,9 @@ class RecordingPromptTest {
     }
 
     @Test
-    fun `录制模式空题型不显示题型限制`() {
+    fun 录制模式空题型不显示题型限制() {
         val prompt = safelyInvoke { Constants.buildRecordingSystemPrompt(1, 5, emptySet(), "") }
         assertTrue("Should be non-blank", prompt.isNotBlank())
     }
-
-
 
 }

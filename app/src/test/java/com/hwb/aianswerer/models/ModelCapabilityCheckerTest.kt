@@ -262,10 +262,10 @@ class ModelCapabilityCheckerTest {
     @Test
     fun `invalidateCache - 多次调用不抛异常`() {
         safelyInvoke {
-            // Method should be safe to call multiple times
             ModelCapabilityChecker.invalidateCache()
             ModelCapabilityChecker.invalidateCache()
-            assertTrue(true)
+            // Cache invalidation should not corrupt results
+            assertTrue("gpt-4o still vision model after cache clear", ModelCapabilityChecker.isVisionModel("gpt-4o"))
         }
     }
 }
