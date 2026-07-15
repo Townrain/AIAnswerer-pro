@@ -37,6 +37,7 @@ android {
         testOptions {
             unitTests {
                 isReturnDefaultValues = true
+                isIncludeAndroidResources = true
             }
         }
 
@@ -135,6 +136,9 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
     testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.mockwebserver)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
@@ -151,6 +155,7 @@ dependencies {
     // Kotlin Coroutines
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.core)
+    testImplementation(libs.coroutines.test)
 
     // Lifecycle components
     implementation(libs.lifecycle.runtime)
