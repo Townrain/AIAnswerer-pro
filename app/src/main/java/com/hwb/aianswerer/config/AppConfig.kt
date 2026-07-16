@@ -95,6 +95,12 @@ object AppConfig {
     fun isFirstLaunch(): Boolean = UIConfig.isFirstLaunch()
     fun setFirstLaunchComplete() = UIConfig.setFirstLaunchComplete()
 
+    // ── Theme ──
+    fun saveThemePresetId(id: String) = UIConfig.saveThemePresetId(id)
+    fun getThemePresetId(): String = UIConfig.getThemePresetId()
+    fun saveCustomThemes(json: String) = UIConfig.saveCustomThemes(json)
+    fun getCustomThemes(): String = UIConfig.getCustomThemes()
+
     // ── Model Whitelist ──
     fun saveDynamicVisionModels(models: List<String>) = ModelWhitelistConfig.saveDynamicVisionModels(models)
     fun getDynamicVisionModels(): List<String> = ModelWhitelistConfig.getDynamicVisionModels()

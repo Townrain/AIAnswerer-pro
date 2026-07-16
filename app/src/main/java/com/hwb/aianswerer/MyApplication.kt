@@ -41,6 +41,9 @@ class MyApplication : Application() {
         // 迁移旧 Tavily 配置到新的多供应商 WebSearchStorage
         TavilyMigration.run()
 
+        // 初始化主题管理器（加载自定义主题）
+        com.hwb.aianswerer.ui.theme.ThemeManager.init()
+
     }
 
     /**

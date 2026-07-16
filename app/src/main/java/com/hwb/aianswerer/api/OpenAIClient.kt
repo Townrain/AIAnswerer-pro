@@ -396,8 +396,6 @@ class OpenAIClient {
 
         // 使用全局共享的Gson实例
         private val gson = JsonUtil.gson
-        // 使用全局共享的Gson实例
-        private val gson = JsonUtil.gson
 
         // 双重检查锁定（DCL）单例：volatile保证可见性，synchronized保证原子性
         @Volatile

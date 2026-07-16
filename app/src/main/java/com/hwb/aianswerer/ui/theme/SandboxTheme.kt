@@ -105,9 +105,7 @@ val BtnR = 32.dp; val CardR = 24.dp; val ChipR = 20.dp; val CardPad = 24.dp
 // ── Theme Accessor ──
 @Composable
 fun sandboxTheme(): Th {
-    val mode = ThemeState.darkMode
-    val useDark = when (mode) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
-    return if (useDark) DH else LH
+    return ThemeManager.getCurrentTheme()
 }
 
 // ── Preview Helper ──

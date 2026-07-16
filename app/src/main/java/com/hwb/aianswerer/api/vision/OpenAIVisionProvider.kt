@@ -59,16 +59,6 @@ class OpenAIVisionProvider(
     override val displayName: String = "OpenAI 兼容"
 
     private val gson = JsonUtil.gson
-
-    companion object {
-        const val READ_TIMEOUT_SEC = 120L
-        const val CALL_TIMEOUT_SEC = 130L
-        const val WITH_TIMEOUT_MS = 120_000L
-        const val CONNECT_TIMEOUT_SEC = 15L
-        const val WRITE_TIMEOUT_SEC = 15L
-        const val TEST_TIMEOUT_SEC = 30L
-    }
-
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .callTimeout(CALL_TIMEOUT_SEC, TimeUnit.SECONDS)
@@ -368,6 +358,13 @@ class OpenAIVisionProvider(
     }
 
     companion object {
+        const val READ_TIMEOUT_SEC = 120L
+        const val CALL_TIMEOUT_SEC = 130L
+        const val WITH_TIMEOUT_MS = 120_000L
+        const val CONNECT_TIMEOUT_SEC = 15L
+        const val WRITE_TIMEOUT_SEC = 15L
+        const val TEST_TIMEOUT_SEC = 30L
+
         @Volatile
         private var instance: OpenAIVisionProvider? = null
 

@@ -62,7 +62,6 @@ fun CtaBar(t: Th, m: Modifier, onStartClick: () -> Unit, isAnswerModeActive: Boo
                 .clip(RoundedCornerShape(32.dp))
                 .background(
                     if (isAnswerModeActive) Brush.linearGradient(listOf(Color(0xFFFF3B30), Color(0xFFD32F2F)), Offset.Zero, Offset.Infinite)
-                    else if (t.isLight) Brush.linearGradient(listOf(Color(0xFFC4A8D0), Color(0xFFD4B898)), Offset.Zero, Offset.Infinite)
                     else g(t)
                 )
                 .clickable(interactionSource = interactionSource, indication = null) {

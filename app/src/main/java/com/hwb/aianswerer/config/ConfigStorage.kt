@@ -49,6 +49,8 @@ internal object ConfigStorage {
     internal const val KEY_DYNAMIC_VISION_EXCLUDED = "dynamic_vision_excluded"
     internal const val KEY_DYNAMIC_PROVIDER_MODELS = "dynamic_provider_models"
     internal const val KEY_DYNAMIC_PROVIDER_CONFIGS = "dynamic_provider_configs"
+    internal const val KEY_THEME_PRESET = "theme_preset"
+    internal const val KEY_CUSTOM_THEMES = "custom_themes"
 
     // 语言代码常量
     internal const val LANGUAGE_ZH = "zh"

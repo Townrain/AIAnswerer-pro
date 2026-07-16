@@ -4,7 +4,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -25,11 +27,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hwb.aianswerer.MyApplication
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.providers.WebSearchStorage
 import com.hwb.aianswerer.ui.icons.LocalIcons
@@ -174,13 +176,21 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
                 SettingSlider(t, "悬浮卡片透明度", floatCardAlpha, 0.1f..1.0f, "${(floatCardAlpha * 100).toInt()}%") { floatCardAlpha = it; AppConfig.saveFloatCardAlpha(it) }
             }
 
-            // Theme
-            SectionTitle(t, "主题")
+            // Theme presets
+            SectionTitle(t, "主题风格")
+            ThemePresetGrid(t)
+
+            // Dark mode
+            SectionTitle(t, "外观模式")
             Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
                 SettingRadio(t, "跟随系统", darkMode == 0) { ThemeState.update(0) }
                 SettingRadio(t, "亮色", darkMode == 1) { ThemeState.update(1) }
                 SettingRadio(t, "暗色", darkMode == 2) { ThemeState.update(2) }
             }
+
+            // Custom theme import
+            SectionTitle(t, "自定义主题")
+            CustomThemeSection(t, toastMsg) { toastMsg = it }
         }
         Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(t.bg1, t.bg2)))) {
             SettingsTopBar(t, onBack, onAbout)
@@ -453,5 +463,203 @@ private fun Chip(label: String, selected: Boolean, t: Th, onClick: () -> Unit) {
                 .border(1.dp, bord, RoundedCornerShape(ChipR)).padding(horizontal = 16.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) { Text(label, style = DW.LabelLarge.copy(color = fg, textAlign = TextAlign.Center)) }
+    }
+}
+
+// =============================================================================
+// Theme Preset Grid — card-based selector
+// =============================================================================
+
+@Composable
+private fun ThemePresetGrid(t: Th) {
+    val currentId = ThemeManager.currentPresetId
+    val themes = remember { ThemeManager.getAllThemes() }
+
+    Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t, p = 12.dp) {
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(themes.size) { index ->
+                val (id, name) = themes[index]
+                ThemePresetCard(t, id, name, isSelected = id == currentId,
+                    isBuiltIn = ThemeManager.isBuiltIn(id),
+                    onSelect = { ThemeManager.selectPreset(id) }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ThemePresetCard(
+    t: Th, id: String, name: String, isSelected: Boolean,
+    isBuiltIn: Boolean, onSelect: () -> Unit,
+) {
+    val colors = remember(id) { ThemeManager.getPreviewColors(id) }
+    val bgColor = colors?.let { Color(it.first.toULong()) } ?: t.bg2
+    val accentColor = colors?.let { Color(it.second.toULong()) } ?: t.p
+
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(pressed) {
+        if (pressed) scale.snapTo(0.90f)
+        else scale.animateTo(1f, spring(dampingRatio = 0.3f, stiffness = 400f))
+    }
+
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box {
+        Column(
+            Modifier.width(100.dp).scale(scale.value)
+                .clip(RoundedCornerShape(CardR))
+                .combinedClickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClick = onSelect,
+                    onLongClick = { showMenu = true }
+                )
+        ) {
+            // Color preview area
+            Box(
+                Modifier.fillMaxWidth().height(72.dp)
+                    .background(Brush.verticalGradient(
+                        listOf(bgColor, bgColor.copy(alpha = 0.7f)),
+                        endY = Float.POSITIVE_INFINITY
+                    ))
+                    .then(
+                        if (isSelected) Modifier.border(2.5.dp, accentColor,
+                            RoundedCornerShape(topStart = CardR, topEnd = CardR))
+                        else Modifier
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(Modifier.size(20.dp).clip(CircleShape).background(accentColor))
+                if (isSelected) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp)
+                            .clip(CircleShape).background(accentColor),
+                        contentAlignment = Alignment.Center
+                    ) { Text("✓", style = DW.LabelSmall.copy(color = Color.White)) }
+                }
+            }
+            // Name
+            Box(
+                Modifier.fillMaxWidth().background(t.gt)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) { Text(name, style = DW.LabelSmall.copy(color = t.ob), maxLines = 1, textAlign = TextAlign.Center) }
+        }
+
+        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+            DropdownMenuItem(
+                text = { Text("导出 JSON") },
+                onClick = {
+                    showMenu = false
+                        val json = ThemeManager.exportTheme(id)
+                        if (json != null) {
+                            com.hwb.aianswerer.utils.ClipboardUtil.copyToClipboard(
+                                MyApplication.getAppContext(), json
+                            )
+                        }
+                },
+            )
+            if (!isBuiltIn) {
+                DropdownMenuItem(
+                    text = { Text("删除", color = t.err) },
+                    onClick = { showMenu = false; ThemeManager.removeCustomTheme(id) },
+                )
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Custom Theme Section
+// =============================================================================
+
+@Composable
+private fun CustomThemeSection(t: Th, toastMsg: String?, setToast: (String?) -> Unit) {
+    val showImport = remember { mutableStateOf(false) }
+    val importText = remember { mutableStateOf("") }
+    val importResult = remember { mutableStateOf<String?>(null) }
+
+    Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("从 JSON 导入", style = DW.BodyMedium.copy(color = t.ob))
+                Text("支持自定义配色方案", style = DW.BodySmall.copy(color = t.osv))
+            }
+            Box(
+                Modifier.clip(RoundedCornerShape(ChipR)).background(t.p.copy(alpha = 0.12f))
+                    .clickable {
+                        importResult.value = null
+                        importText.value = ""
+                        showImport.value = true
+                    }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text("导入", style = DW.LabelMedium.copy(color = t.p))
+            }
+        }
+
+        if (showImport.value) {
+            AlertDialog(
+                onDismissRequest = { showImport.value = false; importResult.value = null },
+                title = { Text("导入自定义主题", style = DW.TitleLarge.copy(color = t.ob)) },
+                text = {
+                    Column {
+                        Text("粘贴主题 JSON（可从内置主题导出后修改）：",
+                            style = DW.BodySmall.copy(color = t.osv),
+                            modifier = Modifier.padding(bottom = 8.dp))
+                        if (importResult.value != null) {
+                            val ok = importResult.value!!.contains("成功")
+                            Text(importResult.value!!,
+                                style = DW.BodySmall.copy(color = if (ok) t.ok else t.err),
+                                modifier = Modifier.padding(bottom = 8.dp))
+                        }
+                        OutlinedTextField(
+                            value = importText.value,
+                            onValueChange = { importText.value = it },
+                            modifier = Modifier.fillMaxWidth().height(140.dp),
+                            placeholder = { Text("粘贴 JSON...", style = DW.BodySmall.copy(color = t.osv)) },
+                            textStyle = DW.BodySmall.copy(color = t.ob),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = t.p,
+                                unfocusedBorderColor = t.gb.copy(alpha = 0.5f),
+                            ),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = {
+                            val json = ThemeManager.exportTheme(ThemeManager.currentPresetId)
+                            if (json != null) {
+                                importText.value = json
+                                importResult.value = "已导出当前主题 JSON，可修改后重新导入"
+                            }
+                        }) {
+                            Text("导出当前主题 JSON", color = t.ac)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val id = ThemeManager.importCustomTheme(importText.value)
+                        if (id != null) {
+                            ThemeManager.selectPreset(id)
+                            importResult.value = "导入成功！主题已自动选中"
+                        } else {
+                            importResult.value = "导入失败：请检查 JSON 格式"
+                        }
+                    }) { Text("导入", color = t.p) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showImport.value = false; importResult.value = null }) {
+                        Text("取消", color = t.osv)
+                    }
+                },
+                containerColor = t.bg1,
+            )
+        }
     }
 }

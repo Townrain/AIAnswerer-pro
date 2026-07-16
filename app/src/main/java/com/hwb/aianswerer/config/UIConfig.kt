@@ -119,4 +119,22 @@ internal object UIConfig {
     fun getOutputLanguage(): String {
         return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_OUTPUT_LANGUAGE, "中文") ?: "中文"
     }
+
+    // ========== 主题预设相关 ==========
+
+    fun saveThemePresetId(presetId: String) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_THEME_PRESET, presetId)
+    }
+
+    fun getThemePresetId(): String {
+        return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_THEME_PRESET, "warm_autumn") ?: "warm_autumn"
+    }
+
+    fun saveCustomThemes(json: String) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_CUSTOM_THEMES, json)
+    }
+
+    fun getCustomThemes(): String {
+        return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_CUSTOM_THEMES, "") ?: ""
+    }
 }
