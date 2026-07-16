@@ -1,5 +1,6 @@
 package com.hwb.aianswerer.config
 
+import com.hwb.aianswerer.ui.theme.ThemePresets
 /**
  * UI / Theme / Language 配置
  */
@@ -127,7 +128,7 @@ internal object UIConfig {
     }
 
     fun getThemePresetId(): String {
-        return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_THEME_PRESET, "warm_autumn") ?: "warm_autumn"
+        return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_THEME_PRESET, ThemePresets.WARM_AUTUMN) ?: ThemePresets.WARM_AUTUMN
     }
 
     fun saveCustomThemes(json: String) {
