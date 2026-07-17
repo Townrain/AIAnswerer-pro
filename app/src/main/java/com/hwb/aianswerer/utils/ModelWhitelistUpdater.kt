@@ -13,11 +13,15 @@ import javax.net.ssl.X509TrustManager
 
 /**
  * 从 GitHub 在线检查模型白名单更新，并存储到本地
- * 同步 Cherry Studio 的所有模型分类列表和厂商配置
+ * 兼容 Cherry Studio 格式（主数据源已迁移至 ProviderSyncManager OpenCode 同步）
+ *
+ * @deprecated 模型能力分类保留用于向后兼容，新增厂商请使用 provider_data.json + ProviderSyncManager
  */
 object ModelWhitelistUpdater {
 
-    // Cherry Studio GitHub 基础 URL
+    // OpenCode models.dev API（模型能力数据源）
+    private const val MODELS_DEV_API = "https://models.dev/api.json"
+    // Cherry Studio GitHub 基础 URL（保留兼容）
     private const val GITHUB_BASE_URL = "https://raw.githubusercontent.com/CherryHQ/cherry-studio/main/src/renderer/config/models/"
     private const val GITHUB_PROVIDERS_URL = "https://raw.githubusercontent.com/CherryHQ/cherry-studio/main/src/renderer/config/providers.ts"
     private const val GITHUB_DEFAULT_MODELS_URL = "https://raw.githubusercontent.com/CherryHQ/cherry-studio/main/src/renderer/config/models/default.ts"

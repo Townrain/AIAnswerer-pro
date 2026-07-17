@@ -28,15 +28,19 @@ import kotlin.coroutines.resumeWithException
  *    - 200 OK → 解析 JSON → 比较版本号 → upsert 到 MMKV
  *    - 网络失败 → 使用本地数据
  *
+ * 数据来源：OpenCode（API-Key-Manager provider definitions + models.dev registry）
+ * 兼容 Cherry Studio 格式的 provider_data.json 和 API-Key-Manager REST API
+ *
  * 同步只覆盖厂商 metadata，保留用户 apiKey/enabled/sortOrder
  */
 object ProviderSyncManager {
 
     private const val ASSETS_FILE = "provider_data.json"
 
-    // 默认远程 URL（可通过 AppConfig 覆盖）
+    // 默认远程 URL — OpenCode provider-data.json
+    // 可通过 AppConfig 覆盖为自行部署的 API-Key-Manager 地址
     const val DEFAULT_SYNC_URL =
-        "https://github.com/CherryHQ/cherry-studio/releases/latest/download/provider-data.json"
+        "https://github.com/Townrain/AIAnswerer-pro/releases/latest/download/provider_data.json"
 
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -48,7 +52,10 @@ object ProviderSyncManager {
     }
 
     sealed class SyncResult {
-        data class Updated(val version: Int, val providerCount: Int, val modelCount: Int) : SyncResult()
+        data class Updated(
+            val version: Int, val providerCount: Int,
+            val modelCount: Int, val source: String? = null
+        ) : SyncResult()
         object UpToDate : SyncResult()
         data class Error(val message: String) : SyncResult()
     }
@@ -57,7 +64,7 @@ object ProviderSyncManager {
      * 执行同步（应该在后台线程调用）
      *
      * @param context 用于读取 assets
-     * @param syncUrl 远程 JSON URL，默认使用 GitHub Releases
+     * @param syncUrl 远程 JSON URL，默认使用 OpenCode provider_data.json
      * @param force 强制同步，忽略 ETag 缓存
      */
     suspend fun sync(
@@ -148,8 +155,8 @@ object ProviderSyncManager {
                         lastModified = resp.header("Last-Modified")
                     )
 
-                    AppLog.i("ProviderSyncManager: Synced: v${remoteData.version}, ${remoteData.providerCount} providers, ${remoteData.modelCount} models")
-                    SyncResult.Updated(remoteData.version, remoteData.providerCount, remoteData.modelCount)
+                    AppLog.i("ProviderSyncManager: Synced: v${remoteData.version}, ${remoteData.providerCount} providers, ${remoteData.modelCount} models, source=${remoteData.source ?: "unknown"}")
+                    SyncResult.Updated(remoteData.version, remoteData.providerCount, remoteData.modelCount, remoteData.source)
                 }
                 else -> SyncResult.Error("HTTP ${resp.code}: ${resp.message}")
             }
