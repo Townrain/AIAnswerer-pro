@@ -3,14 +3,15 @@ package com.hwb.aianswerer.providers
 import com.google.gson.annotations.SerializedName
 
 /**
- * 云端 provider-data.json 的数据结构
- * 对应 Cherry Studio 提取脚本输出的 JSON Schema
+ * OpenCode provider-data.json 的数据结构
+ * 兼容 Cherry Studio JSON Schema + OpenCode source 字段
  */
 data class ProviderDataJson(
     val version: Int,
     val generatedAt: String,
     val providerCount: Int,
     val modelCount: Int,
+    val source: String? = null,
     val providers: List<ProviderEntry>
 )
 
