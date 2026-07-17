@@ -53,10 +53,20 @@ import com.hwb.aianswerer.ui.theme.DW
  */
 private fun extractShortAnswer(fullText: String): String {
     val lines = fullText.lines().filter { it.isNotBlank() }
-    // 尝试找到答案行
+    // 找到答案段 (【答案】或 **答案** 之后的内容)
+    for (i in lines.indices) {
+        val trimmed = lines[i].trim()
+        if ((trimmed.startsWith("**答案") || trimmed.startsWith("【答案】")) && i + 1 < lines.size) {
+            val answerLine = lines[i + 1].trim()
+            if (answerLine.length in 1..60 && !answerLine.startsWith("**") && !answerLine.startsWith("【")) {
+                return answerLine
+            }
+        }
+    }
+    // Fallback: 尝试找不含标记的短行作为摘要
     for (line in lines) {
         val trimmed = line.trim()
-        if (trimmed.startsWith("**答案**") || trimmed.startsWith("【答案】")) continue
+        if (trimmed.startsWith("**答案") || trimmed.startsWith("【答案】")) continue
         if (trimmed.length in 1..60 && !trimmed.startsWith("**") && !trimmed.startsWith("【")) {
             return trimmed
         }
