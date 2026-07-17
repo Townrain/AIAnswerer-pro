@@ -134,7 +134,7 @@ internal fun ModelMenu(label: String, value: MutableState<String>, options: List
                 onDismissRequest = onToggle,
                 properties = PopupProperties(
                     dismissOnBackPress = true,
-                    dismissOnClickOutside = true
+                    dismissOnClickOutside = false
                 )
             ) {
                 Box(
