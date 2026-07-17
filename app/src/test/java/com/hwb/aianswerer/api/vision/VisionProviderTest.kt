@@ -122,6 +122,8 @@ class VisionProviderTest {
             override val displayName: String = "测试"
             override suspend fun analyze(bitmap: android.graphics.Bitmap) =
                 Result.success(VisionFilterResult())
+            override suspend fun analyzeMultiple(bitmaps: List<android.graphics.Bitmap>) =
+                Result.success(VisionFilterResult())
             override fun validateConfig() = ConfigValidationResult(isValid = true)
             override fun getConfigDescriptor() = ProviderConfigDescriptor(fields = emptyList())
         }

@@ -7,6 +7,7 @@ import com.hwb.aianswerer.api.search.WebSearchClientFactory
 import com.hwb.aianswerer.api.search.WebSearchResult
 import com.hwb.aianswerer.api.vision.VisionFilterResult
 import com.hwb.aianswerer.api.vision.VisionProvider
+import com.hwb.aianswerer.api.vision.SeparatedQuestion
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.AIAnswer
 import com.hwb.aianswerer.providers.LocalWebSearchConfig
@@ -78,7 +79,7 @@ class CapturePipelineTest {
 
     @Test
     fun `recognizeVlm succeeds when provider available`() = runBlocking {
-        val filterResult = VisionFilterResult(hasQuestions = true, questions = listOf("题目1"))
+        val filterResult = VisionFilterResult(hasQuestions = true, questions = listOf(SeparatedQuestion(text = "题目1")))
         coEvery { mockVisionProvider.analyze(mockBitmap) } returns Result.success(filterResult)
 
         val result = pipeline.recognizeVlm(mockBitmap)
@@ -105,7 +106,7 @@ class CapturePipelineTest {
 
     @Test
     fun `askLlm delegates to OpenAIClient`() = runBlocking {
-        val answers = listOf(AIAnswer(questionType = "单选题", answer = "A", analysis = "分析"))
+        val answers = listOf(AIAnswer(question = "测试题目", questionType = "单选题", answer = "A"))
         coEvery {
             mockOpenAiClient.analyzeQuestion("测试题目", any(), any(), any())
         } returns Result.success(answers)
@@ -159,7 +160,7 @@ class CapturePipelineTest {
         val providerInfo = LocalWebSearchConfig(
             id = "tavily", name = "Tavily", apiHost = "https://api.tavily.com",
             url = "", requiresApiKey = true, requiresHost = false,
-            supportsBasicAuth = false, websites = emptyList(),
+            supportsBasicAuth = false, websites = null,
             apiKey = "test-key", enabled = true
         )
         every { WebSearchStorage.getEnabledProviders() } returns listOf(providerInfo)
@@ -180,7 +181,7 @@ class CapturePipelineTest {
         val providerInfo = LocalWebSearchConfig(
             id = "bocha", name = "Bocha", apiHost = "https://api.bocha.com",
             url = "", requiresApiKey = true, requiresHost = false,
-            supportsBasicAuth = false, websites = emptyList(),
+            supportsBasicAuth = false, websites = null,
             apiKey = "test-key", enabled = true
         )
         every { WebSearchStorage.getEnabledProviders() } returns listOf(providerInfo)
@@ -200,7 +201,7 @@ class CapturePipelineTest {
         val providerInfo = LocalWebSearchConfig(
             id = "tavily", name = "Tavily", apiHost = "https://api.tavily.com",
             url = "", requiresApiKey = true, requiresHost = false,
-            supportsBasicAuth = false, websites = emptyList(),
+            supportsBasicAuth = false, websites = null,
             apiKey = "test-key", enabled = true
         )
         every { WebSearchStorage.getEnabledProviders() } returns listOf(providerInfo)

@@ -63,6 +63,11 @@
     <string name="float_quick_search">Search</string>
     <string name="float_quick_reasoning">Reason</string>
     <string name="float_quick_record">Record</string>
+    <string name="float_quick_image">Image</string>
+    <string name="image_collecting">Collecting (%1$d)</string>
+    <string name="image_analyzing">Analyzing images…</string>
+    <string name="image_collection_start">Image collection started, tap main button to capture</string>
+    <string name="image_recording_conflict">Please stop recording mode first</string>
     <string name="float_prev_page">Prev</string>
     <string name="float_next_page">Next</string>
     <string name="float_question_index">Q%1$d</string>

@@ -62,6 +62,7 @@ class PaginatedAnswerRegressionTest {
             override fun getCurrentWindowHeightPx() = 0f
             override fun setCurrentWindowHeightPx(h: Float) {}
             override fun setHasContent(has: Boolean) {}
+            override fun onImageText(text: String) {}
             override fun onRecordingBitmap(bitmap: android.graphics.Bitmap) {}
             override fun updateFloatingWindowHeight() {}
         })

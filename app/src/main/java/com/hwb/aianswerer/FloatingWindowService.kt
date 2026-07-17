@@ -107,6 +107,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private val pipeline = CapturePipeline(textRecognitionManager)
     private lateinit var windowMgr: FloatingWindowManager
     private lateinit var recorder: RecordingCoordinator
+    private lateinit var imageCollector: ImageCollector
 
     // ── Extracted helpers ───────────────────────────────────────────────
 
@@ -216,10 +217,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             override fun setCurrentWindowHeightPx(h: Float) { viewModel.currentWindowHeightPx = h }
             override fun setHasContent(has: Boolean) { viewModel.hasContent = has }
             override fun onRecordingBitmap(bitmap: Bitmap) { recorder.processBitmap(bitmap) }
+            override fun onImageText(text: String) { imageCollector.addText(text) }
             override fun updateFloatingWindowHeight() { this@FloatingWindowService.updateFloatingWindowHeight() }
         })
 
         recorder = RecordingCoordinator(pipeline, serviceScope, viewModel.recordingCallbacks)
+        imageCollector = ImageCollector(pipeline, serviceScope, viewModel.imageCallbacks)
 
         answerFetcher = AnswerFetcher(pipeline, serviceScope, viewModel.answerCallbacks)
         viewModel.answerFetcher = answerFetcher
@@ -367,6 +370,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             viewModel.currentFetchJob?.cancel()
                             viewModel.currentFetchJob = null
                             recorder.cancel()
+                            imageCollector.cancel()
+                            viewModel.isImageCollecting.value = false
+                            viewModel.isProcessingImages.value = false
                             viewModel.isProcessingRecording.value = false
                             viewModel.showAnswer.value = false
                             viewModel.answerText.value = null
@@ -396,6 +402,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         visionEnabled = settings.visionEnabled.value,
                         searchEnabled = settings.searchEnabled.value,
                         reasoningEnabled = settings.reasoningEnabled.value,
+                        imageEnabled = settings.imageEnabled.value,
                         onVisionToggle = {
                             settings.visionEnabled.value = !settings.visionEnabled.value
                             AppConfig.saveVisionEnabled(settings.visionEnabled.value)
@@ -424,8 +431,37 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                 if (settings.reasoningEnabled.value) getString(R.string.float_toggle_reasoning_on) else getString(R.string.float_toggle_reasoning_off),
                                 Toast.LENGTH_SHORT).show()
                         },
+                        onImageToggle = {
+                            if (viewModel.isImageCollecting.value) {
+                                // 停止图片采集，开始分析
+                                imageCollector.stop()
+                                viewModel.isImageCollecting.value = false
+                                viewModel.isProcessingImages.value = imageCollector.isProcessing
+                                settings.imageEnabled.value = false
+                                Toast.makeText(this@FloatingWindowService,
+                                    getString(R.string.image_analyzing),
+                                    Toast.LENGTH_SHORT).show()
+                            } else {
+                                // 开始图片采集：如果录制模式活跃，自动终止
+                                if (recorder.isActive) {
+                                    viewModel.stopRecording(recorder)
+                                }
+                                imageCollector.start()
+                                viewModel.isImageCollecting.value = true
+                                viewModel.imageCollectCount.value = 0
+                                viewModel.showAnswer.value = false
+                                viewModel.paginatedAnswers.value = emptyList()
+                                settings.imageEnabled.value = true
+                                Toast.makeText(this@FloatingWindowService,
+                                    getString(R.string.image_collection_start),
+                                    Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         isRecording = viewModel.isRecording.value,
                         isProcessingRecording = viewModel.isProcessingRecording.value,
+                        isImageCollecting = viewModel.isImageCollecting.value,
+                        imageCollectCount = viewModel.imageCollectCount.value,
+                        isProcessingImages = viewModel.isProcessingImages.value,
                         recordingCaptureCount = viewModel.recordingCaptureCount.value,
                         recordingProcessedCount = viewModel.recordingProcessedCount.value,
                         recordingAnswers = viewModel.recordingAnswers.value,
@@ -435,7 +471,17 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             ClipboardUtil.copyToClipboard(this@FloatingWindowService, text)
                         },
                         onRecordingToggle = {
-                            if (viewModel.isRecording.value) viewModel.stopRecording(recorder) else viewModel.startRecording(recorder)
+                            if (viewModel.isRecording.value) {
+                                viewModel.stopRecording(recorder)
+                            } else {
+                                if (viewModel.isImageCollecting.value) {
+                                    imageCollector.cancel()
+                                    viewModel.isImageCollecting.value = false
+                                    viewModel.isProcessingImages.value = false
+                                    settings.imageEnabled.value = false
+                                }
+                                viewModel.startRecording(recorder)
+                            }
                         },
                         onArcExpandChanged = { expanded ->
                             viewModel.isArcExpanded = expanded
@@ -521,6 +567,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         destroyed = true
         isRunning = false
         recorder.cancel()
+        imageCollector.cancel()
         viewModel.isRecording.value = false
         viewModel.isProcessingRecording.value = false
         viewModel.currentFetchJob?.cancel()

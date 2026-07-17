@@ -127,7 +127,7 @@ class FloatingWindowViewModelTest {
 
     @Test
     fun `stopRecording Processing sets status`() {
-        every { mockRecorder.stop() } returns RecordingCoordinator.StopResult.Processing(5)
+        every { mockRecorder.stop() } returns RecordingCoordinator.StopResult.Processing(5, 0)
         every { mockCtx.getString(any(), any<Int>()) } returns "处理中"
         every { mockCtx.getString(any()) } returns "已停止"
 

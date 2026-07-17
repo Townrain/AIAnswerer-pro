@@ -196,3 +196,28 @@ internal val IcRecord: ImageVector by lazy {
         }
     }.build()
 }
+
+/** 图片图标（相册），用于: 图片功能快捷开关 */
+internal val IcImage: ImageVector by lazy {
+    ImageVector.Builder("IcImage", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color(0xFFA855F7))) {
+            moveTo(21f, 19f)
+            verticalLineTo(5f)
+            curveTo(21f, 3.9f, 20.1f, 3f, 19f, 3f)
+            horizontalLineTo(5f)
+            curveTo(3.9f, 3f, 3f, 3.9f, 3f, 5f)
+            verticalLineTo(19f)
+            curveTo(3f, 20.1f, 3.9f, 21f, 5f, 21f)
+            horizontalLineTo(19f)
+            curveTo(20.1f, 21f, 21f, 20.1f, 21f, 19f)
+            close()
+            moveTo(8.5f, 13.5f)
+            lineToRelative(2.5f, 3.01f)
+            lineTo(14.5f, 12f)
+            lineToRelative(4.5f, 6f)
+            horizontalLineTo(5f)
+            lineToRelative(3.5f, -4.5f)
+            close()
+        }
+    }.build()
+}

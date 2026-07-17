@@ -16,6 +16,7 @@ class SettingsService {
         com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
     )
     val reasoningEnabled = mutableStateOf(AppConfig.getReasoningEffort() != null)
+    val imageEnabled = mutableStateOf(false)  // TODO: 接入图片功能时改为从 AppConfig 读取
 
     // Floating-window appearance
     val floatButtonAlpha = mutableStateOf(AppConfig.getFloatButtonAlpha())

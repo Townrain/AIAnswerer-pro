@@ -69,21 +69,28 @@ class OpenAIVisionProvider(
             .build()
     }
 
-    override suspend fun analyze(bitmap: Bitmap): Result<VisionFilterResult> =
+    override suspend fun analyze(bitmap: Bitmap): Result<VisionFilterResult> = analyzeImages(listOf(bitmap), false)
+
+    override suspend fun analyzeMultiple(bitmaps: List<Bitmap>): Result<VisionFilterResult> = analyzeImages(bitmaps, true)
+
+    private suspend fun analyzeImages(bitmaps: List<Bitmap>, multiPage: Boolean): Result<VisionFilterResult> =
         withContext(Dispatchers.IO) {
             val _start = System.currentTimeMillis()
             try {
-                AppLog.enter("VLM", "analyze ${bitmap.width}x${bitmap.height}")
-                val base64Image = encodeBitmap(bitmap)
-                AppLog.d("VLM", "encoded base64=${base64Image.length} chars")
-
-                val userContent = listOf(
-                    ContentPart(type = "text", text = buildSystemPrompt()),
+                AppLog.enter("VLM", "analyze ${bitmaps.size} images multiPage=$multiPage")
+                val imageParts = bitmaps.map { bitmap ->
+                    val b64 = encodeBitmap(bitmap)
                     ContentPart(
                         type = "image_url",
-                        imageUrl = ImageUrlObj(url = "data:image/jpeg;base64,$base64Image")
+                        imageUrl = ImageUrlObj(url = "data:image/jpeg;base64,$b64")
                     )
-                )
+                }
+
+                val userContent = mutableListOf<ContentPart>()
+                userContent.add(ContentPart(type = "text", text = if (multiPage) buildMultiPagePrompt() else buildSystemPrompt()))
+                userContent.addAll(imageParts)
+
+                AppLog.d("VLM", "encoded ${bitmaps.size} images, total chars=${imageParts.joinToString { it.imageUrl?.url?.length?.toString() ?: "0" }}")
 
                 val requestBody = OpenAIVisionRequest(
                     model = config.modelName,
@@ -91,7 +98,7 @@ class OpenAIVisionProvider(
                         OpenAIMessage(role = "user", content = userContent)
                     ),
                     temperature = config.temperature,
-                    maxTokens = config.maxTokens,
+                    maxTokens = if (multiPage) 8192 else config.maxTokens,
                     responseFormat = if (config.useJsonMode) {
                         ResponseFormat(type = "json_object")
                     } else null
@@ -109,7 +116,7 @@ class OpenAIVisionProvider(
                     .post(gson.toJson(requestBody).toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .build()
 
-                AppLog.net("VLM", "request to ${config.baseUrl} model=${config.modelName}")
+                AppLog.net("VLM", "request to ${config.baseUrl} model=${config.modelName} images=${bitmaps.size}")
                 val response = withTimeout(WITH_TIMEOUT_MS) {
                     val call = client.newCall(httpRequest)
                     suspendCancellableCoroutine { cont ->
@@ -130,7 +137,6 @@ class OpenAIVisionProvider(
                         })
                     }
                 }
-                AppLog.net("VLM", "response code=${response.code}")
 
                 response.use { resp ->
                     if (!resp.isSuccessful) {
@@ -145,7 +151,6 @@ class OpenAIVisionProvider(
                     val rawContent = chatResp.choices.firstOrNull()?.message?.contentRaw
                         ?: return@withContext Result.failure(Exception("空响应"))
 
-                    // content 可能是 String 或 Any（取决于 Gson 解析）
                     val jsonStr = when (rawContent) {
                         is String -> rawContent
                         else -> gson.toJson(rawContent)
@@ -163,7 +168,6 @@ class OpenAIVisionProvider(
                 Result.failure(e)
             }
         }
-
     override fun validateConfig(): ConfigValidationResult {
         val errors = mutableListOf<String>()
         if (config.baseUrl.isBlank()) errors.add("API 地址不能为空")
@@ -322,6 +326,23 @@ class OpenAIVisionProvider(
   "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
 }
 规则：忽略UI噪声和广告。多题时必须分离到questions数组。无题目时has_questions=false。
+""".trimIndent()
+
+    /**
+     * 多图模式专用 prompt — 告知模型这是长文分页截图，需合并阅读
+     */
+    private fun buildMultiPagePrompt(): String = """
+你是长文分页截图分析器。以下多张截图是同一篇文章的多页连续截图（从上到下）。
+请按顺序合并所有截图的内容，提取完整题目文本。只返回JSON，不要解释：
+{
+  "has_questions": true或false,
+  "question_count": 题数,
+  "question_types": ["选择题"|"填空题"|"问答题"],
+  "search_keywords": "核心搜索关键词(简短)",
+  "extracted_text": "合并后的所有题目完整文本",
+  "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
+}
+规则：忽略UI噪声和广告。跨页内容要拼接完整。多题时必须分离到questions数组。无题目时has_questions=false。
 """.trimIndent()
 
     private fun parseResponse(jsonStr: String): VisionFilterResult {

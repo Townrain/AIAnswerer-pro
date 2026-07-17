@@ -36,6 +36,15 @@ class CapturePipeline(
         return provider.analyze(bitmap)
     }
 
+    /**
+     * 多图视觉模型识别 — 将多张截图合并发送给 VLM（长文阅读模式）
+     */
+    suspend fun recognizeVlmMulti(bitmaps: List<Bitmap>): Result<VisionFilterResult> {
+        val provider = createVisionProvider()
+            ?: return Result.failure(Exception("VLM provider not available"))
+        return provider.analyzeMultiple(bitmaps)
+    }
+
     /** 调用大模型获取答案 */
     suspend fun askLlm(
         text: String,

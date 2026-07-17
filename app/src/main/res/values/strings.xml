@@ -63,6 +63,11 @@
     <string name="float_quick_search">联网</string>
     <string name="float_quick_reasoning">深度</string>
     <string name="float_quick_record">录制</string>
+    <string name="float_quick_image">图片</string>
+    <string name="image_collecting">图片收集中 (%1$d)</string>
+    <string name="image_analyzing">图片分析中…</string>
+    <string name="image_collection_start">图片采集已开始，点击主按钮截图</string>
+    <string name="image_recording_conflict">请先停止录制模式</string>
     <string name="float_prev_page">上一页</string>
     <string name="float_next_page">下一页</string>
     <string name="float_question_index">第%1$d题</string>

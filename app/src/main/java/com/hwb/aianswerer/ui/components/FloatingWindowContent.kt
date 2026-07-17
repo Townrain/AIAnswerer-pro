@@ -109,8 +109,13 @@ fun FloatingWindowContent(
     onVisionToggle: (() -> Unit)? = null,
     onSearchToggle: (() -> Unit)? = null,
     onReasoningToggle: (() -> Unit)? = null,
+    imageEnabled: Boolean = false,
+    onImageToggle: (() -> Unit)? = null,
     isRecording: Boolean = false,
     isProcessingRecording: Boolean = false,
+    isImageCollecting: Boolean = false,
+    imageCollectCount: Int = 0,
+    isProcessingImages: Boolean = false,
     recordingCaptureCount: Int = 0,
     recordingProcessedCount: Int = 0,
     recordingAnswers: List<Pair<Int, String>> = emptyList(),
@@ -167,12 +172,14 @@ fun FloatingWindowContent(
     val searchLabel = stringResource(R.string.float_quick_search)
     val reasoningLabel = stringResource(R.string.float_quick_reasoning)
     val recordLabel = stringResource(R.string.float_quick_record)
-    val quickActions = remember(visionEnabled, searchEnabled, reasoningEnabled, isRecording, vlmLabel, searchLabel, reasoningLabel, recordLabel) {
+    val imageLabel = stringResource(R.string.float_quick_image)
+    val quickActions = remember(visionEnabled, searchEnabled, reasoningEnabled, isRecording, imageEnabled, vlmLabel, searchLabel, reasoningLabel, recordLabel, imageLabel) {
         listOf(
             QuickAction(IcVision, vlmLabel, visionEnabled) { onVisionToggle?.invoke() },
             QuickAction(IcGlobe, searchLabel, searchEnabled) { onSearchToggle?.invoke() },
             QuickAction(IcBulb, reasoningLabel, reasoningEnabled) { onReasoningToggle?.invoke() },
-            QuickAction(IcRecord, recordLabel, isRecording) { onRecordingToggle() }
+            QuickAction(IcRecord, recordLabel, isRecording) { onRecordingToggle() },
+            QuickAction(IcImage, imageLabel, imageEnabled) { onImageToggle?.invoke() },
         )
     }
 
@@ -331,6 +338,7 @@ fun FloatingWindowContent(
                         status = floatingStatus,
                         expandQuickButtons = showQuickButtons,
                         isRecording = isRecording,
+                        isImageCollecting = isImageCollecting,
                         buttonAlpha = buttonAlpha,
                         isLeftSide = curIsLeftSide,
                         isDragging = isDragging,

@@ -123,8 +123,17 @@ internal data class PillVisual(
     val badge: Pair<String, Color>?
 )
 
-internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isLight: Boolean): PillVisual {
+internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCollecting: Boolean, isLight: Boolean): PillVisual {
     return when {
+        isImageCollecting -> PillVisual(
+            gradient = Brush.linearGradient(
+                listOf(Color(0xFF7C3AED), Color(0xFF5B21B6)),
+                Offset.Zero, Offset.Infinite
+            ),
+            border = Color(0xFFA855F7).copy(alpha = 0.45f),
+            iconTint = Color.White.copy(alpha = 0.95f),
+            badge = null
+        )
         isRecording -> PillVisual(
             gradient = Brush.linearGradient(
                 listOf(Color(0xFFFF3B30), Color(0xFFD32F2F)),
@@ -210,6 +219,7 @@ internal fun PillButton(
     status: FloatingStatus,
     expandQuickButtons: Boolean,
     isRecording: Boolean,
+    isImageCollecting: Boolean,
     buttonAlpha: Float,
     isLeftSide: Boolean,
     isDragging: Boolean,
@@ -219,7 +229,7 @@ internal fun PillButton(
     onQuickToggle: () -> Unit
 ) {
     val density = LocalDensity.current
-    val visual = remember(status, isRecording, t.isLight) { pillVisual(status, isRecording, t.isLight) }
+    val visual = remember(status, isRecording, isImageCollecting, t.isLight) { pillVisual(status, isRecording, isImageCollecting, t.isLight) }
     val isBusy = status in listOf(FloatingStatus.Capturing, FloatingStatus.Recognizing, FloatingStatus.Searching, FloatingStatus.GettingAnswer)
 
     val shimmerBrush = if (isBusy) rememberShimmerBrush() else null

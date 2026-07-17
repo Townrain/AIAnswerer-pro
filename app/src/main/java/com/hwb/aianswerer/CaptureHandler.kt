@@ -15,6 +15,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import com.hwb.aianswerer.ScreenReaderService
 
 // ── Callbacks (called from capture-related coroutines) ────────────────
 
@@ -64,6 +65,12 @@ interface CaptureHandlerCallbacks {
     /** Return a reference to the current recording fetch job (for cancel). */
     fun getCurrentFetchJob(): Job?
     fun setCurrentFetchJob(job: Job?)
+
+    /** Whether image-collection mode is active. */
+    fun isImageCollecting(): Boolean
+
+    /** Called to pass recognized text to the image collector (after VLM/OCR recognition). */
+    fun onImageText(text: String)
 }
 
 // ── Handler ───────────────────────────────────────────────────────────
@@ -104,7 +111,7 @@ class CaptureHandler(
         // ── Recording branch (must be before isBusy check) ─────────────
         if (callbacks.isRecording()) {
             val maxConcurrency = AppConfig.getMaxConcurrency()
-        val activeJobs = recorder.getActiveJobCount()
+            val activeJobs = recorder.getActiveJobCount()
             if (activeJobs >= maxConcurrency) {
                 val msg = context.getString(
                     R.string.recording_concurrency_limit, activeJobs, maxConcurrency
@@ -117,32 +124,163 @@ class CaptureHandler(
             val captureIdx = callbacks.incRecordingCaptureCount()
             callbacks.setCaptureInProgress(true)
             callbacks.setShowAnswer(false)
+            // Accessibility text mode: read screen directly when capture mode is
+            // '屏幕读取' and VLM is OFF. Screen reading is same level as OCR —
+            // both produce text for LLM. VLM needs screenshots (half level above).
+            val useAccessibilityText = AppConfig.isAccessibilityCaptureMode() && !callbacks.isVisionEnabled()
             serviceScope.launch {
                 delay(COMPOSE_DELAY_MS)
                 val idleH = callbacks.getFloatButtonSizeDp() * callbacks.getDensity() +
                         com.hwb.aianswerer.ui.components.FWDims.idleHeightPaddingDp.value * callbacks.getDensity()
                 callbacks.setCurrentWindowHeightPx(idleH)
                 callbacks.updateWindowPosition()
-                val wasStealth = callbacks.isStealthModeEnabled()
-                callbacks.setFlagSecure(enabled = true)
-                delay(FLAG_SECURE_DELAY_MS)
-                val bitmap = screenCaptureManager?.captureScreen()
-                if (!wasStealth) {
-                    callbacks.setFlagSecure(enabled = false)
+                if (useAccessibilityText) {
+                    // Screen reading path — read text directly, no screenshot needed
+                    val screenText = readScreenWithRetry()
+                    callbacks.setCaptureInProgress(false)
+                    if (screenText.isNullOrBlank()) {
+                        callbacks.showError("屏幕读取失败")
+                        return@launch
+                    }
+                    if (!pipeline.looksLikeQuestion(screenText)) {
+                        callbacks.showError("未识别到题目")
+                        return@launch
+                    }
+                    callbacks.setHasContent(true)
+                    callbacks.updateWindowHeight()
+                    recorder.processText(screenText)
+                } else {
+                    // Screenshot path: non-accessibility mode, or accessibility+VLM
+                    val wasStealth = callbacks.isStealthModeEnabled()
+                    callbacks.setFlagSecure(enabled = true)
+                    delay(FLAG_SECURE_DELAY_MS)
+                    var bitmap = screenCaptureManager?.captureScreen()
+                    if (bitmap == null) {
+                        delay(300)
+                        bitmap = screenCaptureManager?.captureScreen()
+                    }
+                    if (!wasStealth) {
+                        callbacks.setFlagSecure(enabled = false)
+                    }
+                    callbacks.setCaptureInProgress(false)
+                    if (bitmap == null) {
+                        // Accessibility+VLM mode: fall back to screen text (same as normal mode)
+                        if (AppConfig.isAccessibilityCaptureMode()) {
+                            // Accessibility+VLM fallback: read screen text
+                            val screenText = readScreenWithRetry()
+                            if (screenText.isNullOrBlank()) {
+                                callbacks.showError("截图失败且屏幕读取失败")
+                                return@launch
+                            }
+                            if (!pipeline.looksLikeQuestion(screenText)) {
+                                callbacks.showError("未识别到题目")
+                                return@launch
+                            }
+                            callbacks.setHasContent(true)
+                            callbacks.updateWindowHeight()
+                            callbacks.showToast("视觉模型截图失败，已使用屏幕文字")
+                            recorder.processText(screenText)
+                        } else {
+                            callbacks.showError("截图失败")
+                            return@launch
+                        }
+                    } else {
+                        callbacks.setHasContent(true)
+                        callbacks.updateWindowHeight()
+                        dispatchCropForRecording(bitmap)
+                    }
                 }
-                callbacks.setCaptureInProgress(false)
-                if (bitmap == null) {
-                    callbacks.showError("截图失败")
-                    return@launch
-                }
-                callbacks.setHasContent(true)
-                callbacks.updateWindowHeight()
-                dispatchCropForRecording(bitmap)
                 callbacks.setStatus(FloatingStatus.Idle)
                 delay(50)
                 callbacks.setStatusMessage(
                     context.getString(R.string.recording_indicator, captureIdx)
                 )
+            }
+            return
+        }
+
+        // ── Image collection mode ─────────────────────────────────────
+        if (callbacks.isImageCollecting()) {
+            AppLog.enter("CaptureHandler", "handleCapture imageMode #$captureCounter")
+
+            callbacks.setCaptureInProgress(true)
+            callbacks.setShowAnswer(false)
+            serviceScope.launch {
+                delay(COMPOSE_DELAY_MS)
+                val idleH = callbacks.getFloatButtonSizeDp() * callbacks.getDensity() +
+                        com.hwb.aianswerer.ui.components.FWDims.idleHeightPaddingDp.value * callbacks.getDensity()
+                callbacks.setCurrentWindowHeightPx(idleH)
+                callbacks.updateWindowPosition()
+
+                var bitmap: Bitmap? = null
+                try {
+                    // Accessibility mode + VLM off: read screen text directly
+                    if (AppConfig.isAccessibilityCaptureMode() && !callbacks.isVisionEnabled()) {
+                        val screenText = readScreenWithRetry()
+                        callbacks.setCaptureInProgress(false)
+                        if (screenText.isNullOrBlank()) {
+                            callbacks.showError("屏幕读取失败")
+                            return@launch
+                        }
+                        callbacks.setHasContent(true)
+                        callbacks.updateWindowHeight()
+                        callbacks.onImageText(screenText)
+                        callbacks.setStatus(FloatingStatus.Idle)
+                        return@launch
+                    }
+
+                    // Screenshot path
+                    if (screenCaptureManager?.isReady != true) {
+                        callbacks.setCaptureInProgress(false)
+                        callbacks.showError("截图权限未授权")
+                        return@launch
+                    }
+
+                    val wasStealth = callbacks.isStealthModeEnabled()
+                    callbacks.setFlagSecure(enabled = true)
+                    delay(FLAG_SECURE_DELAY_MS)
+
+                bitmap = screenCaptureManager?.captureScreen()
+                    callbacks.setCaptureInProgress(false)
+
+                    if (!wasStealth) callbacks.setFlagSecure(enabled = false)
+
+                    if (bitmap == null) {
+                        callbacks.showError("截图失败")
+                        return@launch
+                    }
+
+                    callbacks.setHasContent(true)
+                    callbacks.updateWindowHeight()
+                    callbacks.setStatus(FloatingStatus.Recognizing)
+                    callbacks.setStatusMessage("识别中…")
+
+                    // Run through VLM/OCR recognition pipeline
+                    if (callbacks.isVisionEnabled()) {
+                        pipeline.recognizeVlm(bitmap)
+                            .onSuccess { filter ->
+                                if (!filter.hasQuestions || filter.extractedText.isBlank()) {
+                                    callbacks.showError("未识别到题目")
+                                    return@launch
+                                }
+                                callbacks.onImageText(filter.extractedText)
+                            }
+                            .onFailure {
+                                AppLog.w("CaptureHandler", "VLM failed, fallback to OCR")
+                                pipeline.recognizeOcr(bitmap)
+                                    .onSuccess { text -> callbacks.onImageText(text) }
+                                    .onFailure { callbacks.showError("识别失败: ${it.message}") }
+                            }
+                    } else {
+                        pipeline.recognizeOcr(bitmap)
+                            .onSuccess { text -> callbacks.onImageText(text) }
+                            .onFailure { err -> callbacks.showError("识别失败: ${err.message}") }
+                    }
+                    callbacks.setStatus(FloatingStatus.Idle)
+                } finally {
+                    bitmap?.let { if (!it.isRecycled) it.recycle() }
+                    callbacks.setCaptureInProgress(false)
+                }
             }
             return
         }
@@ -232,13 +370,7 @@ class CaptureHandler(
 
         // Hide floating window from a11y
         // (floatingView ref lives in service; we signal via callback)
-        delay(100)
-
-        var screenText = ScreenReaderService.readScreenText()
-        if (screenText.isNullOrBlank()) {
-            delay(500)
-            screenText = ScreenReaderService.readScreenText()
-        }
+        val screenText = readScreenWithRetry()
 
         if (screenText.isNullOrBlank()) {
             val enabled = ScreenReaderService.isAccessibilityServiceEnabled(context)
@@ -250,23 +382,46 @@ class CaptureHandler(
             callbacks.showError(msg)
             return
         }
+        // Text-only mode: validate screen text before proceeding.
+        // VLM mode: always try — VLM can see questions that text extraction misses.
+        val hasQuestionText = pipeline.looksLikeQuestion(screenText)
 
         // VLM mode: screenshot + vision analysis
         if (callbacks.isVisionEnabled() && screenCaptureManager?.isReady == true) {
+            callbacks.setCaptureInProgress(true)
             callbacks.setStatus(FloatingStatus.Capturing)
             delay(COMPOSE_DELAY_MS)
             val bitmap = screenCaptureManager?.captureScreen()
+            callbacks.setCaptureInProgress(false)
             if (bitmap != null) {
                 processBitmapWithVlm(bitmap)
-            } else {
+            } else if (hasQuestionText) {
                 callbacks.setStatusMessage("识别完成")
                 callbacks.onTextRecognized(screenText, null)
+            } else {
+                callbacks.showError("截图失败，且未识别到题目文本")
             }
         } else {
+            if (!hasQuestionText) {
+                callbacks.showError("未识别到题目")
+                return
+            }
             callbacks.setStatusMessage("识别完成")
             callbacks.onTextRecognized(screenText, null)
         }
     }
+
+    /** Read screen text with retry — shared by accessibility capture paths. */
+    private suspend fun readScreenWithRetry(): String? {
+        delay(100)
+        var text = ScreenReaderService.readScreenText()
+        if (text.isNullOrBlank()) {
+            delay(500)
+            text = ScreenReaderService.readScreenText()
+        }
+        return text
+    }
+
 
     // ── Crop dispatch ─────────────────────────────────────────────────
 

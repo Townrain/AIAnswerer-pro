@@ -31,6 +31,14 @@ interface VisionProvider {
     suspend fun analyze(bitmap: Bitmap): Result<VisionFilterResult>
 
     /**
+     * 多图分析 — 将多张截图合并发送给视觉模型（用于长文阅读场景）
+     *
+     * @param bitmaps 多张截图（按顺序排列，从上到下）
+     * @return Result<VisionFilterResult>
+     */
+    suspend fun analyzeMultiple(bitmaps: List<Bitmap>): Result<VisionFilterResult>
+
+    /**
      * 验证当前配置是否可用（API Key 格式、URL 可达性等）
      * 轻量检查，不应发起网络请求
      */

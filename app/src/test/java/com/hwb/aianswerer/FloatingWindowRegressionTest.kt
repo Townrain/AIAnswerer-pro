@@ -59,19 +59,19 @@ class FloatingWindowRegressionTest {
     // ════ pillVisual() ════
 
     @Test fun `pillVisual Idle 无 badge`() {
-        assertNull(pillVisual(FloatingStatus.Idle, false, false).badge)
+        assertNull(pillVisual(FloatingStatus.Idle, false, false, false).badge)
     }
 
     @Test fun `pillVisual 录制中无 badge`() {
-        assertNull(pillVisual(FloatingStatus.Idle, true, false).badge)
+        assertNull(pillVisual(FloatingStatus.Idle, true, false, false).badge)
     }
 
     @Test fun `pillVisual Success badge`() {
-        assertEquals("✓", pillVisual(FloatingStatus.Success, false, false).badge!!.first)
+        assertEquals("✓", pillVisual(FloatingStatus.Success, false, false, false).badge!!.first)
     }
 
     @Test fun `pillVisual Error badge`() {
-        assertEquals("✗", pillVisual(FloatingStatus.Error, false, false).badge!!.first)
+        assertEquals("✗", pillVisual(FloatingStatus.Error, false, false, false).badge!!.first)
     }
 
     // ════ parseSections() ════

@@ -1,8 +1,7 @@
 package com.hwb.aianswerer.config
 
 import com.hwb.aianswerer.config.ConfigStorage.KEY_API_KEY
-import com.tencent.mmkv.MMKV
-import io.mockk.*
+import io.mockk.unmockkAll
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -12,7 +11,7 @@ class ConfigStorageTest {
 
     @Before
     fun setUp() {
-        mockkObject(MMKV)
+        // ConfigStorage.mmkv is null until init() is called — tests verify this
     }
 
     @After
