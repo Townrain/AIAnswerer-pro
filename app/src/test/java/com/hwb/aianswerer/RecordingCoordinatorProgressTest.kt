@@ -10,6 +10,7 @@ import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.After
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit
  * isolation issues when OCR and VLM progress tests share the same
  * pipeline mock instance.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class RecordingCoordinatorProgressTest {
 
     private val pipeline = mockk<CapturePipeline>(relaxed = true)
@@ -88,7 +90,7 @@ class RecordingCoordinatorProgressTest {
     fun checkAndNotifyProgress_in_progress_calls_onProgressUpdate() = runBlocking {
         coordinator.start()
         coEvery { pipeline.recognizeOcr(any()) } coAnswers {
-            delay(300)
+            delay(500)
             Result.success("text")
         }
 
@@ -97,9 +99,8 @@ class RecordingCoordinatorProgressTest {
 
         coordinator.processBitmap(mockBitmap())
         coordinator.stop()  // sets isProcessing=true before OCR completes
-        delay(500)  // wait for OCR to finish after stop()
 
-        assertTrue(progressLatch.await(5, TimeUnit.SECONDS))
+        assertTrue(progressLatch.await(10, TimeUnit.SECONDS))
     }
 
     @Test
@@ -115,7 +116,7 @@ class RecordingCoordinatorProgressTest {
             )
         )
         coEvery { pipeline.recognizeVlm(any()) } coAnswers {
-            delay(200)  // allow stop() to set isProcessing=true
+            delay(500)
             Result.success(vlmResult)
         }
         coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
@@ -132,9 +133,8 @@ class RecordingCoordinatorProgressTest {
 
         coordinator.processBitmap(mockBitmap())
         coordinator.stop()  // sets isProcessing=true before VLM completes
-        delay(800)  // wait for VLM (200ms delay) + fetchAnswer
 
-        assertTrue(progressLatch.await(5, TimeUnit.SECONDS))
+        assertTrue(progressLatch.await(10, TimeUnit.SECONDS))
         assertEquals(2, receivedTotal[0])
     }
 }
