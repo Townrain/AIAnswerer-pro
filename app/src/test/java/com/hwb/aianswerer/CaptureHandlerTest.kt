@@ -62,6 +62,7 @@ class CaptureHandlerTest {
 
         every { scm.isReady } returns true
         every { recorder.getActiveJobCount() } returns 0
+        every { pipeline.looksLikeQuestion(any()) } returns true
     }
 
     @After

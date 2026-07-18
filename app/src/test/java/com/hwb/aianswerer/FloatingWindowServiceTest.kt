@@ -44,6 +44,12 @@ class FloatingWindowServiceTest {
     companion object {
         @BeforeClass @JvmStatic
         fun setupClass() {
+            // ── Prevent ALL MMKV access by mocking at ConfigStorage level ──
+            mockkObject(com.hwb.aianswerer.config.ConfigStorage)
+            val mockMmkv = mockk<com.tencent.mmkv.MMKV>(relaxed = true)
+            every { com.hwb.aianswerer.config.ConfigStorage.requireMmkv() } returns mockMmkv
+            every { com.hwb.aianswerer.config.ConfigStorage.getSecurePrefs() } returns null
+
             // ── Prevent MMKV crashes during MyApplication.attachBaseContext() ──
             mockkObject(AppConfig)
             every { AppConfig.init(any()) } just runs
@@ -83,6 +89,7 @@ class FloatingWindowServiceTest {
             unmockkObject(AppConfig)
             unmockkObject(ProviderStorage)
             unmockkObject(WebSearchStorage)
+            unmockkObject(com.hwb.aianswerer.config.ConfigStorage)
             // Reset singleton to null for clean state
             TextRecognitionManager::class.java.getDeclaredField("instance").apply {
                 isAccessible = true

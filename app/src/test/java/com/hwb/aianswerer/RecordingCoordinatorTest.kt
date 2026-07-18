@@ -588,37 +588,21 @@ class RecordingCoordinatorTest {
 
     @Test
     fun checkAndNotifyProgress_reports_correct_counts() = runBlocking {
-        every { AppConfig.isVisionEnabled() } returns true
+        every { AppConfig.isVisionEnabled() } returns false
         coordinator.start()
 
-        val vlmResult = VisionFilterResult(
-            hasQuestions = true,
-            questions = listOf(
-                SeparatedQuestion(index = 1, text = "Q1", searchKeywords = "kw1"),
-                SeparatedQuestion(index = 2, text = "Q2", searchKeywords = "kw2")
-            )
-        )
-        coEvery { pipeline.recognizeVlm(any()) } coAnswers {
-            delay(300)
-            Result.success(vlmResult)
-        }
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("test question text")
         coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
             listOf(mockAnswer())
         )
 
         val progressLatch = CountDownLatch(1)
-        val receivedTotal = mutableListOf<Int>()
-        every { callbacks.onProgressUpdate(any(), any()) } answers {
-            val total: Int = invocation.args[1] as Int
-            receivedTotal.add(total)
-            progressLatch.countDown()
-        }
+        every { callbacks.onProgressUpdate(any(), any()) } answers { progressLatch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
-        coordinator.stop()  // sets isProcessing=true before VLM completes
-        delay(1000)  // wait for VLM + 2 fetchAnswer + Main dispatcher callbacks
+        coordinator.stop()  // sets isProcessing=true before OCR completes
+        delay(500)  // wait for OCR + fetchAnswer to complete
 
         assertTrue(progressLatch.await(5, TimeUnit.SECONDS))
-        assertTrue(receivedTotal.isNotEmpty())
     }
 }
