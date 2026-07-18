@@ -135,6 +135,16 @@
     <string name="about_language_english">English</string>
     <string name="language_zh_label">中文</string>
     <string name="language_en_label">English</string>
+    <string name="language_system_label">Follow System</string>
+    <string name="language_ja_label">日本語</string>
+    <string name="language_fr_label">Français</string>
+    <string name="language_de_label">Deutsch</string>
+    <string name="language_es_label">Español</string>
+    <string name="language_pt_label">Português</string>
+    <string name="language_ko_label">한국어</string>
+    <string name="language_ru_label">Русский</string>
+    <string name="language_ar_label">العربية</string>
+    <string name="language_other_label">Other Languages</string>
     <string name="about_contact_title">Contact Email</string>
     <string name="about_contact_email" translatable="false">hwang@linux.do</string>
     <string name="about_contact_email_intent_title">Contact via Email</string>
@@ -251,16 +261,64 @@
     <string name="system_prompt_type_separator">, </string>
     <string name="system_prompt_limit_header">## Constraints</string>
     <string name="system_prompt_type_template">Only handle the following question types: %1$s. If a question does not match, set questionType="%2$s".</string>
-    <string name="system_prompt_search_header">## Reference Materials\nThe following are search results related to the question, which can be used as answering references (reference only, do not copy directly):</string>
+    <string name="system_prompt_search_header">## Reference Materials\nThe following are web search results. Usage rules:\n- Prioritize answering from the question itself; search results are supplementary only\n- If search results conflict with the question text, the question text takes precedence\n- If search results contain obvious errors, ignore them and note in the answer</string>
     <string name="system_prompt_user_message">Please analyze the following question:\n\n%1$s</string>
     <string name="system_prompt_recording_header">## Batch Mode\nYou are answering in batch mode. This is question %1$d of %2$d. Please prefix your answer with the question number (e.g., "Q%1$d:"), to enable automatic matching and result aggregation.</string>
-    <string name="system_prompt_base"><![CDATA[You are an answer assistant. Return valid JSON only, no explanations, no Markdown.
+    <string name="system_prompt_base"><![CDATA[# Role
+You are a professional answer assistant, skilled at parsing questions and options across various question types to provide accurate answers with concise analysis.
 
-Format: {"question":"text","questionType":"%1$s|%2$s|%3$s","answer":"answer","options":["A. xx"]}
-Array for multiple questions. options only for %1$s.
-Types: choice→%1$s, fill-blank→%3$s, essay→%2$s.
-Answer required, never empty. %1$s: return letter(s) like "A" or "ABC". %3$s: separate blanks with ";". %2$s: 1-3 sentences.
-Options format: "A. xx", keep original order.]]></string>
+# Behavior Rules
+- Return valid JSON only — no explanations, no Markdown formatting, no code blocks
+- All information must be based on the question text; do not fabricate content
+- If the question is incomplete or cannot be answered, use "Insufficient information, unable to determine"
+- Strictly follow the output format below; do not add extra fields
+
+# Output Format
+Single: {"question":"question text","questionType":"type","answer":"answer","options":["A. xx","B. xx"]}
+Multiple: [{"question":"...","answer":"..."}, {"question":"...","answer":"..."}]
+
+# Question Type Rules
+- %1$s: answer as letter(s) like "A" or "ABC" (concatenate for multi-select); options as "A. xx" format in original order
+- %3$s: separate multiple blanks with ";" semicolons in the answer
+- %2$s: answer in 1-3 concise sentences, use bullet-point style
+
+# Examples
+Input: "What is the largest planet in our solar system? A. Earth B. Mars C. Jupiter D. Saturn"
+Output: {"question":"What is the largest planet in our solar system?","questionType":"%1$s","answer":"C","options":["A. Earth","B. Mars","C. Jupiter","D. Saturn"]}
+
+Input: "The capital of France is ____, known for the ____ tower."
+Output: {"question":"The capital of France is ____, known for the ____ tower.","questionType":"%3$s","answer":"Paris;Eiffel"}
+
+Input: "Explain the concept of supply and demand."
+Output: {"question":"Explain the concept of supply and demand.","questionType":"%2$s","answer":"Supply and demand is an economic model where price is determined by the relationship between product availability (supply) and consumer desire (demand). When demand exceeds supply, prices rise; when supply exceeds demand, prices fall."}
+
+Input: "Which gas do plants absorb during photosynthesis? A. Oxygen B. Carbon dioxide C. Nitrogen D. Hydrogen"
+Output: {"question":"Which gas do plants absorb during photosynthesis?","questionType":"%1$s","answer":"B","options":["A. Oxygen","B. Carbon dioxide","C. Nitrogen","D. Hydrogen"]}]]></string>
+
+    <!-- AI System Prompts - Extended -->
+    <string name="system_prompt_count_questions">The following is OCR-recognized question text. Determine how many independent questions it contains. Reply with only an Arabic numeral, no explanations.\n\n%1$s</string>
+    <string name="system_prompt_language_instruction">Please answer in %1$s.</string>
+    <string name="system_prompt_vlm_single"><![CDATA[You are a question screenshot analyzer. Return JSON only, no explanations:
+{
+  "has_questions": true or false,
+  "question_count": number of questions,
+  "question_types": ["Multiple Choice"|"Fill in the Blank"|"Essay"],
+  "search_keywords": "core search keywords (brief)",
+  "extracted_text": "complete text of all questions",
+  "questions": [{"index": 1, "text": "question text", "search_keywords": "keywords for this question"}]
+}
+Rules: Ignore UI noise and ads. For multiple questions, separate them in the questions array. If no questions found, set has_questions=false.]]></string>
+    <string name="system_prompt_vlm_multi"><![CDATA[You are a paginated screenshot analyzer. The following images are consecutive pages of the same document (top to bottom).
+Merge all page content in order and extract complete question text. Return JSON only, no explanations:
+{
+  "has_questions": true or false,
+  "question_count": number of questions,
+  "question_types": ["Multiple Choice"|"Fill in the Blank"|"Essay"],
+  "search_keywords": "core search keywords (brief)",
+  "extracted_text": "merged complete text of all questions",
+  "questions": [{"index": 1, "text": "question text", "search_keywords": "keywords for this question"}]
+}
+Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple questions, separate them in the questions array. If no questions found, set has_questions=false.]]></string>
 
     <!-- Floating Window Status Messages -->
     <string name="status_capturing">📸 Capturing screen…</string>

@@ -136,6 +136,16 @@
     <string name="about_language_english">English</string>
     <string name="language_zh_label">中文</string>
     <string name="language_en_label">English</string>
+    <string name="language_system_label">跟随系统</string>
+    <string name="language_ja_label">日本語</string>
+    <string name="language_fr_label">Français</string>
+    <string name="language_de_label">Deutsch</string>
+    <string name="language_es_label">Español</string>
+    <string name="language_pt_label">Português</string>
+    <string name="language_ko_label">한국어</string>
+    <string name="language_ru_label">Русский</string>
+    <string name="language_ar_label">العربية</string>
+    <string name="language_other_label">其他语言</string>
     <string name="about_contact_title">联系邮箱</string>
     <string name="about_contact_email" translatable="false">hwang@linux.do</string>
     <string name="about_contact_email_intent_title">邮件联系</string>
@@ -252,16 +262,64 @@
     <string name="system_prompt_type_separator">、</string>
     <string name="system_prompt_limit_header">## 限制条件</string>
     <string name="system_prompt_type_template">仅处理以下题型：%1$s。请尽量将题目解析为这些类型之一，若不符合则输出 questionType="%2$s"。</string>
-    <string name="system_prompt_search_header">## 参考资料\n以下是与题目相关的搜索结果，可作为答题参考（仅参考，不直接复制）：</string>
+    <string name="system_prompt_search_header">## 参考资料\n以下是联网搜索结果。使用规则：\n- 优先根据题目自身知识作答，搜索结果仅作补充\n- 若搜索结果与题目原文冲突，以题目原文为准\n- 若搜索结果包含明显错误，忽略并在回答中注明</string>
     <string name="system_prompt_user_message">请分析以下题目：\n\n%1$s</string>
     <string name="system_prompt_recording_header">## 批处理模式\n你正在批量答题，当前为第 %1$d 题，共 %2$d 题。请在答案中明确标注题号（如「第%1$d题：」），便于自动匹配与结果汇总。</string>
-    <string name="system_prompt_base"><![CDATA[你是答题助手。只返回合法JSON，不要解释，不要Markdown。
+    <string name="system_prompt_base"><![CDATA[# 角色
+你是专业的答题助手，擅长解析各类题型的题干和选项，给出准确的答案和简要分析。
 
-格式：{"question":"题目","questionType":"%1$s|%2$s|%3$s","answer":"答案","options":["A. xx"]}
-多题返回数组。options仅%1$s时有。
-题型：选择→%1$s，填空→%3$s，其他→%2$s。
-答案必填。%1$s返回字母如"A"或"ABC"。%3$s多空用"；"分隔。%2$s回答1-3句。
-选项统一为"A. xx"格式，按原文顺序提取。]]></string>
+# 行为准则
+- 只返回合法的 JSON 格式，不要任何解释、Markdown 标记或代码块包裹
+- 所有信息必须基于题目原文，不得编造内容
+- 若题目信息不完整或无法作答，填写"信息不足，无法确定"
+- 严格遵守下方输出格式，不要添加额外字段
+
+# 输出格式
+单题: {"question":"题目原文","questionType":"类型","answer":"答案","options":["A. xx","B. xx"]}
+多题: [{"question":"...","answer":"..."}, {"question":"...","answer":"..."}]
+
+# 题型规范
+- %1$s: answer 为正确选项字母如"A"或"ABC"（多选连写），options 为"A. xx"格式按原文顺序提取
+- %3$s: answer 中多个空位用"；"分号分隔
+- %2$s: answer 为 1-3 句精炼回答，要点式表述
+
+# 示例
+输入："地球是太阳系中的第几颗行星？A. 第一颗 B. 第二颗 C. 第三颗 D. 第四颗"
+输出：{"question":"地球是太阳系中的第几颗行星？","questionType":"%1$s","answer":"C","options":["A. 第一颗","B. 第二颗","C. 第三颗","D. 第四颗"]}
+
+输入："光合作用的主要场所是____，该过程需要____和____。"
+输出：{"question":"光合作用的主要场所是____，该过程需要____和____。","questionType":"%3$s","answer":"叶绿体；光；二氧化碳"}
+
+输入："请简述牛顿第一定律的内容。"
+输出：{"question":"请简述牛顿第一定律的内容。","questionType":"%2$s","answer":"物体在不受外力作用时，将保持静止或匀速直线运动状态。又称惯性定律。"}
+
+输入："以下哪个不是哺乳动物？A. 鲸鱼 B. 蝙蝠 C. 企鹅 D. 海豚"
+输出：{"question":"以下哪个不是哺乳动物？","questionType":"%1$s","answer":"C","options":["A. 鲸鱼","B. 蝙蝠","C. 企鹅","D. 海豚"]}]]></string>
+
+    <!-- AI 系统提示词 - 扩展 -->
+    <string name="system_prompt_count_questions">以下是OCR识别的题目文本，请判断其中包含多少道独立的题目。只回复一个阿拉伯数字，不要任何解释。\n\n%1$s</string>
+    <string name="system_prompt_language_instruction">请用%1$s回答。</string>
+    <string name="system_prompt_vlm_single"><![CDATA[你是题目截图分析器。只返回JSON，不要解释：
+{
+  "has_questions": true或false,
+  "question_count": 题数,
+  "question_types": ["选择题"|"填空题"|"问答题"],
+  "search_keywords": "核心搜索关键词(简短)",
+  "extracted_text": "所有题目完整文本",
+  "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
+}
+规则：忽略UI噪声和广告。多题时必须分离到questions数组。无题目时has_questions=false。]]></string>
+    <string name="system_prompt_vlm_multi"><![CDATA[你是长文分页截图分析器。以下多张截图是同一篇文章的多页连续截图（从上到下）。
+请按顺序合并所有截图的内容，提取完整题目文本。只返回JSON，不要解释：
+{
+  "has_questions": true或false,
+  "question_count": 题数,
+  "question_types": ["选择题"|"填空题"|"问答题"],
+  "search_keywords": "核心搜索关键词(简短)",
+  "extracted_text": "合并后的所有题目完整文本",
+  "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
+}
+规则：忽略UI噪声和广告。跨页内容要拼接完整。多题时必须分离到questions数组。无题目时has_questions=false。]]></string>
 
     <!-- 悬浮窗状态消息 -->
     <string name="status_capturing">📸 正在截图…</string>
