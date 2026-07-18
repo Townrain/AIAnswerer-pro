@@ -26,6 +26,7 @@ internal object ConfigStorage {
     internal const val KEY_FLOAT_BUTTON_SIZE = "float_button_size"
     internal const val KEY_FLOAT_BUTTON_ALPHA = "float_button_alpha"
     internal const val KEY_FLOAT_CARD_ALPHA = "float_card_alpha"
+    internal const val KEY_FLOAT_ICON_SCALE = "float_icon_scale"
     internal const val KEY_VISION_ENABLED = "vision_enabled"
     internal const val KEY_VISION_PROVIDER_ID = "vision_provider_id"
     internal const val KEY_VISION_BASE_URL = "vision_base_url"

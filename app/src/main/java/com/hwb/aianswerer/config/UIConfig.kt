@@ -71,6 +71,15 @@ internal object UIConfig {
         ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_FLOAT_BUTTON_SIZE, size.coerceIn(32, 80))
     }
 
+    /** 放大镜图标缩放 0.5~2.0，默认 1.0 */
+    fun getFloatIconScale(): Float {
+        return ConfigStorage.requireMmkv().decodeFloat(ConfigStorage.KEY_FLOAT_ICON_SCALE, 1.0f)
+    }
+
+    fun saveFloatIconScale(scale: Float) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_FLOAT_ICON_SCALE, scale.coerceIn(0.5f, 2.0f))
+    }
+
     /** 悬浮按钮透明度 0.1~1.0，默认 0.9 */
     fun getFloatButtonAlpha(): Float {
         return ConfigStorage.requireMmkv().decodeFloat(ConfigStorage.KEY_FLOAT_BUTTON_ALPHA, 0.9f)

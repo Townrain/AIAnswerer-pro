@@ -42,7 +42,7 @@ sealed class FloatingStatus {
 internal object FWDims {
     val pillHeight get() = com.hwb.aianswerer.config.AppConfig.getFloatButtonSize().dp
     val pillCornerRadius = 21.dp
-    val pillIconSize get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 20 / 36).dp
+    val pillIconSize get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 20 / 36 * com.hwb.aianswerer.config.AppConfig.getFloatIconScale()).dp
     val pillHPadding get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 10 / 36).dp
     val pillVPadding get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 8 / 36).dp
     val pillEdgeMargin = 8.dp
@@ -85,6 +85,7 @@ internal object FWAnim {
     const val copyResetMs = 1500L
     const val pillTransitionMs = 200
 }
+
 
 // =============================================================================
 // 图标定义

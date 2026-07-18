@@ -88,6 +88,8 @@ object AppConfig {
     fun getFloatButtonAlpha(): Float = UIConfig.getFloatButtonAlpha()
     fun saveFloatCardAlpha(alpha: Float) = UIConfig.saveFloatCardAlpha(alpha)
     fun getFloatCardAlpha(): Float = UIConfig.getFloatCardAlpha()
+    fun saveFloatIconScale(scale: Float) = UIConfig.saveFloatIconScale(scale)
+    fun getFloatIconScale(): Float = UIConfig.getFloatIconScale()
     fun saveQuickButtonLayout(mode: String) = UIConfig.saveQuickButtonLayout(mode)
     fun getQuickButtonLayout(): String = UIConfig.getQuickButtonLayout()
     fun saveOutputLanguage(lang: String) = UIConfig.saveOutputLanguage(lang)

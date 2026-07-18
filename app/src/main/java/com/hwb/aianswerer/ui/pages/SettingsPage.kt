@@ -81,6 +81,7 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
     var floatButtonSize by remember { mutableStateOf(AppConfig.getFloatButtonSize().toFloat()) }
     var floatButtonAlpha by remember { mutableStateOf(AppConfig.getFloatButtonAlpha()) }
     var floatCardAlpha by remember { mutableStateOf(AppConfig.getFloatCardAlpha()) }
+    var floatIconScale by remember { mutableStateOf(AppConfig.getFloatIconScale()) }
     val darkMode = ThemeState.darkMode
 
     val bgGradient = Brush.linearGradient(
@@ -174,6 +175,7 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
                 SettingSlider(t, "悬浮按钮大小", floatButtonSize, 32f..80f, "${floatButtonSize.toInt()}dp") { floatButtonSize = it; AppConfig.saveFloatButtonSize(it.toInt()) }
                 SettingSlider(t, "悬浮按钮透明度", floatButtonAlpha, 0.1f..1.0f, "${(floatButtonAlpha * 100).toInt()}%") { floatButtonAlpha = it; AppConfig.saveFloatButtonAlpha(it) }
                 SettingSlider(t, "悬浮卡片透明度", floatCardAlpha, 0.1f..1.0f, "${(floatCardAlpha * 100).toInt()}%") { floatCardAlpha = it; AppConfig.saveFloatCardAlpha(it) }
+                SettingSlider(t, "图标缩放", floatIconScale, 0.5f..2.0f, "${(floatIconScale * 100).toInt()}%") { floatIconScale = it; AppConfig.saveFloatIconScale(it) }
             }
 
             // Theme presets
