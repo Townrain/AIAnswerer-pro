@@ -42,6 +42,8 @@ object LanguageUtil {
      */
     fun attachBaseContext(context: Context): Context {
         val languageCode = AppConfig.getLanguage()
+        // 跟随系统：不覆写 Locale，直接返回原 Context
+        if (languageCode == AppConfig.LANGUAGE_SYSTEM) return context
         return updateConfigurationContext(context, languageCode)
     }
 
@@ -54,8 +56,17 @@ object LanguageUtil {
      */
     private fun updateConfigurationContext(context: Context, languageCode: String): Context {
         val locale = when (languageCode) {
-            AppConfig.LANGUAGE_EN -> Locale.ENGLISH
             AppConfig.LANGUAGE_ZH -> Locale.SIMPLIFIED_CHINESE
+            AppConfig.LANGUAGE_EN -> Locale.ENGLISH
+            AppConfig.LANGUAGE_JA -> Locale.JAPANESE
+            AppConfig.LANGUAGE_KO -> Locale.KOREAN
+            AppConfig.LANGUAGE_FR -> Locale.FRENCH
+            AppConfig.LANGUAGE_DE -> Locale.GERMAN
+            AppConfig.LANGUAGE_ES -> Locale("es")
+            AppConfig.LANGUAGE_PT -> Locale("pt")
+            AppConfig.LANGUAGE_RU -> Locale("ru")
+            AppConfig.LANGUAGE_AR -> Locale("ar")
+            AppConfig.LANGUAGE_OTHER -> Locale.ENGLISH
             else -> Locale.SIMPLIFIED_CHINESE
         }
 
