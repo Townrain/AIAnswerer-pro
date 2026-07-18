@@ -28,6 +28,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.shadows.ShadowApplication
+import org.robolectric.annotation.Config
 
 /**
  * FloatingWindowService Robolectric tests.
@@ -37,6 +38,7 @@ import org.robolectric.shadows.ShadowApplication
  * Test-specific stubs are added in [Before].
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [30])
 class FloatingWindowServiceTest {
 
     companion object {
@@ -72,6 +74,8 @@ class FloatingWindowServiceTest {
             mockkConstructor(RecordingCoordinator::class)
             mockkConstructor(AnswerFetcher::class)
             mockkConstructor(CaptureHandler::class)
+            mockkConstructor(ImageCollector::class)
+            mockkConstructor(FloatingWindowManager::class)
         }
 
         @AfterClass @JvmStatic
@@ -88,6 +92,8 @@ class FloatingWindowServiceTest {
             unmockkConstructor(RecordingCoordinator::class)
             unmockkConstructor(AnswerFetcher::class)
             unmockkConstructor(CaptureHandler::class)
+            unmockkConstructor(ImageCollector::class)
+            unmockkConstructor(FloatingWindowManager::class)
         }
     }
 
