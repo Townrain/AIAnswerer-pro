@@ -2,6 +2,17 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
+## [1.6.1] - 2026-07-19
+
+### Added
+- 多语言输出支持：主页输出语言下拉扩展至 11 项，覆盖中文/English/日本語/Francais/Deutsch/Espanol/Portugues/한국어/Русский(VLM)/العربية(VLM)/其他语言(VLM)
+- 首次启动弹窗新增「跟随系统」选项，选择后不再覆写 Android Locale
+- 新增 11 个语言常量与完整 Locale/Prompt 映射
+
+### Changed
+- LanguageUtil：跟随系统模式下跳过 attachBaseContext 覆写
+- Constants：promptLocale 支持全部语言 + 系统默认
+
 ## [1.6.0] - 2026-07-18
 
 ### Added
