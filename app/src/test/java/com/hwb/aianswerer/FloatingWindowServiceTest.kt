@@ -47,6 +47,9 @@ class FloatingWindowServiceTest {
             every { AppConfig.init(any()) } just runs
             every { AppConfig.initSecurePrefs(any()) } just runs
             every { AppConfig.getLanguage() } returns AppConfig.LANGUAGE_ZH
+            every { AppConfig.getThemePresetId() } returns "warm_autumn"
+            every { AppConfig.getCustomThemes() } returns ""
+            every { AppConfig.saveThemePresetId(any()) } just runs
 
             mockkObject(ProviderStorage)
             every { ProviderStorage.init(any()) } just runs

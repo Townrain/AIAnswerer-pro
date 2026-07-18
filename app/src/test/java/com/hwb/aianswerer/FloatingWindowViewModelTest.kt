@@ -6,6 +6,7 @@ import com.hwb.aianswerer.ui.components.FloatingStatus
 import io.mockk.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
@@ -19,8 +20,11 @@ class FloatingWindowViewModelTest {
     private lateinit var mockCtx: FloatingWindowViewModel.ServiceContext
     private lateinit var mockRecorder: RecordingCoordinator
 
+    private val testDispatcher = UnconfinedTestDispatcher()
+
     @Before
     fun setUp() {
+        Dispatchers.setMain(testDispatcher)
         mockCtx = mockk(relaxed = true)
         mockRecorder = mockk(relaxed = true)
         viewModel = FloatingWindowViewModel()
@@ -29,6 +33,7 @@ class FloatingWindowViewModelTest {
 
     @After
     fun tearDown() {
+        Dispatchers.resetMain()
         unmockkAll()
     }
 
