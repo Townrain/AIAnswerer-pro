@@ -61,7 +61,7 @@ jobs:
       run: ./gradlew test
 
     - name: Generate Coverage Report (Kover)
-      run: ./gradlew koverXmlReport
+      run: ./gradlew koverXmlReportDebug
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4

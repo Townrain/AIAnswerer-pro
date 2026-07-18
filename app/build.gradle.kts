@@ -71,8 +71,6 @@ android {
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
                 println("Release signing configuration loaded from local.properties")
-            } else {
-                println("Warning: Release signing configuration incomplete, using debug key")
             }
         }
     }
@@ -107,14 +105,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Release签名配置：如果签名配置不完整，使用debug签名
+            // Release签名：不完整时直接报错，不使用debug降级
             val releaseSigningConfig = signingConfigs.getByName("release")
-            if (releaseSigningConfig.storeFile != null) {
-                signingConfig = releaseSigningConfig
-            } else {
-                signingConfig = signingConfigs.getByName("debug")
-                println("Warning: Using debug signing config for release build")
-            }
+            signingConfig = releaseSigningConfig
         }
     }
     compileOptions {
