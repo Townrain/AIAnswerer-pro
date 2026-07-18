@@ -46,7 +46,7 @@ jobs:
         echo "api.key=CI_DUMMY_KEY" >> local.properties
         echo "api.model=gpt-4" >> local.properties
         mkdir -p keystore
-        printf '%s\n' "$KEYSTORE_B64" | sed '/^-----/d' | base64 -d > keystore/release.jks
+        echo "$KEYSTORE_B64" | base64 -d > keystore/release.jks
         echo "signing.storeFile=keystore/release.jks" >> local.properties
         echo "signing.storePassword=$KEYSTORE_PASS" >> local.properties
         echo "signing.keyAlias=$KEY_ALIAS" >> local.properties
@@ -117,7 +117,7 @@ jobs:
         echo "api.key=CI_DUMMY_KEY" >> local.properties
         echo "api.model=gpt-4" >> local.properties
         mkdir -p keystore
-        printf '%s\n' "$KEYSTORE_B64" | sed '/^-----/d' | base64 -d > keystore/release.jks
+        echo "$KEYSTORE_B64" | base64 -d > keystore/release.jks
         echo "signing.storeFile=keystore/release.jks" >> local.properties
         echo "signing.storePassword=$KEYSTORE_PASS" >> local.properties
         echo "signing.keyAlias=$KEY_ALIAS" >> local.properties
