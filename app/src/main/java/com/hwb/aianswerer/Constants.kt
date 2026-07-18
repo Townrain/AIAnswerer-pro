@@ -135,6 +135,8 @@ object Constants {
     }
 
     private fun getBaseSystemPrompt(): String {
+        val custom = AppConfig.getCustomSystemPrompt()
+        if (custom.isNotBlank()) return custom
         val choiceType = MyApplication.getString(R.string.ai_question_type_choice)
         val essayType = MyApplication.getString(R.string.ai_question_type_essay)
         val blankType = MyApplication.getString(R.string.ai_question_type_blank)

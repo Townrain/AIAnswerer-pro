@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.hwb.aianswerer.MyApplication
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.providers.WebSearchStorage
+import com.hwb.aianswerer.ui.components.AppTextField
 import com.hwb.aianswerer.ui.icons.LocalIcons
 import com.hwb.aianswerer.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -82,6 +83,8 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
     var floatButtonAlpha by remember { mutableStateOf(AppConfig.getFloatButtonAlpha()) }
     var floatCardAlpha by remember { mutableStateOf(AppConfig.getFloatCardAlpha()) }
     var floatIconScale by remember { mutableStateOf(AppConfig.getFloatIconScale()) }
+    var customSystemPrompt by remember { mutableStateOf(AppConfig.getCustomSystemPrompt()) }
+    var customVLMPrompt by remember { mutableStateOf(AppConfig.getCustomVLMPrompt()) }
     val darkMode = ThemeState.darkMode
 
     val bgGradient = Brush.linearGradient(
@@ -178,6 +181,29 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
                 SettingSlider(t, "图标缩放", floatIconScale, 0.5f..2.0f, "${(floatIconScale * 100).toInt()}%") { floatIconScale = it; AppConfig.saveFloatIconScale(it) }
             }
 
+            // Custom prompts
+            SectionTitle(t, "自定义提示词")
+            Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
+                AppTextField(
+                    value = customSystemPrompt,
+                    onValueChange = { customSystemPrompt = it; AppConfig.saveCustomSystemPrompt(it) },
+                    label = "LLM 系统提示词",
+                    placeholder = "你是答题助手。只返回合法 JSON，格式 {question, questionType, answer, options}。题型含选择题/问答题/填空题。留空使用默认。",
+                    singleLine = false,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                AppTextField(
+                    value = customVLMPrompt,
+                    onValueChange = { customVLMPrompt = it; AppConfig.saveCustomVLMPrompt(it) },
+                    label = "VLM 视觉提示词",
+                    placeholder = "你是题目截图分析器。只返回 JSON，含 has_questions, question_count, questions 等字段。留空使用默认。",
+                    singleLine = false,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             // Theme presets
             SectionTitle(t, "主题风格")
             ThemePresetGrid(t)

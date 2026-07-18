@@ -33,6 +33,10 @@ object AppConfig {
     fun saveParallelMode(enabled: Boolean) = ApiConfig.saveParallelMode(enabled)
     fun getMaxConcurrency(): Int = ApiConfig.getMaxConcurrency()
     fun saveMaxConcurrency(count: Int) = ApiConfig.saveMaxConcurrency(count)
+    fun saveCustomSystemPrompt(text: String) = ApiConfig.saveCustomSystemPrompt(text)
+    fun getCustomSystemPrompt(): String = ApiConfig.getCustomSystemPrompt()
+    fun saveCustomVLMPrompt(text: String) = ApiConfig.saveCustomVLMPrompt(text)
+    fun getCustomVLMPrompt(): String = ApiConfig.getCustomVLMPrompt()
 
     // ── Vision ──
     fun isVisionEnabled(): Boolean = VisionConfig.isVisionEnabled()

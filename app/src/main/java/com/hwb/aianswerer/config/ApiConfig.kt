@@ -169,4 +169,22 @@ internal object ApiConfig {
     fun saveReasoningEffort(enabled: Boolean) {
         ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_REASONING_EFFORT, enabled)
     }
+
+    // ========== 自定义提示词 ==========
+
+    fun saveCustomSystemPrompt(text: String) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_CUSTOM_SYSTEM_PROMPT, text)
+    }
+
+    fun getCustomSystemPrompt(): String {
+        return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_CUSTOM_SYSTEM_PROMPT, "") ?: ""
+    }
+
+    fun saveCustomVLMPrompt(text: String) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_CUSTOM_VLM_PROMPT, text)
+    }
+
+    fun getCustomVLMPrompt(): String {
+        return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_CUSTOM_VLM_PROMPT, "") ?: ""
+    }
 }
