@@ -45,38 +45,38 @@ class RecordingCoordinator(
     }
 
     // ── 录题状态 ──
-    var isActive = false
+    @Volatile var isActive = false
         private set
-    var isProcessing = false
+    @Volatile var isProcessing = false
         private set
-    var captureCount = 0
-        private set
-    var processedCount = 0
-        private set
-    var skippedCount = 0
-        private set
-    var failedCount = 0
-        private set
-    var totalQuestions = 0
-        private set
+    private val _captureCount = AtomicInteger(0)
+    val captureCount: Int get() = _captureCount.get()
+    private val _processedCount = AtomicInteger(0)
+    val processedCount: Int get() = _processedCount.get()
+    private val _skippedCount = AtomicInteger(0)
+    val skippedCount: Int get() = _skippedCount.get()
+    private val _failedCount = AtomicInteger(0)
+    val failedCount: Int get() = _failedCount.get()
+    private val _totalQuestions = AtomicInteger(0)
+    val totalQuestions: Int get() = _totalQuestions.get()
 
-    private val answers = mutableListOf<Pair<Int, String>>()
-    private val copyTexts = mutableListOf<Pair<Int, String>>()
+    private val answers = CopyOnWriteArrayList<Pair<Int, String>>()
+    private val copyTexts = CopyOnWriteArrayList<Pair<Int, String>>()
     private val textHashes = mutableSetOf<String>()
+    private val stateLock = Any()  // guards textHashes writes
     private val jobs = CopyOnWriteArrayList<Job>()
     private val activeJobCount = AtomicInteger(0)
     fun getActiveJobCount(): Int = activeJobCount.get()
     private var llmSemaphore: Semaphore? = null
     private var vlmSemaphore: Semaphore? = null
-
     /** 开始录题 */
     fun start() {
         isActive = true
-        captureCount = 0
-        processedCount = 0
-        skippedCount = 0
-        failedCount = 0
-        totalQuestions = 0
+        _captureCount.set(0)
+        _processedCount.set(0)
+        _skippedCount.set(0)
+        _failedCount.set(0)
+        _totalQuestions.set(0)
         answers.clear()
         copyTexts.clear()
         textHashes.clear()
@@ -130,8 +130,7 @@ class RecordingCoordinator(
 
     /** 处理录题截图 — 入口 */
     fun processBitmap(bitmap: Bitmap) {
-        val captureIndex = captureCount
-        captureCount++
+        val captureIndex = _captureCount.incrementAndGet()
         AppLog.enter("REC", "recordingProcessBitmap Q$captureIndex")
         val job = scope.launch(Dispatchers.IO) {
             try {
@@ -154,7 +153,39 @@ class RecordingCoordinator(
             if (cause != null && cause is CancellationException) return@invokeOnCompletion
             if (isProcessing) {
                 scope.launch(Dispatchers.Main) {
-                    processedCount++
+                    _processedCount.incrementAndGet()
+                    checkAndNotifyProgress()
+                }
+            }
+        }
+    }
+
+    /** 处理录题文本输入（屏幕读取模式 — 与 OCR 同级，文本已就绪） */
+    fun processText(text: String) {
+        val captureIndex = _captureCount.incrementAndGet()
+        AppLog.enter("REC", "recordingProcessText Q$captureIndex")
+        val wasValid = java.util.concurrent.atomic.AtomicBoolean(false)
+        val job = scope.launch(Dispatchers.IO) {
+            try {
+                if (!dedupeAndTrack(text, captureIndex)) {
+                    return@launch
+                }
+                wasValid.set(true)
+                fetchAnswer(text, captureIndex)
+                _totalQuestions.incrementAndGet()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.e("REC", "process failed for Q$captureIndex", e)
+            }
+        }
+        jobs.add(job)
+        job.invokeOnCompletion { cause ->
+            jobs.remove(job)
+            if (cause != null && cause is CancellationException) return@invokeOnCompletion
+            if (isProcessing && wasValid.get()) {
+                scope.launch(Dispatchers.Main) {
+                    _processedCount.incrementAndGet()
                     checkAndNotifyProgress()
                 }
             }
@@ -167,7 +198,7 @@ class RecordingCoordinator(
                 bitmap.recycle()
                 if (!dedupeAndTrack(recognizedText, captureIndex)) return
                 fetchAnswer(recognizedText, captureIndex)
-                totalQuestions++
+                _totalQuestions.incrementAndGet()
             }
             .onFailure {
                 bitmap.recycle()
@@ -189,15 +220,15 @@ class RecordingCoordinator(
                     filter.questions.forEach { separatedQuestion ->
                         if (!dedupeAndTrack(separatedQuestion.text, captureIndex)) { skipped++; return@forEach }
                         fetchAnswer(separatedQuestion.text, captureIndex, filter)
-                        totalQuestions++
+                        _totalQuestions.incrementAndGet()
                     }
-                    if (skipped > 0) skippedCount += skipped
+                    if (skipped > 0) _skippedCount.addAndGet(skipped)
                 } else {
                     val text = filter.extractedText
                     if (text.isBlank()) return
-                    if (!dedupeAndTrack(text, captureIndex)) { skippedCount++; return }
+                    if (!dedupeAndTrack(text, captureIndex)) { _skippedCount.incrementAndGet(); return }
                     fetchAnswer(text, captureIndex, filter)
-                    totalQuestions++
+                _totalQuestions.incrementAndGet()
                 }
             }
             .onFailure {
@@ -210,10 +241,12 @@ class RecordingCoordinator(
     /** 去重检查。返回 true 表示新题，false 表示重复 */
     private fun dedupeAndTrack(text: String, captureIndex: Int): Boolean {
         val normalized = normalizeForDedupe(text)
-        val alreadyExists = textHashes.contains(normalized)
-        if (!alreadyExists) textHashes.add(normalized)
-        else AppLog.d("REC", "去重: 第$captureIndex 题与之前重复，跳过")
-        return !alreadyExists
+        synchronized(stateLock) {
+            val alreadyExists = textHashes.contains(normalized)
+            if (!alreadyExists) textHashes.add(normalized)
+            else AppLog.d("REC", "去重: 第$captureIndex 题与之前重复，跳过")
+            return !alreadyExists
+        }
     }
 
     private fun fetchAnswer(
@@ -226,7 +259,7 @@ class RecordingCoordinator(
             llmSemaphore?.withPermit {
                 try {
                     if (!OpenAIClient.isNetworkAvailable()) {
-                        failedCount++
+                        _failedCount.incrementAndGet()
                         return@withPermit
                     }
                     val questionTypes = AppConfig.getQuestionTypes()
@@ -261,13 +294,13 @@ class RecordingCoordinator(
                     )
                     result.onSuccess { aiAnswers -> storeAnswer(aiAnswers, captureIndex) }
                         .onFailure { error ->
-                            failedCount++
+                            _failedCount.incrementAndGet()
                             AppLog.e("REC", "answer failed for Q$captureIndex", error)
                         }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    failedCount++
+                    _failedCount.incrementAndGet()
                     AppLog.e("REC", "fetch failed", e)
                 }
             }
@@ -302,8 +335,8 @@ class RecordingCoordinator(
         } else {
             aiAnswers.mapIndexed { i, a -> "第${captureIndex}-${i + 1}题：${a.answer}" }.joinToString("\n")
         }
-        answers += captureIndex to displayEntry
-        copyTexts += captureIndex to copyEntry
+        answers.add(captureIndex to displayEntry)
+        copyTexts.add(captureIndex to copyEntry)
     }
 
     private fun notifyResults() {
@@ -332,6 +365,15 @@ class RecordingCoordinator(
         jobs.clear()
         isActive = false
         isProcessing = false
+        // Clean up state to prevent stale data on next start
+        textHashes.clear()
+        answers.clear()
+        copyTexts.clear()
+        _captureCount.set(0)
+        _processedCount.set(0)
+        _skippedCount.set(0)
+        _failedCount.set(0)
+        _totalQuestions.set(0)
     }
 
     companion object {
