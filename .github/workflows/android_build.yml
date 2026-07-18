@@ -34,21 +34,28 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Restore release keystore
-      run: |
-        mkdir -p keystore
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore/release.jks
-
-    - name: Setup local.properties for CI
+    - name: Setup signing (if secrets configured)
+      env:
+        KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASS: ${{ secrets.KEY_PASSWORD }}
       run: |
         echo "sdk.dir=$ANDROID_HOME" > local.properties
         echo "api.url=https://api.openai.com/v1/chat/completions" >> local.properties
         echo "api.key=CI_DUMMY_KEY" >> local.properties
         echo "api.model=gpt-4" >> local.properties
-        echo "signing.storeFile=keystore/release.jks" >> local.properties
-        echo "signing.storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> local.properties
-        echo "signing.keyAlias=${{ secrets.KEY_ALIAS }}" >> local.properties
-        echo "signing.keyPassword=${{ secrets.KEY_PASSWORD }}" >> local.properties
+        if [ -n "$KEYSTORE_B64" ]; then
+          mkdir -p keystore
+          echo "$KEYSTORE_B64" | base64 --decode > keystore/release.jks
+          echo "signing.storeFile=keystore/release.jks" >> local.properties
+          echo "signing.storePassword=$KEYSTORE_PASS" >> local.properties
+          echo "signing.keyAlias=$KEY_ALIAS" >> local.properties
+          echo "signing.keyPassword=$KEY_PASS" >> local.properties
+          echo "::notice::Release signing configured"
+        else
+          echo "::notice::No signing secrets set, using debug key fallback"
+        fi
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
@@ -103,21 +110,28 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Restore release keystore
-      run: |
-        mkdir -p keystore
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore/release.jks
-
-    - name: Setup local.properties for CI
+    - name: Setup signing (if secrets configured)
+      env:
+        KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASS: ${{ secrets.KEY_PASSWORD }}
       run: |
         echo "sdk.dir=$ANDROID_HOME" > local.properties
         echo "api.url=https://api.openai.com/v1/chat/completions" >> local.properties
         echo "api.key=CI_DUMMY_KEY" >> local.properties
         echo "api.model=gpt-4" >> local.properties
-        echo "signing.storeFile=keystore/release.jks" >> local.properties
-        echo "signing.storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> local.properties
-        echo "signing.keyAlias=${{ secrets.KEY_ALIAS }}" >> local.properties
-        echo "signing.keyPassword=${{ secrets.KEY_PASSWORD }}" >> local.properties
+        if [ -n "$KEYSTORE_B64" ]; then
+          mkdir -p keystore
+          echo "$KEYSTORE_B64" | base64 --decode > keystore/release.jks
+          echo "signing.storeFile=keystore/release.jks" >> local.properties
+          echo "signing.storePassword=$KEYSTORE_PASS" >> local.properties
+          echo "signing.keyAlias=$KEY_ALIAS" >> local.properties
+          echo "signing.keyPassword=$KEY_PASS" >> local.properties
+          echo "::notice::Release signing configured"
+        else
+          echo "::notice::No signing secrets set, using debug key fallback"
+        fi
 
     - name: Build Release APK
       run: ./gradlew assembleRelease
