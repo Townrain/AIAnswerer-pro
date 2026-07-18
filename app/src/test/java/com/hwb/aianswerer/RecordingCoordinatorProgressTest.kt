@@ -119,9 +119,10 @@ class RecordingCoordinatorProgressTest {
             delay(500)
             Result.success(vlmResult)
         }
-        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
-            listOf(mockAnswer())
-        )
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(300)  // ensure fetchAnswer completes AFTER VLM's invokeOnCompletion
+            Result.success(listOf(mockAnswer()))
+        }
 
         val progressLatch = CountDownLatch(1)
         val receivedTotal = mutableListOf<Int>()
