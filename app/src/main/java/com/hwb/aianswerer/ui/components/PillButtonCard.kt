@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hwb.aianswerer.ui.theme.DW
+import com.hwb.aianswerer.ui.theme.Th
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -123,7 +124,7 @@ internal data class PillVisual(
     val badge: Pair<String, Color>?
 )
 
-internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCollecting: Boolean, isLight: Boolean): PillVisual {
+internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCollecting: Boolean, t: Th): PillVisual {
     return when {
         isImageCollecting -> PillVisual(
             gradient = Brush.linearGradient(
@@ -148,38 +149,38 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             FloatingStatus.Searching, FloatingStatus.GettingAnswer
         ) -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(Color(0xFF1A1A2E), Color(0xFF2D2B55)),
+                listOf(t.pd, t.p),
                 Offset.Zero, Offset.Infinite
             ),
-            border = Color.White.copy(alpha = 0.12f),
-            iconTint = Color.White.copy(alpha = 0.95f),
+            border = t.w.copy(alpha = 0.12f),
+            iconTint = t.w.copy(alpha = 0.95f),
             badge = null
         )
         status == FloatingStatus.Success -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(Color(0xFF2D2B55), Color(0xFF4C4889)),
+                listOf(t.ok, Color(0xFF67D480)),
                 Offset.Zero, Offset.Infinite
             ),
-            border = Color.White.copy(alpha = 0.12f),
-            iconTint = Color.White.copy(alpha = 0.95f),
-            badge = "✓" to Color(0xFF34C759)
+            border = t.ok.copy(alpha = 0.3f),
+            iconTint = t.w.copy(alpha = 0.95f),
+            badge = "\u2713" to t.ok
         )
         status == FloatingStatus.Error -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(Color(0xFF2D2B55), Color(0xFF4C4889)),
+                listOf(t.err, Color(0xFFFF6961)),
                 Offset.Zero, Offset.Infinite
             ),
-            border = Color.White.copy(alpha = 0.12f),
-            iconTint = Color.White.copy(alpha = 0.95f),
-            badge = "✗" to Color(0xFFFF3B30)
+            border = t.err.copy(alpha = 0.3f),
+            iconTint = t.w.copy(alpha = 0.95f),
+            badge = "\u2717" to t.err
         )
         else -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(Color(0xFF2D2B55), Color(0xFF4C4889)),
+                listOf(t.p, t.pe),
                 Offset.Zero, Offset.Infinite
             ),
-            border = Color.White.copy(alpha = 0.12f),
-            iconTint = Color.White.copy(alpha = 0.95f),
+            border = t.w.copy(alpha = 0.25f),
+            iconTint = t.w.copy(alpha = 0.95f),
             badge = null
         )
     }
@@ -229,7 +230,7 @@ internal fun PillButton(
     onQuickToggle: () -> Unit
 ) {
     val density = LocalDensity.current
-    val visual = remember(status, isRecording, isImageCollecting, t.isLight) { pillVisual(status, isRecording, isImageCollecting, t.isLight) }
+    val visual = remember(status, isRecording, isImageCollecting, t) { pillVisual(status, isRecording, isImageCollecting, t) }
     val isBusy = status in listOf(FloatingStatus.Capturing, FloatingStatus.Recognizing, FloatingStatus.Searching, FloatingStatus.GettingAnswer)
 
     val shimmerBrush = if (isBusy) rememberShimmerBrush() else null
@@ -279,8 +280,8 @@ internal fun PillButton(
 
     // Glow border
     val glowTarget = when (status) {
-        FloatingStatus.Success -> Color(0xFF34C759).copy(alpha = 0.5f)
-        FloatingStatus.Error -> Color(0xFFFF3B30).copy(alpha = 0.5f)
+        FloatingStatus.Success -> t.ok.copy(alpha = 0.5f)
+        FloatingStatus.Error -> t.err.copy(alpha = 0.5f)
         else -> Color.Transparent
     }
     val glowColor by animateColorAsState(glowTarget, tween(350), label = "gc")
@@ -317,7 +318,7 @@ internal fun PillButton(
                         size.height - stroke - 2 * FWDims.progressInset.toPx()
                     )
                     drawArc(
-                        brush = Brush.sweepGradient(listOf(Color.White, Color(0xFFB8B0FF), Color.White)),
+                        brush = Brush.sweepGradient(listOf(t.w, t.pe, t.w)),
                         startAngle = -90f,
                         sweepAngle = 360f * progress,
                         useCenter = false,
@@ -338,12 +339,12 @@ internal fun PillButton(
                     scaleY = successScale * dragScale * recordingPulse.value
                     transformOrigin = if (isLeftSide) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
                 }
-                .shadow(dragShadow.dp, pillShape, spotColor = Color(0xFF4C4889).copy(alpha = if (isDragging) 0.5f else 0.3f))
+                .shadow(dragShadow.dp, pillShape, spotColor = t.p.copy(alpha = if (isDragging) 0.35f else 0.15f))
                 .then(
                     if (successGlow.value > 0f) Modifier.drawBehind {
                         val glowRadius = size.maxDimension * 0.6f
                         drawCircle(
-                            color = Color(0xFF34C759).copy(alpha = successGlow.value * 0.3f),
+                            color = t.ok.copy(alpha = successGlow.value * 0.3f),
                             radius = glowRadius,
                             center = center
                         )
