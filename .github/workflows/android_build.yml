@@ -47,7 +47,7 @@ jobs:
         echo "api.model=gpt-4" >> local.properties
         mkdir -p keystore
         echo "$KEYSTORE_B64" | base64 -d > keystore/release.jks
-        echo "signing.storeFile=keystore/release.jks" >> local.properties
+        echo "signing.storeFile=../keystore/release.jks" >> local.properties
         echo "signing.storePassword=$KEYSTORE_PASS" >> local.properties
         echo "signing.keyAlias=$KEY_ALIAS" >> local.properties
         echo "signing.keyPassword=$KEY_PASS" >> local.properties
@@ -118,7 +118,7 @@ jobs:
         echo "api.model=gpt-4" >> local.properties
         mkdir -p keystore
         echo "$KEYSTORE_B64" | base64 -d > keystore/release.jks
-        echo "signing.storeFile=keystore/release.jks" >> local.properties
+        echo "signing.storeFile=../keystore/release.jks" >> local.properties
         echo "signing.storePassword=$KEYSTORE_PASS" >> local.properties
         echo "signing.keyAlias=$KEY_ALIAS" >> local.properties
         echo "signing.keyPassword=$KEY_PASS" >> local.properties
