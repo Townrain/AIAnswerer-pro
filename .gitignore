@@ -113,3 +113,4 @@ scripts/
 
 # MCP tool workspace (local SSH keys etc)
 data/
+DESIGN.md
