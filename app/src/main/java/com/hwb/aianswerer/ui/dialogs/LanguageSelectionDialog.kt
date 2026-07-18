@@ -45,6 +45,11 @@ fun LanguageSelectionDialog(
                 selected = selectedLanguage == AppConfig.LANGUAGE_EN,
                 onClick = { selectedLanguage = AppConfig.LANGUAGE_EN }
             )
+            PremiumRadioOption(
+                text = stringResource(R.string.language_system_label),
+                selected = selectedLanguage == AppConfig.LANGUAGE_SYSTEM,
+                onClick = { selectedLanguage = AppConfig.LANGUAGE_SYSTEM }
+            )
         }
     )
 }
