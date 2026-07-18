@@ -6,9 +6,10 @@ import com.hwb.aianswerer.utils.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
+import java.util.concurrent.atomic.AtomicInteger
 /**
  * 多图文本收集器 — 收集每次截图/屏幕读取提取的文字，去重后合并发送给 LLM。
  *
@@ -47,15 +48,16 @@ class ImageCollector(
     private val collectedTexts = java.util.concurrent.CopyOnWriteArrayList<String>()
     private val textHashes = mutableSetOf<String>()
     private val stateLock = Any()
-    @Volatile private var collectCount = 0
+    private val collectCount = AtomicInteger(0)
+    private var processingJob: Job? = null
 
-    fun getCollectedCount(): Int = collectCount
+    fun getCollectedCount(): Int = collectCount.get()
     fun getActiveJobCount(): Int = if (isProcessing) 1 else 0
 
     /** 开始采集 */
     fun start() {
         isActive = true
-        collectCount = 0
+        collectCount.set(0)
         collectedTexts.clear()
         textHashes.clear()
         isProcessing = false
@@ -67,7 +69,7 @@ class ImageCollector(
         if (!isActive) return
         if (text.isBlank()) return
 
-        if (collectCount >= MAX_COLLECT_COUNT) {
+        if (collectCount.get() >= MAX_COLLECT_COUNT) {
             callbacks.onToast("已达到最大收集数量 ($MAX_COLLECT_COUNT)")
             return
         }
@@ -80,10 +82,10 @@ class ImageCollector(
             }
             textHashes.add(normalized)
         }
-        collectCount++
+        val idx = collectCount.incrementAndGet()
         collectedTexts.add(text)
-        callbacks.onProgressUpdate(collectCount)
-        AppLog.d("IMG", "collected text #$collectCount (${text.length} chars)")
+        callbacks.onProgressUpdate(idx)
+        AppLog.d("IMG", "collected text #$idx (${text.length} chars)")
     }
 
     /** 停止采集并开始合并分析 */
@@ -94,7 +96,7 @@ class ImageCollector(
             return
         }
         isProcessing = true
-        scope.launch {
+        processingJob = scope.launch {
             try {
                 callbacks.onProgressUpdate(-1) // -1 = 分析中
                 val combinedText = collectedTexts.joinToString("\n\n---\n\n")
@@ -124,8 +126,11 @@ class ImageCollector(
     fun cancel() {
         isActive = false
         isProcessing = false
+        processingJob?.cancel()
+        processingJob = null
         collectedTexts.clear()
         textHashes.clear()
-        collectCount = 0
-    }
+        collectCount.set(0)
+}
+
 }
