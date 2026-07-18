@@ -93,6 +93,10 @@ class RecordingCoordinatorProgressTest {
             delay(500)
             Result.success("text")
         }
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(300)
+            Result.success(listOf(mockAnswer()))
+        }
 
         val progressLatch = CountDownLatch(1)
         every { callbacks.onProgressUpdate(any(), any()) } answers { progressLatch.countDown() }
