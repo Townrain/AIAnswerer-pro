@@ -571,19 +571,19 @@ class RecordingCoordinatorTest {
     @Test
     fun checkAndNotifyProgress_in_progress_calls_onProgressUpdate() = runBlocking {
         coordinator.start()
-        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("text")
-        val holdFetch = CountDownLatch(1)
+        coEvery { pipeline.recognizeOcr(any()) } coAnswers {
+            delay(300)
+            Result.success("text")
+        }
 
         val progressLatch = CountDownLatch(1)
         every { callbacks.onProgressUpdate(any(), any()) } answers { progressLatch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
-        delay(50)
-        coordinator.stop()
-        delay(50)
+        coordinator.stop()  // sets isProcessing=true before OCR completes
+        delay(500)  // wait for OCR to finish after stop()
 
         assertTrue(progressLatch.await(5, TimeUnit.SECONDS))
-        holdFetch.countDown()
     }
 
     @Test
@@ -598,7 +598,10 @@ class RecordingCoordinatorTest {
                 SeparatedQuestion(index = 2, text = "Q2", searchKeywords = "kw2")
             )
         )
-        coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vlmResult)
+        coEvery { pipeline.recognizeVlm(any()) } coAnswers {
+            delay(300)
+            Result.success(vlmResult)
+        }
         coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
             listOf(mockAnswer())
         )
@@ -612,9 +615,8 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(50)
-        coordinator.stop()
-        delay(50)
+        coordinator.stop()  // sets isProcessing=true before VLM completes
+        delay(500)  // wait for VLM to finish after stop()
 
         assertTrue(progressLatch.await(5, TimeUnit.SECONDS))
         assertEquals(2, receivedTotal[0])
