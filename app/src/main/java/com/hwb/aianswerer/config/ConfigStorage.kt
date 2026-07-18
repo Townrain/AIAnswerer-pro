@@ -55,9 +55,19 @@ internal object ConfigStorage {
     internal const val KEY_THEME_PRESET = "theme_preset"
     internal const val KEY_CUSTOM_THEMES = "custom_themes"
 
-    // 语言代码常量
+    // 语言代码常量 — OCR 支持的语言（zh/en/ja/fr/de/es/pt/ko 本地 OCR，ru/ar 需 VLM）
     internal const val LANGUAGE_ZH = "zh"
     internal const val LANGUAGE_EN = "en"
+    internal const val LANGUAGE_JA = "ja"
+    internal const val LANGUAGE_FR = "fr"
+    internal const val LANGUAGE_DE = "de"
+    internal const val LANGUAGE_ES = "es"
+    internal const val LANGUAGE_PT = "pt"
+    internal const val LANGUAGE_KO = "ko"
+    internal const val LANGUAGE_RU = "ru"
+    internal const val LANGUAGE_AR = "ar"
+    internal const val LANGUAGE_OTHER = "other"
+    internal const val LANGUAGE_SYSTEM = "system"
 
     // 截图识别模式常量
     internal const val CROP_MODE_FULL = "full"           // 全屏

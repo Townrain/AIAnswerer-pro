@@ -9,6 +9,16 @@ object AppConfig {
     // ── Constants (re-export for backward compat) ──
     const val LANGUAGE_ZH = ConfigStorage.LANGUAGE_ZH
     const val LANGUAGE_EN = ConfigStorage.LANGUAGE_EN
+    const val LANGUAGE_JA = ConfigStorage.LANGUAGE_JA
+    const val LANGUAGE_FR = ConfigStorage.LANGUAGE_FR
+    const val LANGUAGE_DE = ConfigStorage.LANGUAGE_DE
+    const val LANGUAGE_ES = ConfigStorage.LANGUAGE_ES
+    const val LANGUAGE_PT = ConfigStorage.LANGUAGE_PT
+    const val LANGUAGE_KO = ConfigStorage.LANGUAGE_KO
+    const val LANGUAGE_RU = ConfigStorage.LANGUAGE_RU
+    const val LANGUAGE_AR = ConfigStorage.LANGUAGE_AR
+    const val LANGUAGE_OTHER = ConfigStorage.LANGUAGE_OTHER
+    const val LANGUAGE_SYSTEM = ConfigStorage.LANGUAGE_SYSTEM
     const val CROP_MODE_FULL = ConfigStorage.CROP_MODE_FULL
     const val CROP_MODE_EACH = ConfigStorage.CROP_MODE_EACH
     const val CROP_MODE_ONCE = ConfigStorage.CROP_MODE_ONCE
