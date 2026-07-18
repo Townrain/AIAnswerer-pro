@@ -588,21 +588,39 @@ class RecordingCoordinatorTest {
 
     @Test
     fun checkAndNotifyProgress_reports_correct_counts() = runBlocking {
-        every { AppConfig.isVisionEnabled() } returns false
+        every { AppConfig.isVisionEnabled() } returns true
         coordinator.start()
 
-        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("test question text")
+        val vlmResult = VisionFilterResult(
+            hasQuestions = true,
+            questions = listOf(
+                SeparatedQuestion(index = 1, text = "Q1", searchKeywords = "kw1"),
+                SeparatedQuestion(index = 2, text = "Q2", searchKeywords = "kw2")
+            )
+        )
+        coEvery { pipeline.recognizeVlm(any()) } coAnswers {
+            delay(200)  // allow stop() to set isProcessing=true
+            Result.success(vlmResult)
+        }
         coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
             listOf(mockAnswer())
         )
 
         val progressLatch = CountDownLatch(1)
-        every { callbacks.onProgressUpdate(any(), any()) } answers { progressLatch.countDown() }
+        val receivedTotal = mutableListOf<Int>()
+        every { callbacks.onProgressUpdate(any(), any()) } answers {
+            val total: Int = invocation.args[1] as Int
+            receivedTotal.add(total)
+            progressLatch.countDown()
+        }
 
         coordinator.processBitmap(mockBitmap())
-        coordinator.stop()  // sets isProcessing=true before OCR completes
-        delay(500)  // wait for OCR + fetchAnswer to complete
+        coordinator.stop()  // sets isProcessing=true before VLM completes
+        delay(800)  // wait for VLM (200ms delay) + fetchAnswer
 
         assertTrue(progressLatch.await(5, TimeUnit.SECONDS))
+        assertEquals(2, receivedTotal[0])
+        assertTrue(progressLatch.await(5, TimeUnit.SECONDS))
+        assertEquals(2, receivedTotal[0])
     }
 }
