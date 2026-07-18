@@ -12,6 +12,7 @@ All notable changes to AIAnswerer will be documented in this file.
 ### Changed
 - LanguageUtil：跟随系统模式下跳过 attachBaseContext 覆写
 - Constants：promptLocale 支持全部语言 + 系统默认
+- PillButtonCard：悬浮按钮主色改为主题响应式（`t.p→t.pe`），Idle 态不再硬编码深紫 `#2D2B55`，完全匹配 DESIGN.md Claude Warm 设计规范；阴影/光晕/进度弧同步改用主题色板
 
 ## [1.6.0] - 2026-07-18
 
