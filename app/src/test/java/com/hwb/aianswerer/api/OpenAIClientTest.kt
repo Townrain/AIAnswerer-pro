@@ -1,6 +1,7 @@
 package com.hwb.aianswerer.api
 
 import com.hwb.aianswerer.MyApplication
+import com.hwb.aianswerer.Constants
 import com.hwb.aianswerer.R
 import com.hwb.aianswerer.config.AppConfig
 import io.mockk.every
@@ -52,10 +53,16 @@ class OpenAIClientTest {
         every { AppConfig.getLlmTemperature() } returns 0.3
         every { AppConfig.getReasoningEffort() } returns null
 
-        // Default MyApplication mocks
+        // Default MyApplication mocks — simplified: mock Constants.getPromptResources() directly
+        val mockRes = mockk<android.content.res.Resources>(relaxed = true) {
+            every { getString(any<Int>()) } returns "mocked_message"
+            every { getString(any<Int>(), any<Any>()) } returns "mocked_formatted"
+        }
         every { MyApplication.getString(any<Int>()) } returns "mocked_message"
         every { MyApplication.getString(any<Int>(), any()) } returns "mocked_formatted"
         every { MyApplication.getAppContext() } returns mockk(relaxed = true)
+        mockkObject(Constants)
+        every { Constants.getPromptResources() } returns mockRes
 
         client = OpenAIClient()
     }
@@ -64,7 +71,7 @@ class OpenAIClientTest {
     fun tearDown() {
         server.shutdown()
         unmockkObject(AppConfig)
-        unmockkObject(MyApplication.Companion)
+        unmockkObject(Constants)
     }
 
     // ═══════════════════════════════════════════════════════════════

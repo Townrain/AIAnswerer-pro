@@ -92,14 +92,14 @@ class LanguageUtilTest {
     }
 
     @Test
-    fun `updateConfigurationContext unknown code - falls back to Chinese locale`() {
+    fun `updateConfigurationContext unknown code - falls back to English locale`() {
         val configSlot = slot<Configuration>()
         every { mockResources.updateConfiguration(capture(configSlot), any()) } just Runs
 
-        val result = invokeUpdateConfiguration(mockContext, "fr")
+        val result = invokeUpdateConfiguration(mockContext, "xx")
 
         assertSame(mockContext, result)
-        assertEquals(Locale.SIMPLIFIED_CHINESE, configSlot.captured.locale)
+        assertEquals(Locale.ENGLISH, configSlot.captured.locale)
     }
 
     // ── restartActivity ──

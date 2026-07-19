@@ -8,6 +8,8 @@ import com.hwb.aianswerer.ui.components.parseSections
 import org.junit.Assert.*
 import org.junit.Ignore
 import org.junit.Test
+import androidx.compose.ui.graphics.Color
+import com.hwb.aianswerer.ui.theme.Th
 import java.io.File
 
 /**
@@ -16,17 +18,25 @@ import java.io.File
  * 每个测试对应一个曾经出现并被修复的 bug。测试失败 = 回归。
  */
 class FloatingWindowRegressionTest {
+    private val c = Color(0xFF888888.toInt())
+
+    private fun testTh(light: Boolean = true): Th = Th(
+        c, c, c, c, c,  // bg1-5
+        c, c, c, c, c,  // p, pe, pd, pc, opc
+        c,              // ok
+        c, c,           // ob, osv
+        c, c, c,        // gt, gb, gdp
+        c, c,           // ht, hdp
+        c, c, c, c, c, c, // ac, ua, ual, to, err, w
+        light           // isLight
+    )
 
     private fun readSource(relativePath: String): String {
         val userDir = System.getProperty("user.dir") ?: "."
-        // Try multiple resolution strategies:
-        // 1. user.dir may be the project root (IDE runs, some CI setups)
-        // 2. user.dir may be the app/ subproject (Gradle test worker default)
-        // 3. parent of user.dir + relativePath (when user.dir is app/ subproject)
         val candidates = listOf(
-            File(userDir, relativePath),                          // root + path
-            File(File(userDir).parentFile ?: File("."), relativePath), // parent + path (for app/ subproject)
-            File(relativePath)                                     // relative to CWD
+            File(userDir, relativePath),
+            File(File(userDir).parentFile ?: File("."), relativePath),
+            File(relativePath)
         )
         for (candidate in candidates) {
             if (candidate.exists()) return candidate.readText()
@@ -59,19 +69,19 @@ class FloatingWindowRegressionTest {
     // ════ pillVisual() ════
 
     @Test fun `pillVisual Idle 无 badge`() {
-        assertNull(pillVisual(FloatingStatus.Idle, false, false, false).badge)
+        assertNull(pillVisual(FloatingStatus.Idle, false, false, testTh()).badge)
     }
 
     @Test fun `pillVisual 录制中无 badge`() {
-        assertNull(pillVisual(FloatingStatus.Idle, true, false, false).badge)
+        assertNull(pillVisual(FloatingStatus.Idle, true, false, testTh()).badge)
     }
 
     @Test fun `pillVisual Success badge`() {
-        assertEquals("✓", pillVisual(FloatingStatus.Success, false, false, false).badge!!.first)
+        assertEquals("\u2713", pillVisual(FloatingStatus.Success, false, false, testTh()).badge!!.first)
     }
 
     @Test fun `pillVisual Error badge`() {
-        assertEquals("✗", pillVisual(FloatingStatus.Error, false, false, false).badge!!.first)
+        assertEquals("\u2717", pillVisual(FloatingStatus.Error, false, false, testTh()).badge!!.first)
     }
 
     // ════ parseSections() ════
