@@ -1,4 +1,5 @@
-﻿package com.hwb.aianswerer.utils
+﻿@file:Suppress("DEPRECATION")
+package com.hwb.aianswerer.utils
 
 import com.hwb.aianswerer.safelyInvoke
 import org.junit.After

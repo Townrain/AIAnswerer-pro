@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package com.hwb.aianswerer.utils
 
 import android.graphics.Bitmap

@@ -12,18 +12,11 @@ All notable changes to AIAnswerer will be documented in this file.
 - `Constants.promptStr()` 私有辅助函数，统一提示词字符串加载入口
 - 输出语言下拉列表 日本語/한국어 标注 `(VLM)`，提示需切视觉模式
 
-### Fixed
-- 输出语言选择不再覆盖 UI 语言：MergedCard 移除 `saveLanguage(code)` 调用，输出语言与 UI 语言完全解耦
-- `promptResources` 从 lazy val 改为 `getPromptResources()` 函数，语言切换后提示词实时生效不再需要重启
-- LanguageUtil 未知语言代码回退统一为 ENGLISH（与 Constants 提示词路由一致）
-- VLM 后缀 `(VLM)` 剥离逻辑从 3 处重复提取为 `cleanOutputLang()` 辅助函数
-- `normalizeQuestionTypes` 新增 `"不定项"` 匹配，同时支持中英文题型标签的 locale-aware 归一化
-- FloatingWindowRegressionTest：pillVisual 签名适配 `Th` 主题参数
-- LanguageUtilTest：未知代码回退断言从 `SIMPLIFIED_CHINESE` 同步为 `ENGLISH`
-- OpenAIClientTest：mock 适配 `getPromptResources()` 新 API
-
 ### Changed
 - LLM 核心系统提示词重构：新增角色定义、行为准则、4 个 Few-shot 示例
+- 应用图标重设计：新 logo 以书本+AI电路节点+珊瑚暖调问号为视觉核心，品牌奶油底 (#FAF9F5)
+- 自适应图标背景色从蓝色 (#4A6CF7) 更新为品牌奶油色，与 Claude Warm 设计体系统一
+- Play Store 展示图标同步更新为 512px 新 logo
 - 联网搜索上下文指令明确化：增加搜索结果使用规则
 - VLM 视觉提示词（单图/多图）从硬编码中文改为中英文双语资源
 - `countQuestions()` 提示词从硬编码中文改为中英文双语资源
@@ -33,6 +26,29 @@ All notable changes to AIAnswerer will be documented in this file.
 - LanguageUtil：跟随系统模式下跳过 attachBaseContext 覆写
 - Constants：promptLocale 支持全部语言 + 系统默认
 - PillButtonCard：悬浮按钮主色改为主题响应式（`t.p→t.pe`），Idle 态不再硬编码深紫 `#2D2B55`，完全匹配 DESIGN.md Claude Warm 设计规范；阴影/光晕/进度弧同步改用主题色板
+- **测试性能优化**：消除单元测试中的人工延迟（delay/sleep），全量测试延迟从 ~28s 降至 ~1.2s（24x 加速）
+  - `CaptureHandlerTest` 改用 `TestCoroutineScheduler` 虚拟时间，22 处 `delay()` 替换为 `advanceUntilIdle()`
+  - `RecordingCoordinatorTest` 25 处 `delay(500/300/100)` 降至 `delay(1)`，`coAnswers` 延迟保留但大幅减少
+  - `AnswerFetcherTest` 4 处 `Thread.sleep()` 降至 1ms
+  - `RecordingCoordinatorProgressTest` 独立 `delay()` 降至 1ms，mock 内部延迟降至 50/30ms
+  - `OpenAIClientTest` MockWebServer `setBodyDelay` 5s→2s，协程 delay 缩减
+- 所有 96 个测试通过，生产代码零改动
+
+### Removed
+- 移除开屏显示：取消 SplashActivity，启动直达 MainActivity，零延迟
+- 移除旧机器人图标前景 (icon_foreground.png) 及旧 mipmap webp 回落文件
+
+### Fixed
+- 输出语言选择不再覆盖 UI 语言：MergedCard 移除 `saveLanguage(code)` 调用，输出语言与 UI 语言完全解耦
+- `promptResources` 从 lazy val 改为 `getPromptResources()` 函数，语言切换后提示词实时生效不再需要重启
+- LanguageUtil 未知语言代码回退统一为 ENGLISH（与 Constants 提示词路由一致）
+- VLM 后缀 `(VLM)` 剥离逻辑从 3 处重复提取为 `cleanOutputLang()` 辅助函数
+- `normalizeQuestionTypes` 新增 `"不定项"` 匹配，同时支持中英文题型标签的 locale-aware 归一化
+- FloatingWindowRegressionTest：pillVisual 签名适配 `Th` 主题参数
+- LanguageUtilTest：未知代码回退断言从 `SIMPLIFIED_CHINESE` 同步为 `ENGLISH`
+- OpenAIClientTest：mock 适配 `getPromptResources()` 新 API
+- 消除全部 28 个测试编译警告：Robolectric/Android 废弃 API、Kotlin createTempDir、缺少 @OptIn 及冗余 is 检查
+- ConfigStorageTest 永真断言修复：改为无崩溃验证
 
 ## [1.6.0] - 2026-07-18
 

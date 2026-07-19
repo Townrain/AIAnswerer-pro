@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Android 12+ 启动屏：图标居中，深蓝背景 -->
+    <!-- Android 12+ 启动屏：纯白底，无图标（最小化系统启动屏） -->
     <style name="Theme.AIAnswerer.Splash" parent="Theme.AIAnswerer">
         <item name="android:windowSplashScreenBackground">#FFFFFF</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
     </style>
 </resources>

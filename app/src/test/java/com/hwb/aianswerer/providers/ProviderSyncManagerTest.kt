@@ -1,3 +1,4 @@
+@file:Suppress("USELESS_IS_CHECK")
 package com.hwb.aianswerer.providers
 
 import com.hwb.aianswerer.safelyInvoke
@@ -47,6 +48,7 @@ class ProviderSyncManagerTest {
         assertEquals(0, updated.modelCount)
     }
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `SyncResult UpToDate单例`() {
         val r1 = ProviderSyncManager.SyncResult.UpToDate
@@ -83,6 +85,7 @@ class ProviderSyncManagerTest {
 
     // ── Android-dependent (safelyInvoke) ───────────────────────────────
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `sync方法通过safelyInvoke安全调用`() {
         safelyInvoke {
@@ -98,6 +101,7 @@ class ProviderSyncManagerTest {
         }
     }
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `sync方法带默认参数不崩溃`() {
         safelyInvoke {

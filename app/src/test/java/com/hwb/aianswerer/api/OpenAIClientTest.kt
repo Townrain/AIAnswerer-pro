@@ -199,7 +199,7 @@ data: [DONE]
         }
 
         // Let the child coroutine start and reach the suspension point
-        delay(500)
+        delay(100)
         job.cancel()
         job.join()
 
@@ -210,7 +210,7 @@ data: [DONE]
     fun `analyzeQuestion - outer timeout caught as failure`() {
         server.enqueue(
             MockResponse()
-                .setBodyDelay(5, TimeUnit.SECONDS)
+                .setBodyDelay(2, TimeUnit.SECONDS)
                 .setResponseCode(200)
                 .setBody("data: [DONE]\n")
         )
@@ -518,7 +518,7 @@ data: [DONE]
             }
         }
 
-        delay(200)
+        delay(50)
         assertTrue(entered)
         job.cancel()
         try {

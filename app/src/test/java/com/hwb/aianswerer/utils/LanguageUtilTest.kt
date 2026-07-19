@@ -12,6 +12,7 @@ import org.junit.*
 import org.junit.Assert.*
 import java.util.Locale
 
+@Suppress("DEPRECATION")
 class LanguageUtilTest {
 
     private lateinit var mockContext: Context

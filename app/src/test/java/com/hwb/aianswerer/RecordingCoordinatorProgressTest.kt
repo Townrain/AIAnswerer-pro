@@ -80,7 +80,7 @@ class RecordingCoordinatorProgressTest {
         every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers { latch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
-        delay(500)
+        delay(1)
         coordinator.stop()
 
         assertTrue(latch.await(5, TimeUnit.SECONDS))
@@ -90,11 +90,11 @@ class RecordingCoordinatorProgressTest {
     fun checkAndNotifyProgress_in_progress_calls_onProgressUpdate() = runBlocking {
         coordinator.start()
         coEvery { pipeline.recognizeOcr(any()) } coAnswers {
-            delay(500)
+            delay(50)
             Result.success("text")
         }
         coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
-            delay(300)
+            delay(30)
             Result.success(listOf(mockAnswer()))
         }
 
@@ -120,11 +120,11 @@ class RecordingCoordinatorProgressTest {
             )
         )
         coEvery { pipeline.recognizeVlm(any()) } coAnswers {
-            delay(500)
+            delay(50)
             Result.success(vlmResult)
         }
         coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
-            delay(300)  // ensure fetchAnswer completes AFTER VLM's invokeOnCompletion
+            delay(30)  // ensure fetchAnswer completes AFTER VLM's invokeOnCompletion
             Result.success(listOf(mockAnswer()))
         }
 

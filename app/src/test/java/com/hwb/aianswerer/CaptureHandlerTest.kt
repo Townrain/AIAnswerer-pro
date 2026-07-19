@@ -10,13 +10,14 @@ import com.hwb.aianswerer.ui.components.FloatingStatus
 import com.hwb.aianswerer.utils.ImageCropUtil
 import io.mockk.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 class CaptureHandlerTest {
 
@@ -25,7 +26,8 @@ class CaptureHandlerTest {
         every { getString(any()) } returns "mock字符串"
         every { cacheDir } returns File("/tmp/mock_cache")
     }
-    private val scope = CoroutineScope(Dispatchers.Unconfined)
+    private val testScheduler = TestCoroutineScheduler()
+    private val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
 
     private lateinit var scm: ScreenCaptureManager
     private lateinit var pipeline: CapturePipeline
@@ -83,7 +85,7 @@ class CaptureHandlerTest {
         every { pipeline.looksLikeQuestion(any()) } returns true
 
         handler().handleCapture()
-        delay(300) // let coroutine finish through delays (50+33ms)
+        testScheduler.advanceUntilIdle() // let coroutine finish through delays (50+33ms)
 
         coVerify { scm.captureScreen() }
         coVerify { pipeline.recognizeOcr(any()) }
@@ -97,7 +99,7 @@ class CaptureHandlerTest {
         val h = CaptureHandler(null, pipeline, recorder, scope, cb, context)
 
         h.handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         verify { cb.showError(any()) }
         verify(exactly = 0) { cb.onTextRecognized(any(), any()) }
@@ -108,7 +110,7 @@ class CaptureHandlerTest {
         every { scm.isReady } returns false
 
         handler().handleCapture()
-        delay(100)
+        testScheduler.runCurrent()
 
         verify { cb.showError("截图权限未授权，请在主页重新点击\"进入答题模式\"") }
         coVerify(exactly = 0) { scm.captureScreen() }
@@ -142,7 +144,7 @@ class CaptureHandlerTest {
         coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vr)
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         coVerify { pipeline.recognizeVlm(any()) }
         verify { cb.onTextRecognized("VLM识别文本", vr) }
@@ -157,7 +159,7 @@ class CaptureHandlerTest {
         every { pipeline.looksLikeQuestion("OCR降级文本") } returns true
 
         handler().handleCapture()
-        delay(500)
+        testScheduler.advanceUntilIdle()
 
         coVerify { pipeline.recognizeVlm(any()) }
         coVerify { pipeline.recognizeOcr(any()) }
@@ -179,7 +181,7 @@ class CaptureHandlerTest {
         every { croppedBitmap.isRecycled } returns false
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         coVerify { pipeline.recognizeOcr(croppedBitmap) }
         verify { ImageCropUtil.cropBitmap(bitmap, cropRect) }
@@ -200,7 +202,7 @@ class CaptureHandlerTest {
         every { croppedBitmap.isRecycled } returns false
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         coVerify { pipeline.recognizeOcr(croppedBitmap) }
         verify { ImageCropUtil.cropBitmap(bitmap, cropRect) }
@@ -217,7 +219,7 @@ class CaptureHandlerTest {
         every { cb.incRecordingCaptureCount() } returns 1
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         verify { cb.incRecordingCaptureCount() }
         verify { cb.setCaptureInProgress(true) }
@@ -250,7 +252,7 @@ class CaptureHandlerTest {
         every { ScreenReaderService.readScreenText() } returns "无障碍文本"
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         verify { cb.onTextRecognized("无障碍文本", null) }
     }
@@ -261,7 +263,7 @@ class CaptureHandlerTest {
         every { ScreenReaderService.readScreenText() } returns null andThen "重试后文本"
 
         handler().handleCapture()
-        delay(1500) // 100ms initial + 500ms retry delay
+        testScheduler.advanceUntilIdle() // 100ms initial + 500ms retry delay
 
         verify(exactly = 2) { ScreenReaderService.readScreenText() }
         verify { cb.onTextRecognized("重试后文本", null) }
@@ -275,7 +277,7 @@ class CaptureHandlerTest {
         every { ScreenReaderService.isActive } returns true
 
         handler().handleCapture()
-        delay(1500)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 2) { ScreenReaderService.readScreenText() }
         verify { cb.showError("无法读取屏幕内容，请确保当前页面有可见文字") }
@@ -297,7 +299,7 @@ class CaptureHandlerTest {
         coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vr)
 
         handler().handleCapture()
-        delay(500)
+        testScheduler.advanceUntilIdle()
 
         coVerify { scm.captureScreen() }
         coVerify { pipeline.recognizeVlm(any()) }
@@ -323,7 +325,7 @@ class CaptureHandlerTest {
         every { ImageCropUtil.deleteTempFile("/tmp/test.png") } just Runs
 
         handler().handleCroppedImage("/tmp/test.png", cropRect)
-        delay(200)
+        testScheduler.advanceUntilIdle()
 
         verify { ImageCropUtil.loadBitmapFromFile("/tmp/test.png") }
         verify { ImageCropUtil.cropBitmap(loadedBitmap, cropRect) }
@@ -338,7 +340,7 @@ class CaptureHandlerTest {
         every { ImageCropUtil.deleteTempFile("/tmp/bad.png") } just Runs
 
         handler().handleCroppedImage("/tmp/bad.png", CropRect(PointF(0f, 0f), PointF(100f, 100f)))
-        delay(200)
+        testScheduler.advanceUntilIdle()
 
         verify { cb.showError(match { it.contains("文件损坏") }) }
         verify { ImageCropUtil.deleteTempFile("/tmp/bad.png") }
@@ -356,7 +358,7 @@ class CaptureHandlerTest {
         // The exception propagates inside the coroutine, which fails silently.
         // Verify the error callback is NOT shown (CancellationException is not "an error").
         handler.handleCroppedImage("/tmp/test.png", CropRect(PointF(0f, 0f), PointF(100f, 100f)))
-        delay(200)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 0) { cb.showError(any()) }
         verify { ImageCropUtil.deleteTempFile("/tmp/test.png") }
@@ -374,7 +376,7 @@ class CaptureHandlerTest {
         every { pipeline.looksLikeQuestion(any()) } returns true
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         verify { cb.setFlagSecure(true) }
         verify(exactly = 0) { cb.setFlagSecure(false) }
@@ -388,7 +390,7 @@ class CaptureHandlerTest {
         every { cb.incRecordingCaptureCount() } returns 1
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         verify { cb.setFlagSecure(true) }
         verify(exactly = 0) { cb.setFlagSecure(false) }
@@ -404,11 +406,8 @@ class CaptureHandlerTest {
         every { scm.isReady } returns true
         coEvery { scm.captureScreen() } throws RuntimeException("模拟异常")
 
-        val latch = CountDownLatch(1)
-        every { cb.showError(any()) } answers { latch.countDown(); Unit }
-
         handler().handleCapture()
-        assertTrue("showError should be called on exception", latch.await(5, TimeUnit.SECONDS))
+        testScheduler.advanceUntilIdle()
 
         verify { cb.showError(match { it.contains("模拟异常") }) }
     }
@@ -420,7 +419,7 @@ class CaptureHandlerTest {
         coEvery { scm.captureScreen() } throws CancellationException("job cancelled")
 
         handler().handleCapture()
-        delay(100)
+        testScheduler.advanceUntilIdle()
 
         verify { cb.setStatus(FloatingStatus.Idle) }
         verify { cb.setStatusMessage(null) }
@@ -439,7 +438,7 @@ class CaptureHandlerTest {
         every { pipeline.looksLikeQuestion("非题目文本") } returns false
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         coVerify { pipeline.recognizeOcr(any()) }
         verify { cb.showError("未识别到题目") }
@@ -454,7 +453,7 @@ class CaptureHandlerTest {
         coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vr)
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         coVerify { pipeline.recognizeVlm(any()) }
         verify { cb.showError("未识别到题目") }
@@ -469,7 +468,7 @@ class CaptureHandlerTest {
         every { cb.getCropMode() } returns "UNKNOWN_MODE"
 
         handler().handleCapture()
-        delay(300)
+        testScheduler.advanceUntilIdle()
 
         coVerify { pipeline.recognizeOcr(any()) }
         verify { cb.onTextRecognized("text", null) }

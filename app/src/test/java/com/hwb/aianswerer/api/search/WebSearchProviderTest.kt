@@ -1,3 +1,4 @@
+@file:Suppress("USELESS_IS_CHECK")
 package com.hwb.aianswerer.api.search
 
 import com.hwb.aianswerer.providers.LocalWebSearchConfig
@@ -78,6 +79,7 @@ class WebSearchProviderTest {
         assertTrue("空API Key应返回空结果", results.isEmpty())
     }
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `BaseWebSearchProvider - BochaProvider也继承自BaseWebSearchProvider`() {
         val config = LocalWebSearchConfig(

@@ -126,6 +126,6 @@ class ConfigStorageTest {
         val prefs = ConfigStorage.getSecurePrefs()
         // May be null if not initialized yet in test environment
         // This is expected behavior
-        assertTrue(prefs == null || prefs != null)
+        // assertTrue removed — was a tautology; test verifies no-crash behavior
     }
 }

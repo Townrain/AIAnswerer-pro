@@ -1,3 +1,4 @@
+@file:Suppress("USELESS_IS_CHECK")
 package com.hwb.aianswerer.api.search
 
 import com.hwb.aianswerer.providers.LocalWebSearchConfig
@@ -84,6 +85,7 @@ class WebSearchInfraTest {
         assertTrue(provider is TavilySearchProvider)
     }
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `WebSearchClientFactory - 返回的provider都是BaseWebSearchProvider子类`() {
         listOf("tavily", "zhipu", "bocha", "exa", "querit", "searxng", "local-google", "local-bing", "local-baidu").forEach { id ->
@@ -94,6 +96,7 @@ class WebSearchInfraTest {
 
     // ═══ LocalSearchProvider 子类验证 ═══
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `LocalGoogleSearchProvider - 类型继承`() {
         val config = createConfig("local-google", apiHost = "https://www.google.com")
@@ -102,6 +105,7 @@ class WebSearchInfraTest {
         assertTrue(provider is BaseWebSearchProvider)
     }
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `LocalBingSearchProvider - 类型继承`() {
         val config = createConfig("local-bing", apiHost = "https://www.bing.com")
@@ -110,6 +114,7 @@ class WebSearchInfraTest {
         assertTrue(provider is BaseWebSearchProvider)
     }
 
+    @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `LocalBaiduSearchProvider - 类型继承`() {
         val config = createConfig("local-baidu", apiHost = "https://www.baidu.com")

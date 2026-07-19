@@ -37,6 +37,7 @@ import org.robolectric.annotation.Config
  * during [MyApplication] startup and [FloatingWindowService] construction.
  * Test-specific stubs are added in [Before].
  */
+@Suppress("DEPRECATION")
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30])
 class FloatingWindowServiceTest {

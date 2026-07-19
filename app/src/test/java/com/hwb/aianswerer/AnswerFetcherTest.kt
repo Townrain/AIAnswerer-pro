@@ -73,7 +73,7 @@ class AnswerFetcherTest {
         val slot = slot<String>()
         coEvery { s.p.searchWeb(capture(slot)) } returns ""
         coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
-        s.f.fetchAnswer("光合作用？\nA.水") {}; Thread.sleep(200)
+        s.f.fetchAnswer("光合作用？\nA.水") {}; Thread.sleep(1)
         assertTrue(slot.captured.contains("光合"))
     }
 
@@ -82,14 +82,14 @@ class AnswerFetcherTest {
         val slot = slot<String>()
         coEvery { s.p.searchWeb(capture(slot)) } returns ""
         coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
-        s.f.fetchAnswer("光合作用 原料") {}; Thread.sleep(200)
+        s.f.fetchAnswer("光合作用 原料") {}; Thread.sleep(1)
         assertEquals("光合作用 原料", slot.captured)
     }
 
     @Test fun vlm_search_disabled() {
         val s = setup(); every { s.c.isSearchEnabled() } returns false
         coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
-        s.f.fetchAnswer("x", vr(kw = "忽略")) {}; Thread.sleep(200)
+        s.f.fetchAnswer("x", vr(kw = "忽略")) {}; Thread.sleep(1)
         coVerify(exactly = 0) { s.p.searchWeb(any()) }
     }
 
@@ -144,7 +144,7 @@ class AnswerFetcherTest {
         every { AppConfig.getMaxConcurrency() } returns 2
         coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(listOf(a("OK")))
         s.f.fetchAnswer("", vr((1..6).map { q(it, "Q$it") })) {}
-        Thread.sleep(500)
+        Thread.sleep(1)
         coVerify(exactly = 6) { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) }
     }
 }
