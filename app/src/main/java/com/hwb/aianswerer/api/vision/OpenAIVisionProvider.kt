@@ -318,18 +318,7 @@ class OpenAIVisionProvider(
     private fun buildSystemPrompt(): String {
         val custom = com.hwb.aianswerer.config.AppConfig.getCustomVLMPrompt()
         if (custom.isNotBlank()) return custom
-        return """
-你是题目截图分析器。只返回JSON，不要解释：
-{
-  "has_questions": true或false,
-  "question_count": 题数,
-  "question_types": ["选择题"|"填空题"|"问答题"],
-  "search_keywords": "核心搜索关键词(简短)",
-  "extracted_text": "所有题目完整文本",
-  "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
-}
-规则：忽略UI噪声和广告。多题时必须分离到questions数组。无题目时has_questions=false。
-""".trimIndent()
+        return com.hwb.aianswerer.Constants.getPromptResources().getString(R.string.system_prompt_vlm_single)
     }
 
     /**
@@ -338,19 +327,7 @@ class OpenAIVisionProvider(
     private fun buildMultiPagePrompt(): String {
         val custom = com.hwb.aianswerer.config.AppConfig.getCustomVLMPrompt()
         if (custom.isNotBlank()) return custom
-        return """
-你是长文分页截图分析器。以下多张截图是同一篇文章的多页连续截图（从上到下）。
-请按顺序合并所有截图的内容，提取完整题目文本。只返回JSON，不要解释：
-{
-  "has_questions": true或false,
-  "question_count": 题数,
-  "question_types": ["选择题"|"填空题"|"问答题"],
-  "search_keywords": "核心搜索关键词(简短)",
-  "extracted_text": "合并后的所有题目完整文本",
-  "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
-}
-规则：忽略UI噪声和广告。跨页内容要拼接完整。多题时必须分离到questions数组。无题目时has_questions=false。
-""".trimIndent()
+        return com.hwb.aianswerer.Constants.getPromptResources().getString(R.string.system_prompt_vlm_multi)
     }
 
     private fun parseResponse(jsonStr: String): VisionFilterResult {

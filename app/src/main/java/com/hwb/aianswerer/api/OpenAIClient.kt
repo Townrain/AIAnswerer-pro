@@ -100,7 +100,7 @@ class OpenAIClient {
                 ChatMessage(role = "system", content = systemPrompt),
                 ChatMessage(
                     role = "user",
-                    content = MyApplication.getString(
+                    content = com.hwb.aianswerer.Constants.getPromptResources().getString(
                         R.string.system_prompt_user_message,
                         recognizedText
                     )
@@ -165,7 +165,7 @@ class OpenAIClient {
             val messages = listOf(
                 ChatMessage(
                     role = "user",
-                    content = "以下是OCR识别的题目文本，请判断其中包含多少道独立的题目。只回复一个阿拉伯数字，不要任何解释。\n\n$ocrText"
+                    content = com.hwb.aianswerer.Constants.getPromptResources().getString(R.string.system_prompt_count_questions, ocrText)
                 )
             )
             val request = ChatRequest(
