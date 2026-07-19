@@ -8,8 +8,28 @@ All notable changes to AIAnswerer will be documented in this file.
 - 多语言输出支持：主页输出语言下拉扩展至 11 项，覆盖中文/English/日本語/Francais/Deutsch/Espanol/Portugues/한국어/Русский(VLM)/العربية(VLM)/其他语言(VLM)
 - 首次启动弹窗新增「跟随系统」选项，选择后不再覆写 Android Locale
 - 新增 11 个语言常量与完整 Locale/Prompt 映射
+- `Constants.PROMPT_VERSION = 2`：提示词版本追踪常量 + 构建时 AppLog 日志
+- `Constants.promptStr()` 私有辅助函数，统一提示词字符串加载入口
+- 输出语言下拉列表 日本語/한국어 标注 `(VLM)`，提示需切视觉模式
+
+### Fixed
+- 输出语言选择不再覆盖 UI 语言：MergedCard 移除 `saveLanguage(code)` 调用，输出语言与 UI 语言完全解耦
+- `promptResources` 从 lazy val 改为 `getPromptResources()` 函数，语言切换后提示词实时生效不再需要重启
+- LanguageUtil 未知语言代码回退统一为 ENGLISH（与 Constants 提示词路由一致）
+- VLM 后缀 `(VLM)` 剥离逻辑从 3 处重复提取为 `cleanOutputLang()` 辅助函数
+- `normalizeQuestionTypes` 新增 `"不定项"` 匹配，同时支持中英文题型标签的 locale-aware 归一化
+- FloatingWindowRegressionTest：pillVisual 签名适配 `Th` 主题参数
+- LanguageUtilTest：未知代码回退断言从 `SIMPLIFIED_CHINESE` 同步为 `ENGLISH`
+- OpenAIClientTest：mock 适配 `getPromptResources()` 新 API
 
 ### Changed
+- LLM 核心系统提示词重构：新增角色定义、行为准则、4 个 Few-shot 示例
+- 联网搜索上下文指令明确化：增加搜索结果使用规则
+- VLM 视觉提示词（单图/多图）从硬编码中文改为中英文双语资源
+- `countQuestions()` 提示词从硬编码中文改为中英文双语资源
+- 输出语言指令 `"请用X回答"` 从硬编码改为字符串资源
+- SettingsCard 题型标签不再硬编码中文，改为 `MyApplication.getString()` locale-aware
+- LanguageUtil 注释更新：从"支持中英两种"改为"支持中英日韩法德西葡俄阿等"
 - LanguageUtil：跟随系统模式下跳过 attachBaseContext 覆写
 - Constants：promptLocale 支持全部语言 + 系统默认
 - PillButtonCard：悬浮按钮主色改为主题响应式（`t.p→t.pe`），Idle 态不再硬编码深紫 `#2D2B55`，完全匹配 DESIGN.md Claude Warm 设计规范；阴影/光晕/进度弧同步改用主题色板

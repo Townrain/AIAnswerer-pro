@@ -22,7 +22,7 @@ AI答题助手是一款基于 OCR/视觉模型与大语言模型的安卓答题�
 - 💬 悬浮窗操作：无需切换应用即可完成截屏、预览、提交
 - 🔒 本地可控：自定义 API Key，随时启停网络请求
 - 🎨 多款精致主题：8 套内置主题（含 Claude Warm 珊瑚暖调）+ JSON 导入自定义，悬浮按钮随主题自动变色
-- 🌐 中英双语：支持中文和英文界面切换
+- 🌐 多语言输出：UI 支持中英双语，AI 输出支持 11 种语言（中英日法德西葡韩俄阿 + 自适应）
 
 ### 技术栈
 | 类别 | 技术 |
@@ -83,7 +83,7 @@ com.hwb.aianswerer/
 ├── SettingsActivity.kt       # 通用设置
 ├── ModelSettingsActivity.kt  # API 模型配置
 ├── AboutActivity.kt          # 关于页面
-├── Constants.kt              # 常量与系统提示词
+├── Constants.kt              # 常量 · 提示词组装 · 多语言路由中枢
 ├── api/
 │   ├── OpenAIClient.kt       # OpenAI 兼容 API 客户端
 │   ├── WebSearchProviders.kt  # 多供应商联网搜索
