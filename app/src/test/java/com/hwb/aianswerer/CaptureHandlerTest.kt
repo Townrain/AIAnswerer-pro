@@ -12,6 +12,7 @@ import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -19,6 +20,7 @@ import org.junit.Test
 import java.io.File
 import java.util.concurrent.CountDownLatch
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class CaptureHandlerTest {
 
     private val context: Context = mockk<Context>(relaxed = true).apply {

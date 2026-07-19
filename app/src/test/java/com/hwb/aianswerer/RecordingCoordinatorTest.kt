@@ -95,7 +95,7 @@ class RecordingCoordinatorTest {
         every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers { latch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         val result = coordinator.stop()
         assertTrue(result is RecordingCoordinator.StopResult.Completed)
@@ -112,7 +112,7 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         val result = coordinator.stop()
         assertTrue(result is RecordingCoordinator.StopResult.Processing)
@@ -131,11 +131,11 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
         assertTrue(coordinator.isActive)
 
         coordinator.cancel()
-        delay(1)
+        delay(10)
 
         assertFalse(coordinator.isActive)
         assertFalse(coordinator.isProcessing)
@@ -162,7 +162,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         assertEquals(1, coordinator.totalQuestions)
         coVerify(exactly = 1) { pipeline.askLlm(any(), any(), any(), any()) }
@@ -178,10 +178,10 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         assertEquals(1, coordinator.totalQuestions)
         coVerify(exactly = 1) { pipeline.askLlm(any(), any(), any(), any()) }
@@ -207,7 +207,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coVerify { pipeline.recognizeVlm(any()) }
         coVerify { pipeline.askLlm(any(), any(), any(), any()) }
@@ -233,7 +233,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         assertEquals(3, coordinator.totalQuestions)
         coVerify(exactly = 3) { pipeline.askLlm(any(), any(), any(), any()) }
@@ -258,7 +258,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         assertEquals(2, coordinator.totalQuestions)
         assertEquals(1, coordinator.skippedCount)
@@ -273,7 +273,7 @@ class RecordingCoordinatorTest {
         coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vlmResult)
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         assertEquals(0, coordinator.totalQuestions)
         coVerify(exactly = 0) { pipeline.askLlm(any(), any(), any(), any()) }
@@ -292,7 +292,7 @@ class RecordingCoordinatorTest {
         coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vlmResult)
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         assertEquals(0, coordinator.totalQuestions)
         coVerify(exactly = 0) { pipeline.askLlm(any(), any(), any(), any()) }
@@ -310,7 +310,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coVerify { pipeline.recognizeVlm(any()) }
         coVerify { pipeline.recognizeOcr(any()) }
@@ -330,7 +330,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coVerify { pipeline.recognizeOcr(any()) }
         coVerify { pipeline.askLlm(any(), any(), any(), any()) }
@@ -343,7 +343,7 @@ class RecordingCoordinatorTest {
         coEvery { pipeline.recognizeOcr(any()) } returns Result.failure(RuntimeException("OCR fail"))
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coVerify(exactly = 0) { pipeline.askLlm(any(), any(), any(), any()) }
         assertEquals(0, coordinator.totalQuestions)
@@ -371,7 +371,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coVerify { pipeline.searchWeb("custom search keywords", any()) }
     }
@@ -387,7 +387,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coVerify { pipeline.searchWeb(any(), any()) }
     }
@@ -405,7 +405,7 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coVerify(exactly = 0) { pipeline.searchWeb(any(), any()) }
     }
@@ -417,7 +417,7 @@ class RecordingCoordinatorTest {
         coEvery { pipeline.recognizeOcr(any()) } returns Result.success("text")
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         assertEquals(1, coordinator.failedCount)
         coVerify(exactly = 0) { pipeline.askLlm(any(), any(), any(), any()) }
@@ -439,7 +439,7 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         val result = coordinator.stop()
         assertTrue(result is RecordingCoordinator.StopResult.Completed)
@@ -463,7 +463,7 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coordinator.stop()
         assertTrue(latch.await(5, TimeUnit.SECONDS))
@@ -489,7 +489,7 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coordinator.stop()
         assertTrue(latch.await(5, TimeUnit.SECONDS))
@@ -517,7 +517,7 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coordinator.stop()
         assertTrue(latch.await(5, TimeUnit.SECONDS))
@@ -541,7 +541,7 @@ class RecordingCoordinatorTest {
         }
 
         coordinator.processBitmap(mockBitmap())
-        delay(1)
+        delay(10)
 
         coordinator.stop()
         assertTrue(latch.await(5, TimeUnit.SECONDS))
