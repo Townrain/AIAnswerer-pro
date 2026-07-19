@@ -24,6 +24,8 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.hwb.aianswerer.config.AppConfig
+import com.hwb.aianswerer.MyApplication
+import com.hwb.aianswerer.R
 import com.hwb.aianswerer.ui.theme.*
 
 @Composable
@@ -31,7 +33,13 @@ internal fun SettingsCard(t: Th, captureMode: MutableState<String>) {
     val questionTypes = remember { AppConfig.getQuestionTypes().toMutableStateList() }
     val cropMode = remember { mutableStateOf(AppConfig.getCropMode()) }
 
-    val allTypes = listOf("单选题", "多选题", "不定项", "填空题", "问答题")
+    val allTypes = listOf(
+        MyApplication.getString(R.string.question_type_single),
+        MyApplication.getString(R.string.question_type_multiple),
+        MyApplication.getString(R.string.question_type_uncertain),
+        MyApplication.getString(R.string.question_type_blank),
+        MyApplication.getString(R.string.question_type_essay)
+    )
     // (code, label) — saves English code to match service constants
     val cropModes = listOf(
         AppConfig.CROP_MODE_FULL to "全屏识别",
@@ -47,7 +55,7 @@ internal fun SettingsCard(t: Th, captureMode: MutableState<String>) {
     ) {
         Column {
             // ── Upper: Question types ──
-            Text("题型选择", style = DW.TitleMedium.copy(color = t.ob))
+            Text(MyApplication.getString(R.string.question_type_label), style = DW.TitleMedium.copy(color = t.ob))
             Spacer(Modifier.height(12.dp))
             // 3 + 2 layout, chips fill each row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

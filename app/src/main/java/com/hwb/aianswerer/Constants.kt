@@ -23,7 +23,7 @@ object Constants {
      * AI 提示词语言独立于 UI 语言：中文 UI → 中文提示词，其他 → 英文提示词。
      * 英文是 LLM 的通用指令语言，非中英文用户用英文提示词效果最优。
      */
-    val promptResources: Resources by lazy {
+    fun getPromptResources(): Resources {
         val config = Configuration(MyApplication.getAppContext().resources.configuration)
         val promptLocale = when (AppConfig.getLanguage()) {
             "zh" -> Locale.SIMPLIFIED_CHINESE
@@ -40,11 +40,11 @@ object Constants {
             else -> Locale.ENGLISH
         }
         config.setLocale(promptLocale)
-        MyApplication.getAppContext().createConfigurationContext(config).resources
+        return MyApplication.getAppContext().createConfigurationContext(config).resources
     }
 
-    private fun promptStr(resId: Int): String = promptResources.getString(resId)
-    private fun promptStr(resId: Int, vararg formatArgs: Any): String = promptResources.getString(resId, *formatArgs)
+    private fun promptStr(resId: Int): String = getPromptResources().getString(resId)
+    private fun promptStr(resId: Int, vararg formatArgs: Any): String = getPromptResources().getString(resId, *formatArgs)
     // Intent Actions
     const val ACTION_SHOW_ANSWER = "com.hwb.aianswerer.SHOW_ANSWER"
     const val ACTION_REQUEST_ANSWER = "com.hwb.aianswerer.REQUEST_ANSWER"
@@ -67,7 +67,7 @@ object Constants {
         val hasConstraints = normalizedTypes.isNotEmpty() || searchContext.isNotBlank()
         if (!hasConstraints) {
             // 即使没有约束，也添加输出语言
-            val lang = AppConfig.getOutputLanguage()
+            val lang = cleanOutputLang()
             if (lang != "中文" && lang != "自动识别" && lang.isNotBlank()) {
                 promptBuilder.append("\n\n")
                 promptBuilder.append(promptStr(R.string.system_prompt_language_instruction, lang))
@@ -93,7 +93,7 @@ object Constants {
         }
 
         // 添加输出语言
-        val lang = AppConfig.getOutputLanguage()
+        val lang = cleanOutputLang()
         if (lang != "中文" && lang != "自动识别" && lang.isNotBlank()) {
             promptBuilder.append("\n")
             promptBuilder.append(promptStr(R.string.system_prompt_language_instruction, lang))
@@ -154,7 +154,7 @@ object Constants {
         }
 
         // 输出语言
-        val lang = AppConfig.getOutputLanguage()
+        val lang = cleanOutputLang()
         if (lang != "中文" && lang != "自动识别" && lang.isNotBlank()) {
             promptBuilder.append("\n")
             promptBuilder.append(promptStr(R.string.system_prompt_language_instruction, lang))
@@ -171,6 +171,7 @@ object Constants {
         return promptBuilder.toString()
     }
 
+    private fun cleanOutputLang(): String = AppConfig.getOutputLanguage().replace(" (VLM)", "")
     private fun getBaseSystemPrompt(): String {
         val custom = AppConfig.getCustomSystemPrompt()
         if (custom.isNotBlank()) return custom
@@ -185,11 +186,16 @@ object Constants {
      * 翻译为 AI 认识的内部类型（选择题/填空题/问答题）。
      */
     private fun normalizeQuestionTypes(types: Set<String>): Set<String> {
-        val choiceType = MyApplication.getString(R.string.ai_question_type_choice) // "选择题"
+        val choiceType = promptStr(R.string.ai_question_type_choice) // 选择题 / Multiple Choice
         return types.map { type ->
             when {
-                type.contains("选") -> choiceType       // 单选题、多选题、不定项选择题 → 选择题
-                else -> type                            // 填空题、问答题 → 不变
+                // 中文标签（兼容旧数据 + 当前 UI）
+                type.contains("选") || type == "不定项" -> choiceType
+                // 英文标签（locale-aware）
+                type == promptStr(R.string.question_type_single) ||
+                type == promptStr(R.string.question_type_multiple) ||
+                type == promptStr(R.string.question_type_uncertain) -> choiceType
+                else -> type
             }
         }.toSet()
     }
