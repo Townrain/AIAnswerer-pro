@@ -96,20 +96,9 @@ internal fun MergedCard(t: Th, expandedMenu: MutableState<String?>) {
     LaunchedEffect(web.value) {
         AppConfig.saveWebSearchProvider(web.value)
     }
-    // 输出语言显示名 → 语言代码映射
-    val outputLangToCode = mapOf(
-        "中文" to "zh", "English" to "en", "日本語 (VLM)" to "ja",
-        "Français" to "fr", "Deutsch" to "de", "Español" to "es",
-        "Português" to "pt", "한국어 (VLM)" to "ko",
-        "Русский (VLM)" to "ru", "العربية (VLM)" to "ar", "其他语言 (VLM)" to "other"
-    )
     LaunchedEffect(outputLang.value) {
-        // 保存显示名（去 VLM 后缀）给 prompt 用
-        val displayName = outputLang.value.replace(" (VLM)", "")
-        AppConfig.saveOutputLanguage(displayName)
-        outputLangToCode[outputLang.value]?.let { code ->
-            AppConfig.saveLanguage(code)
-        }
+        // 保存输出语言（含 VLM 标记），提示词构建时剥离
+        AppConfig.saveOutputLanguage(outputLang.value)
     }
 
     Box(
@@ -147,8 +136,9 @@ internal fun MergedCard(t: Th, expandedMenu: MutableState<String?>) {
                     ModelMenu("VLM 模型", vlm, vlmOptions, vlmEx, t, Modifier.fillMaxWidth(), hint = vlmDropdownHint, onToggle = { expandedMenu.value = if (expandedMenu.value == "VLM 模型") null else "VLM 模型" })
                 }
                 val outputLangOptions = listOf(
-                    "中文", "English", "日本語 (VLM)", "Français", "Deutsch",
-                    "Español", "Português", "한국어 (VLM)",
+                    "中文", "English", "Français", "Deutsch",
+                    "Español", "Português",
+                    "日本語 (VLM)", "한국어 (VLM)",
                     "Русский (VLM)", "العربية (VLM)", "其他语言 (VLM)"
                 )
                 ModelMenu("输出语言", outputLang, outputLangOptions, outEx, t, Modifier.weight(1f)) { expandedMenu.value = if (expandedMenu.value == "输出语言") null else "输出语言" }

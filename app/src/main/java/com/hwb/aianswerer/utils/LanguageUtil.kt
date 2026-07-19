@@ -12,8 +12,7 @@ import java.util.Locale
 /**
  * 语言管理工具类
  *
- * 负责应用语言的切换和配置更新
- * 支持中文和英文两种语言
+ * 负责应用语言的切换和配置更新，支持中英日韩法德西葡俄阿等语言。
  */
 object LanguageUtil {
 
@@ -67,7 +66,7 @@ object LanguageUtil {
             AppConfig.LANGUAGE_RU -> Locale("ru")
             AppConfig.LANGUAGE_AR -> Locale("ar")
             AppConfig.LANGUAGE_OTHER -> Locale.ENGLISH
-            else -> Locale.SIMPLIFIED_CHINESE
+            else -> Locale.ENGLISH
         }
 
         Locale.setDefault(locale)
