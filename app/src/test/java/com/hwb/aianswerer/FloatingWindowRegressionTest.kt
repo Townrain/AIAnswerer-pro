@@ -108,4 +108,51 @@ class FloatingWindowRegressionTest {
         assertNotNull(r.find { it.isExplanation })
     }
 
+    // ════ resolvePillClickAction() ════
+
+    @Test fun `resolvePillClickAction 面板关闭时返回 CaptureOnly`() {
+        assertEquals(
+            com.hwb.aianswerer.ui.components.PillClickAction.CaptureOnly,
+            com.hwb.aianswerer.ui.components.resolvePillClickAction(expandQuickButtons = false, isRecording = false)
+        )
+    }
+
+    @Test fun `resolvePillClickAction 面板关闭且录制中仍返回 CaptureOnly`() {
+        assertEquals(
+            com.hwb.aianswerer.ui.components.PillClickAction.CaptureOnly,
+            com.hwb.aianswerer.ui.components.resolvePillClickAction(expandQuickButtons = false, isRecording = true)
+        )
+    }
+
+    @Test fun `resolvePillClickAction 面板展开且非录制返回 QuickToggleOnly`() {
+        assertEquals(
+            com.hwb.aianswerer.ui.components.PillClickAction.QuickToggleOnly,
+            com.hwb.aianswerer.ui.components.resolvePillClickAction(expandQuickButtons = true, isRecording = false)
+        )
+    }
+
+    @Test fun `resolvePillClickAction 面板展开且录制中返回 QuickToggleAndCapture`() {
+        assertEquals(
+            com.hwb.aianswerer.ui.components.PillClickAction.QuickToggleAndCapture,
+            com.hwb.aianswerer.ui.components.resolvePillClickAction(expandQuickButtons = true, isRecording = true)
+        )
+    }
+
+    // ════ computeButtonScale() ════
+
+    @Test fun `computeButtonScale 默认比例`() {
+        assertEquals(1.0f, com.hwb.aianswerer.ui.components.computeButtonScale(1f, 1f, 1f), 0.001f)
+    }
+
+    @Test fun `computeButtonScale 拖拽中缩放`() {
+        assertEquals(1.05f, com.hwb.aianswerer.ui.components.computeButtonScale(1f, 1.05f, 1f), 0.001f)
+    }
+
+    @Test fun `computeButtonScale 录制脉冲缩小`() {
+        assertEquals(0.85f, com.hwb.aianswerer.ui.components.computeButtonScale(1f, 1f, 0.85f), 0.001f)
+    }
+
+    @Test fun `computeButtonScale 成功弹跳+录制脉冲`() {
+        assertEquals(1.03f * 0.85f, com.hwb.aianswerer.ui.components.computeButtonScale(1.03f, 1f, 0.85f), 0.001f)
+    }
 }

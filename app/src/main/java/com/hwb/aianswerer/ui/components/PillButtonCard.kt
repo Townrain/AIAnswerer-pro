@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -42,23 +43,52 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hwb.aianswerer.ui.theme.DW
+import com.hwb.aianswerer.ui.theme.ErrorRedLight
+import com.hwb.aianswerer.ui.theme.ImageCollectingPurple
+import com.hwb.aianswerer.ui.theme.ImageCollectingPurpleDark
+import com.hwb.aianswerer.ui.theme.ImageCollectingPurpleLight
+import com.hwb.aianswerer.ui.theme.PremiumPrimary
+import com.hwb.aianswerer.ui.theme.RecordingRed
+import com.hwb.aianswerer.ui.theme.RecordingRedDark
+import com.hwb.aianswerer.ui.theme.SuccessGreen
+import com.hwb.aianswerer.ui.theme.SuccessGreenLight
 import com.hwb.aianswerer.ui.theme.Th
+import com.hwb.aianswerer.ui.icons.LocalIcons
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ===== extracted from FloatingWindowContent.kt =====
+
+// ===== 点击逻辑解析（纯函数，可测试）=====
+
+internal enum class PillClickAction {
+    CaptureOnly,
+    QuickToggleOnly,
+    QuickToggleAndCapture
+}
+
+internal fun resolvePillClickAction(
+    expandQuickButtons: Boolean,
+    isRecording: Boolean
+) = when {
+    expandQuickButtons && isRecording -> PillClickAction.QuickToggleAndCapture
+    expandQuickButtons -> PillClickAction.QuickToggleOnly
+    else -> PillClickAction.CaptureOnly
+}
+
+/** 按钮缩放合成: success弹跳 × 拖拽反馈 × 录制脉冲 */
+internal fun computeButtonScale(successScale: Float, dragScale: Float, recordingPulse: Float): Float {
+    return successScale * dragScale * recordingPulse
+}
 
 internal enum class BouncyState { Idle, Pressed, LongPressed, Released }
 
@@ -128,19 +158,19 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
     return when {
         isImageCollecting -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(Color(0xFF7C3AED), Color(0xFF5B21B6)),
+                listOf(ImageCollectingPurple, ImageCollectingPurpleDark),
                 Offset.Zero, Offset.Infinite
             ),
-            border = Color(0xFFA855F7).copy(alpha = 0.45f),
+            border = ImageCollectingPurpleLight.copy(alpha = 0.45f),
             iconTint = Color.White.copy(alpha = 0.95f),
             badge = null
         )
         isRecording -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(Color(0xFFFF3B30), Color(0xFFD32F2F)),
+                listOf(RecordingRed, RecordingRedDark),
                 Offset.Zero, Offset.Infinite
             ),
-            border = Color(0xFFFF6961).copy(alpha = 0.45f),
+            border = ErrorRedLight.copy(alpha = 0.45f),
             iconTint = Color.White.copy(alpha = 0.95f),
             badge = null
         )
@@ -158,7 +188,7 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
         )
         status == FloatingStatus.Success -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(t.ok, Color(0xFF67D480)),
+                listOf(t.ok, SuccessGreenLight),
                 Offset.Zero, Offset.Infinite
             ),
             border = t.ok.copy(alpha = 0.3f),
@@ -167,7 +197,7 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
         )
         status == FloatingStatus.Error -> PillVisual(
             gradient = Brush.linearGradient(
-                listOf(t.err, Color(0xFFFF6961)),
+                listOf(t.err, ErrorRedLight),
                 Offset.Zero, Offset.Infinite
             ),
             border = t.err.copy(alpha = 0.3f),
@@ -301,10 +331,14 @@ internal fun PillButton(
     // 按沙箱 PillButton2 方式：用 Bouncy 包裹，dragMod 传给 Bouncy
     Bouncy(
         onClick = {
-            if (expandQuickButtons) {
-                onQuickToggle()
-                if (isRecording) onCaptureClick()
-            } else onCaptureClick()
+            when (resolvePillClickAction(expandQuickButtons, isRecording)) {
+                PillClickAction.CaptureOnly -> onCaptureClick()
+                PillClickAction.QuickToggleOnly -> onQuickToggle()
+                PillClickAction.QuickToggleAndCapture -> {
+                    onQuickToggle()
+                    onCaptureClick()
+                }
+            }
         },
         onLongPress = onLongPress,
         modifier = dragMod,
@@ -330,13 +364,19 @@ internal fun PillButton(
             }
         }
     ) {
+
+    // 单一动画状态推导: success弹跳 × 拖拽反馈 × 录制脉冲
+    val buttonScale by remember {
+        derivedStateOf { computeButtonScale(successScale, dragScale, recordingPulse.value) }
+    }
+
         Row(
             Modifier
                 .widthIn(max = with(density) { 120.dp })
                 .graphicsLayer {
                     alpha = buttonAlpha
-                    scaleX = successScale * dragScale * recordingPulse.value
-                    scaleY = successScale * dragScale * recordingPulse.value
+                    scaleX = buttonScale
+                    scaleY = buttonScale
                     transformOrigin = if (isLeftSide) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
                 }
                 .shadow(dragShadow.dp, pillShape, spotColor = t.p.copy(alpha = if (isDragging) 0.35f else 0.15f))
@@ -355,7 +395,7 @@ internal fun PillButton(
                 .then(if (shimmerBrush != null) Modifier.background(shimmerBrush) else Modifier)
                 .border(
                     if (isRecording) 1.5.dp else 0.5.dp,
-                    if (isRecording) Color(0xFFFF3B30).copy(alpha = recordingBorderAlpha.value)
+                    if (isRecording) RecordingRed.copy(alpha = recordingBorderAlpha.value)
                     else if (glowColor != Color.Transparent) glowColor
                     else visual.border,
                     pillShape
@@ -370,7 +410,7 @@ internal fun PillButton(
                 }
             }
             Icon(
-                IcCapture, "screenshot",
+                LocalIcons.Search, "screenshot",
                 tint = visual.iconTint,
                 modifier = Modifier.size(FWDims.pillIconSize)
             )
@@ -384,36 +424,6 @@ internal fun PillButton(
     }
 }
 
-// =============================================================================
-// 图标：截图按钮 (magnifying glass)
-// =============================================================================
-
-internal val IcCapture: ImageVector by lazy {
-    ImageVector.Builder("IcCapture", 24.dp, 24.dp, 24f, 24f).apply {
-        path(fill = SolidColor(Color.White)) {
-            moveTo(15.5f, 14f)
-            horizontalLineToRelative(-0.79f)
-            lineToRelative(-0.28f, -0.27f)
-            curveTo(15.41f, 12.59f, 16f, 11.11f, 16f, 9.5f)
-            curveTo(16f, 5.91f, 13.09f, 3f, 9.5f, 3f)
-            reflectiveCurveTo(3f, 5.91f, 3f, 9.5f)
-            reflectiveCurveTo(5.91f, 16f, 9.5f, 16f)
-            curveToRelative(1.61f, 0f, 3.09f, -0.59f, 4.23f, -1.57f)
-            lineToRelative(0.27f, 0.28f)
-            verticalLineToRelative(0.79f)
-            lineToRelative(5f, 4.99f)
-            lineTo(20.49f, 19f)
-            lineToRelative(-4.99f, -5f)
-            close()
-            moveTo(9.5f, 14f)
-            curveTo(7.01f, 14f, 5f, 11.99f, 5f, 9.5f)
-            reflectiveCurveTo(7.01f, 5f, 9.5f, 5f)
-            reflectiveCurveTo(14f, 7.01f, 14f, 9.5f)
-            reflectiveCurveTo(11.99f, 14f, 9.5f, 14f)
-            close()
-        }
-    }.build()
-}
 
 // =============================================================================
 // Badge2 (synced from sandbox)
@@ -440,9 +450,9 @@ private fun Badge2(label: String, color: Color, alpha: Float = 1f, modifier: Mod
 internal fun StatusDot(status: FloatingStatus) {
     Box(Modifier.size(6.dp).clip(CircleShape).background(
         when (status) {
-            FloatingStatus.Success -> Color(0xFF34C759)
-            FloatingStatus.Error -> Color(0xFFFF3B30)
-            else -> Color(0xFF6C5CE7)
+            FloatingStatus.Success -> SuccessGreen
+            FloatingStatus.Error -> RecordingRed
+            else -> PremiumPrimary
         }
     ))
 }

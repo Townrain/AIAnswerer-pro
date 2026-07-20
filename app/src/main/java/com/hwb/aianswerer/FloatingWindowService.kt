@@ -310,9 +310,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         fun isLeftSide() = viewModel.floatOffsetX.value < screenW / 2f
 
-        // 动态宽度：空闲时窄（仅包住按钮），展开时自动扩宽
-        val narrowW = buttonSizePx + 16 * density
-        viewModel.currentWindowWidthPx = narrowW
+        // 始终全宽——通过 InteractiveTouchLayout.setInteractiveRect 做选择性触摸穿透
+        viewModel.currentWindowWidthPx = screenW
 
         fun windowX(): Int {
             val w = viewModel.currentWindowWidthPx
@@ -331,6 +330,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         )
 
         touchLayout = InteractiveTouchLayout(this).apply {
+            clipChildren = false  // 允许pill拖拽时渲染超出窗口边界
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
@@ -357,6 +357,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         buttonAlpha = settings.floatButtonAlpha.value,
                         cardAlpha = settings.floatCardAlpha.value,
                         isLeftSide = isLeftSide(),
+                        windowScreenX = viewModel.displayWindowX.floatValue,
+                        windowScreenY = viewModel.floatOffsetY.value,
                         floatingStatus = viewModel.floatingStatus.value,
                         onCaptureClick = { captureHandler.handleCapture() },
                         onCloseAnswer = {
@@ -584,7 +586,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         val narrowW = buttonSizePx + 2 * marginPx
 
-        val newWidth = if (hasCardContent || viewModel.hasContent || viewModel.isRecording.value) {
+        val newWidth = (if (hasCardContent || viewModel.hasContent || viewModel.isRecording.value) {
             360 * density
         } else if (viewModel.isArcExpanded) {
             val gapPx = 8 * density
@@ -592,7 +594,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             buttonSizePx + 2 * marginPx + gapPx + quickRowW
         } else {
             narrowW
-        }
+        }).coerceAtLeast(screenW)  // 始终全宽，避免拖拽裁剪
 
         val prevWidth = viewModel.currentWindowWidthPx
         if (kotlin.math.abs(newWidth - prevWidth) < 4) return

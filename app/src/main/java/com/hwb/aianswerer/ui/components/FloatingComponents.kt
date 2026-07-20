@@ -91,30 +91,7 @@ internal object FWAnim {
 // 图标定义
 // =============================================================================
 
-internal val IcVision: ImageVector by lazy {
-    ImageVector.Builder("IcVision", 24.dp, 24.dp, 24f, 24f).apply {
-        path(fill = SolidColor(Color(0xFF22C55E))) {
-            moveTo(12f, 4.5f)
-            curveTo(7f, 4.5f, 2.73f, 7.61f, 1f, 12f)
-            curveTo(2.73f, 16.39f, 7f, 19.5f, 12f, 19.5f)
-            curveTo(17f, 19.5f, 21.27f, 16.39f, 23f, 12f)
-            curveTo(21.27f, 7.61f, 17f, 4.5f, 12f, 4.5f)
-            close()
-            moveTo(12f, 17f)
-            curveTo(9.24f, 17f, 7f, 14.76f, 7f, 12f)
-            curveTo(7f, 9.24f, 9.24f, 7f, 12f, 7f)
-            curveTo(14.76f, 7f, 17f, 9.24f, 17f, 12f)
-            curveTo(17f, 14.76f, 14.76f, 17f, 12f, 17f)
-            close()
-            moveTo(12f, 9f)
-            curveTo(10.34f, 9f, 9f, 10.34f, 9f, 12f)
-            curveTo(9f, 13.66f, 10.34f, 15f, 12f, 15f)
-            curveTo(13.66f, 15f, 15f, 13.66f, 15f, 12f)
-            curveTo(15f, 10.34f, 13.66f, 9f, 12f, 9f)
-            close()
-        }
-    }.build()
-}
+internal val IcVision: ImageVector get() = com.hwb.aianswerer.ui.icons.LocalIcons.Vision
 
 internal val IcGlobe: ImageVector by lazy {
     ImageVector.Builder("IcGlobe", 24.dp, 24.dp, 24f, 24f).apply {

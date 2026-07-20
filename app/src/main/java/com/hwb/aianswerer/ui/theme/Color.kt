@@ -60,6 +60,11 @@ val ErrorRedLight = Color(0xFFFF6961)
 val RecordingRed = Color(0xFFFF3B30)
 val RecordingRedDark = Color(0xFFD32F2F)
 
+// ── Image Collection Mode — purple accent ──
+val ImageCollectingPurple = Color(0xFF7C3AED)
+val ImageCollectingPurpleDark = Color(0xFF5B21B6)
+val ImageCollectingPurpleLight = Color(0xFFA855F7)
+
 // ── Chip — refined segmented control ──
 val ChipUnselected = Color(0xFF000000).copy(alpha = 0.04f)
 val ChipSelected = Color(0xFF6C5CE7).copy(alpha = 0.10f)

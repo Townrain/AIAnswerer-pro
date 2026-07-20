@@ -75,9 +75,12 @@ com.hwb.aianswerer/
 ├── MyApplication.kt          # Application 初始化
 ├── MainActivity.kt           # 主界面（权限管理、答题设置）
 ├── FloatingWindowService.kt  # 悬浮窗核心服务
-├── ScreenReaderService.kt    # 无障碍屏幕读取服务
-├── ScreenCaptureManager.kt   # 截图管理（MediaProjection）
-├── TextRecognitionManager.kt # OCR 文字识别
+├── FloatingWindowManager.kt  # 窗口管理（位置/动画）
+├── FloatingWindowViewModel.kt # 悬浮窗状态管理
+├── InteractiveTouchLayout.kt # 触摸穿透容器
+├── CaptureHandler.kt         # 截图→裁剪→识别管线
+├── CapturePipeline.kt        # 核心识别管线（OCR→VLM→LLM）
+├── FloatingAnswerCard.kt     # 答案卡片组件
 ├── ConfirmTextActivity.kt    # 识别文本确认/编辑
 ├── ImageCropActivity.kt      # 图片裁剪（四角拖拽）
 ├── SettingsActivity.kt       # 通用设置

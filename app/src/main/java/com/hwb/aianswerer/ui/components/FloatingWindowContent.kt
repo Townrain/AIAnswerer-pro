@@ -221,7 +221,7 @@ fun FloatingWindowContent(
         val marginPxInit = with(density) { FWDims.pillEdgeMargin.toPx() }
         val pillHInit = with(density) { buttonSize.dp.toPx() }
         if (rightEdge < 0f) {
-            rightEdge = sW - marginPxInit
+            rightEdge = sW  // 贴右边
             dragX = rightEdge - with(density) { FWDims.quickBtnSize.toPx() }
             snapY = initialY.coerceIn(0f, (sH - pillHInit).coerceAtLeast(0f))
             dragY = snapY
@@ -229,8 +229,8 @@ fun FloatingWindowContent(
         val pillH = with(density) { buttonSize.dp.toPx() }
         val pillW = if (measuredPillW > 0f) measuredPillW else with(density) { FWDims.quickBtnSize.toPx() }
         val marginPx = with(density) { FWDims.pillEdgeMargin.toPx() }
-        val rightEdgeTarget = sW - marginPx
-        val leftEdgeTarget = marginPx
+        val rightEdgeTarget = sW                       // 右贴边
+        val leftEdgeTarget = 0f                       // 左贴边
         val curIsLeftSide = rightEdge < sW / 2f
 
         val posX = if (isDragging || isAnimating) dragX else rightEdge - pillW
@@ -266,7 +266,7 @@ fun FloatingWindowContent(
         }
 
         // ── Drag gesture ──
-        val dragMod = Modifier.pointerInput(pillW) {
+        val dragMod = Modifier.pointerInput(Unit) {  // Unit键确保手势检测器不会因pillW变化而重启
             detectDragGestures(
                 onDragStart = {
                     fingerX = rightEdge - pillW
@@ -284,11 +284,11 @@ fun FloatingWindowContent(
                 },
                 onDragCancel = { isDragging = false },
                 onDrag = { _: PointerInputChange, d: Offset ->
-                    fingerX = (fingerX + d.x).coerceIn(marginPx, sW - marginPx)
+                    val curPillW = if (measuredPillW > 0f) measuredPillW else pillW
+                    fingerX = (fingerX + d.x).coerceIn(0f, (sW - curPillW).coerceAtLeast(0f))
                     dragX = fingerX
                     val centerX = sW / 2f
-                    rightEdge = if (fingerX < centerX) leftEdgeTarget + pillW else rightEdgeTarget
-                    dragY = (dragY + d.y).coerceIn(0f, (sH - pillH).coerceAtLeast(0f))
+                    rightEdge = if (fingerX < centerX) leftEdgeTarget + curPillW else rightEdgeTarget
                     snapY = dragY
                     currentOnMove?.invoke(d.x, d.y)
                 }
@@ -299,8 +299,8 @@ fun FloatingWindowContent(
 
         val pillPlacedX = if (externalPillX >= 0f) externalPillX
                           else if (isDragging || isAnimating) dragX
-                          else if (curIsLeftSide) marginPx
-                          else sW - marginPx - measuredPillW
+                          else if (curIsLeftSide) 0f
+                          else sW - measuredPillW
         val effectivePillY = if (externalPillY >= 0f) externalPillY else clampedY
         val effectivePillW = if (externalPillW >= 0f) externalPillW else measuredPillW
         val effectivePillH = if (externalPillH >= 0f) externalPillH else measuredPillH
@@ -319,9 +319,9 @@ fun FloatingWindowContent(
                             val x = if (isDragging || isAnimating) {
                                 if (externalPillX >= 0f) externalPillX.roundToInt() else dragX.roundToInt()
                             } else if (curIsLeftSide) {
-                                marginPx.roundToInt()
+                                0
                             } else {
-                                (sW - marginPx - boxW).roundToInt()
+                                (sW - boxW).roundToInt()
                             }
                             val y = clampedY.roundToInt()
                             layout(boxW, placeable.height) {
@@ -357,7 +357,7 @@ fun FloatingWindowContent(
 
                 // Quick toggles
                 val pillX = if (isDragging || isAnimating) dragX
-                            else if (curIsLeftSide) marginPx
+                            else if (curIsLeftSide) 0f
                             else rightEdge - measuredPillW
                 val quickOffsetX = if (curIsLeftSide) pillX + measuredPillW + gapPx
                                    else pillX - measuredQuickW - gapPx
@@ -393,40 +393,30 @@ fun FloatingWindowContent(
         val cardOffY = (effectivePillY + effectivePillH + gapPx).roundToInt()
         if (renderCard) {
 
-        AnimatedVisibility(
-            visible = showCard && (hasAnswer || statusMessage != null),
-            modifier = Modifier
-                .offset { IntOffset(cardOffXClamped, cardOffY) }
-                .graphicsLayer { alpha = cardAlpha },
-            enter = slideInVertically(FWAnim.cardEnterSlideSpring) { -it / 4 } + fadeIn(tween(200)) + scaleIn(FWAnim.cardEnterScaleSpring, initialScale = 0.9f),
-            exit = slideOutVertically(tween(200)) { -it / 4 } + fadeOut(tween(200))
-        ) {
-            val cardDp = with(density) { cardW.toDp() }
-                // 统一翻页卡片：普通模式答题结果（paginatedAnswers）或录制完成结果（recordingAnswers）
-                val displayAnswers = if (paginatedAnswers.isNotEmpty()) paginatedAnswers
-                    else if (recordingAnswers.isNotEmpty() && !isRecording && !isProcessingRecording) recordingAnswers
-                    else emptyList()
-                if (displayAnswers.isNotEmpty()) {
-                    Box(Modifier.width(cardDp).onGloballyPositioned { coords -> measuredCardH = coords.size.height.toFloat() }) {
-                        RecordingResultCard(
-                            t, displayAnswers, onCloseAnswer,
-                            onCopyAnswer = onCopyRecordingAnswer ?: {},
-                            isProcessing = false,
-                            processedCount = displayAnswers.size,
-                            totalCount = displayAnswers.size
-                        )
-                    }
-            } else if (recordingCaptureCount > 0 && !showAnswer && statusMessage != null && (isRecording || isProcessingRecording)) {
-                // 录制中：展示进度
-                Box(Modifier.width(cardDp).onGloballyPositioned { coords -> measuredCardH = coords.size.height.toFloat() }) {
-                    Card(t, null, false, statusMessage, floatingStatus, {}, onCloseStatus, onCloseStatus)
-                }
-            } else {
-                Box(Modifier.width(cardDp).onGloballyPositioned { coords -> measuredCardH = coords.size.height.toFloat() }) {
-                    Card(t, answerText, hasAnswer, statusMessage, floatingStatus, onCopyAnswer ?: {}, onCloseAnswer, onCloseStatus)
-                }
-            }
-        }
+        FloatingAnswerCard(
+            t = t,
+            showCard = showCard,
+            showAnswer = showAnswer,
+            hasAnswer = hasAnswer,
+            statusMessage = statusMessage,
+            floatingStatus = floatingStatus,
+            cardAlpha = cardAlpha,
+            cardOffX = cardOffXClamped,
+            cardOffY = cardOffY,
+            cardW = cardW,
+            density = density,
+            answerText = answerText,
+            paginatedAnswers = paginatedAnswers,
+            recordingAnswers = recordingAnswers,
+            isRecording = isRecording,
+            isProcessingRecording = isProcessingRecording,
+            recordingCaptureCount = recordingCaptureCount,
+            onCloseAnswer = onCloseAnswer,
+            onCloseStatus = onCloseStatus,
+            onCopyAnswer = onCopyAnswer,
+            onCopyRecordingAnswer = onCopyRecordingAnswer,
+            onMeasuredCardH = { h -> measuredCardH = h }
+        )
         } // renderCard
 
         // ── Window bounds notification ──

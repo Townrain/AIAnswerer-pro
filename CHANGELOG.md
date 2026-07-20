@@ -2,6 +2,29 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
+
+## [1.6.4] - 2026-07-20
+
+### Fixed
+- **悬浮按钮拖拽卡死**：`pointerInput(pillW)` 在 pill 首次布局测量完成后因 key 变化重启手势检测器，导致 `onDragCancel` 触发后无法重新开始拖拽。修复为 `pointerInput(Unit)` 稳定键
+- **动态窗口宽度拖拽裁剪**：v1.6.3 引入的窄空闲窗口（56dp）导致 pill 拖拽时右边缘超出窗口被裁剪。修复为始终全屏宽度，通过 `InteractiveTouchLayout.setInteractiveRect()` 做选择性触摸穿透（该机制已在 v1.6.3 定义但从未被调用）
+- **pill 右边缘超出屏幕**：拖拽约束 `coerceIn(marginPx, sW - marginPx)` 只限制左边缘，右边缘越界。改为 `coerceIn(0, sW - pillW)` 使用实时测量宽度限制右边缘
+- **pill 贴边优化**：初始位置、snap 目标、闲置位置三处 `marginPx`（8dp）统一改为 0，pill 完全贴紧屏幕边缘
+- **录制进度卡片不显示**：`FloatingAnswerCard` 提取时误将 `!showAnswer` 写成 `!showCard`，导致录制中状态判断错误
+
+### Changed
+- 窗口宽度初始化从 `narrowW`（~56dp）改为 `screenW`（全屏宽），`updateFloatingWindowWidth()` 增加 `.coerceAtLeast(screenW)` 保底
+- `FloatingWindowContent` 答案卡片区提取为独立组件 `FloatingAnswerCard.kt`（97行）
+
+### Refactored
+- **图标去重**：`IcCapture`（放大镜）合并至 `LocalIcons.Search`；`IcVision` 改为 `LocalIcons.Vision` 别名。删除 31 行重复 path 定义
+- **主题合规**：`PillButtonCard.kt` 中 `pillVisual()` 6 处 + `StatusDot()` 3 处硬编码 `Color(0xFF...)` 全部替换为主题色常量。新增 `ImageCollectingPurple/Dark/Light` 颜色常量
+- **动画可测试性**：提取 `computeButtonScale()` 纯函数 + `resolvePillClickAction()` 纯函数，新增 8 个单元测试
+- **onInteractiveAreaChanged 连线**：`LaunchedEffect` 中的交互区域计算现在正确传递给 `touchLayout.setInteractiveRect()`（之前仅用于高度测量）
+
+### Added
+- `FloatingAnswerCard.kt` — 答案卡片独立组件，支持翻页/进度/单题三种模式
+- 18 个回归测试（`resolvePillClickAction` 4 个 + `computeButtonScale` 4 个，从原 10 个增至 18 个）
 ## [1.6.3] - 2026-07-20
 
 ### Fixed
