@@ -49,8 +49,8 @@ object ProviderConfigResolver {
             val provider = resolveApiProvider() ?: return null
             val host = provider.apiHost.trimEnd('/')
             when {
-                host.endsWith("/v1") -> "$host/chat/completions"
-                host.contains("/v1/") -> "${host}chat/completions"
+                host.endsWith("/chat/completions") -> host
+                host.matches(Regex(".*/v\\d+\\w*$")) -> "$host/chat/completions"
                 else -> "$host/v1/chat/completions"
             }
         } catch (_: Exception) { null }
@@ -123,8 +123,8 @@ object ProviderConfigResolver {
         if (provider != null) {
             val host = provider.apiHost.trimEnd('/')
             return when {
-                host.endsWith("/v1") -> "$host/chat/completions"
-                host.contains("/v1/") -> "${host}chat/completions"
+                host.endsWith("/chat/completions") -> host
+                host.matches(Regex(".*/v\\d+\\w*$")) -> "$host/chat/completions"
                 else -> "$host/v1/chat/completions"
             }
         }

@@ -76,11 +76,18 @@ object DynamicApiClient {
         val host = apiHost.trimEnd('/')
         val path = modelListPath(type, apiHost)
 
-        // 如果 host 已经以 /v1/ 结尾或包含 /v1/，不再重复拼
+        // Strip known endpoint paths to get clean base
+        val cleanHost = host
+            .removeSuffix("/chat/completions")
+            .removeSuffix("/completions")
+            .removeSuffix("/models")
+            .removeSuffix("/v1/messages")
+            .removeSuffix("/messages")
+
         val base = when {
-            host.endsWith("/v1") -> host
-            host.endsWith("/v1/") -> host.trimEnd('/')
-            else -> host
+            cleanHost.endsWith("/v1") -> cleanHost
+            cleanHost.endsWith("/v1/") -> cleanHost.trimEnd('/')
+            else -> cleanHost
         }
         return "$base$path"
     }
@@ -190,12 +197,12 @@ object DynamicApiClient {
                 else -> {
                     val host = apiHost.trimEnd('/')
                     when {
-                        host.endsWith("/v1") -> "/chat/completions"
-                        host.endsWith("/v1/") -> "chat/completions"
+                        host.endsWith("/chat/completions") || host.endsWith("/v1/chat/completions") -> ""
+                        host.matches(Regex(".*/v\\d+\\w*$")) -> "/chat/completions"
                         else -> "/v1/chat/completions"
                     }
-                }
             }
+        }
             val base = apiHost.trimEnd('/').trimEnd('/')
             val url = "$base${chatEndpoint}"
 
@@ -231,8 +238,6 @@ object DynamicApiClient {
                     Result.failure(Exception("HTTP ${resp.code}: $errorBody"))
                 }
             }
-        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            Result.failure(Exception("连接超时"))
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             Result.failure(Exception("连接超时"))
         } catch (e: CancellationException) {

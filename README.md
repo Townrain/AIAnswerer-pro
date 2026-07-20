@@ -109,7 +109,9 @@ com.hwb.aianswerer/
 
 ### 更新说明
 
-详见 [CHANGELOG.md](CHANGELOG.md)
+详见 [CHANGELOG.md](CHANGELOG.md)。近期重要修复：
+- **v1.6.2**: 暗色模式按钮主题响应 + 多版本 API URL 拼接修复（智谱/豆包/千帆 v2-v4 兼容）
+- **v1.6.1**: 多语言输出 11 种 + 新 Logo + 测试 24x 加速
 
 ### License
 This project is released under the [GNU Affero General Public License v3.0](/LICENSE)

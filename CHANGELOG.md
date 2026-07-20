@@ -2,6 +2,19 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
+## [1.6.2] - 2026-07-20
+
+### Fixed
+- **暗色模式按钮主题响应**：`AnimatedButton` 的 Primary/Tonal 变体改用 `sandboxTheme()` 的 `t.p` 动态取色，替换硬编码 `PremiumPrimary`(#6C5CE7) 和 `darkAccentGradient`。切换主题预设后按钮会随主色变化，不再固定紫色
+- **LLM 提供商 URL 双版本拼接 Bug**：`resolveApiUrl()` / `resolveVisionBaseUrl()` / `DynamicApiClient.testConnection()` 修复仅识别 `/v1` 的问题，用正则 `.*/v\\d+\\w*$` 匹配任意 `/vN` 版本号（含 v1/v2/v3/v4/v1beta 等），智谱(v4)、豆包(v3)、百度千帆(v2) 不再误拼 `/v4/v1/chat/completions`
+- **DynamicApiClient URL 双倍路径**：`buildModelListUrl()` 拼接 `/models` 前清除已知端点后缀，`testConnection()` 增加 host 已是完整 chat URL 的检测
+- **SettingsPage 快速测试 URL**：剥离逻辑升级为版本感知，支持 `/v2/`、`/v3/` 等路径
+- **DynamicApiClient 重复 catch**：移除 `testConnection()` 中重复的 `TimeoutCancellationException` catch 块 + 重复 `throw e`
+
+### Changed
+- `ProviderConfigResolver.resolveApiUrl()` 增加 `endsWith("/chat/completions")` 前置判断，避免已有完整 URL 重复拼接
+- 测试 `resolveApiUrl - host with trailing slash` 用例更新为修复后的期望值
+
 ## [1.6.1] - 2026-07-19
 
 ### Added

@@ -161,7 +161,8 @@ class ProviderConfigResolverTest {
         every { mmkvMock.decodeString(ConfigStorage.KEY_MODEL_NAME, any()) } returns ""
 
         val result = ProviderConfigResolver.resolveApiUrl()
-        assertEquals("https://api.example.com/v1/chatchat/completions", result)
+        // Non-version-ending host falls back to default /v1/chat/completions append
+        assertEquals("https://api.example.com/v1/chat/v1/chat/completions", result)
     }
 
     @Test

@@ -430,13 +430,16 @@ private suspend fun testConnection(apiUrl: String, apiKey: String, path: String 
         try {
             val url = if (path.isNotEmpty()) {
                 val base = apiUrl.trimEnd('/')
-                // Strip endpoint paths (chat/completions, etc.) to get the API base URL
+                // Strip endpoint paths to get the API base URL, handling any /vN version
                 val apiBase = if (base.contains("/v1/")) {
                     base.substringBefore("/v1/") + "/v1"
+                } else if (base.matches(Regex(".*/v\\d+\\w*/.*"))) {
+                    val match = Regex("(.*/v\\d+\\w*)/.*").find(base)
+                    match?.groupValues?.get(1) ?: base
                 } else {
-                    base
+                    base.substringBeforeLast("/")
                 }
-                "$apiBase${if (apiBase.endsWith("/v1")) "" else "/v1"}$path"
+                "$apiBase$path"
             } else apiUrl
             val client = OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)

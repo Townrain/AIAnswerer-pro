@@ -21,6 +21,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,6 +45,7 @@ fun AnimatedButton(
     enabled: Boolean = true
 ) {
     val isDark = LocalIsDarkMode.current
+    val t = sandboxTheme()
     val interactionSource = remember { MutableInteractionSource() }
     var pressed by remember { mutableStateOf(false) }
 
@@ -87,15 +94,32 @@ fun AnimatedButton(
             .heightIn(min = ButtonMinHeight)
             .then(
                 when (variant) {
-                    ButtonVariant.Primary -> Modifier.darkAccentGradient(shape, BtnRadius, shadowElevation = shadowPx, shadowColor = shadowColor)
+                    ButtonVariant.Primary -> Modifier
+                        .drawWithCache {
+                            val corner = CornerRadius(BtnRadius.toPx())
+                            onDrawBehind {
+                                if (shadowPx > 0f) drawGlassShadow(this, corner, shadowPx, shadowColor)
+                            }
+                        }
+                        .clip(shape)
+                        .drawBehind {
+                            drawRoundRect(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(t.p, if (isDark) t.pd else t.pe),
+                                    start = Offset(0f, 0f),
+                                    end = Offset(size.width, size.height)
+                                ),
+                                cornerRadius = CornerRadius(BtnRadius.toPx())
+                            )
+                        }
                     ButtonVariant.Glass -> if (isDark)
                         Modifier.glassSurfaceDark(shape = shape, cornerRadius = BtnRadius, shadowElevation = shadowPx)
                     else
                         Modifier.glassSurface(shape = shape, cornerRadius = BtnRadius, shadowElevation = shadowPx)
                     ButtonVariant.Tonal -> Modifier
                         .background(
-                            if (isDark) PremiumPrimary.copy(alpha = 0.15f)
-                            else PremiumPrimary.copy(alpha = 0.08f),
+                            if (isDark) t.p.copy(alpha = 0.15f)
+                            else t.p.copy(alpha = 0.08f),
                             shape
                         )
                 }
@@ -121,9 +145,9 @@ fun AnimatedButton(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = when (variant) {
-                ButtonVariant.Primary -> LightOnPrimary
+                ButtonVariant.Primary -> t.w
                 ButtonVariant.Glass -> if (isDark) TextDarkPrimary else TextDark
-                ButtonVariant.Tonal -> PremiumPrimary
+                ButtonVariant.Tonal -> t.p
             }
         )
     }

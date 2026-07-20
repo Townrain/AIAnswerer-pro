@@ -105,6 +105,8 @@ com.hwb.aianswerer/
 
 ### Changelog
 
-See [CHANGELOG.md](CHANGELOG.md)
+See [CHANGELOG.md](CHANGELOG.md). Recent highlights:
+- **v1.6.2**: Dark mode button theme responsiveness + multi-version API URL fix (v2/v3/v4 compatibility)
+- **v1.6.1**: 11 output languages + new logo + 24x test speedup
 ### License
 This project is released under the [GNU Affero General Public License v3.0](/LICENSE)
