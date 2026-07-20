@@ -2,6 +2,20 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
+## [1.6.3] - 2026-07-20
+
+### Fixed
+- **悬浮窗触摸阻挡问题**：主按钮改为动态窗口宽度——空闲时窗口仅 56dp 宽（刚好包住 pill 按钮），长按唤出快捷按钮时自动扩至 ~280dp，显示答案/录制时保持 360dp。配合 `FLAG_NOT_TOUCH_MODAL`，窗口外的触摸自然穿透给底层 App，不再阻挡正常操作
+- **截图时窗口闪烁修复**：截图期间通过 `setWindowAlpha(0f)` 隐藏悬浮窗替代 FLAG_SECURE 闪烁方案，配合 `setFlagSecure(false)` 确保截图不含悬浮窗残留，截图完成后恢复透明度
+- **隐身模式截图黑屏**：`FLAG_SECURE` 导致 MediaProjection 截图窗口区域为黑色方块，OCR 无法识别。修复：截图前移除 FLAG_SECURE + alpha=0 隐藏悬浮窗，截图后依隐身模式恢复。4 条截图路径全部统一处理，Recording 路径增加 try-finally、Normal 模式超时 catch 补充恢复逻辑，确保 FLAG_SECURE 不泄漏
+
+### Changed
+- `FloatingWindowManager.updateLayout()` 新增 `windowWidth` 参数支持动态窗口宽度
+- `FloatingWindowViewModel` 新增 `currentWindowWidthPx` 字段追踪窗口宽度
+- `FloatingWindowService.updateFloatingWindowWidth()` 根据状态（空闲/快捷按钮展开/有内容）自动计算并应用窗口宽度
+- 右侧悬浮窗扩宽时自动向左延伸，保证 pill 按钮屏幕位置不变
+- `CaptureHandler` 截图流程改用 `setWindowAlpha` 透明化方案：截图前 `alpha=0f`，截图后恢复，超时异常路径同样恢复
+
 ## [1.6.2] - 2026-07-20
 
 ### Fixed
