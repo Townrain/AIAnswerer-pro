@@ -380,8 +380,8 @@ class CaptureHandlerTest {
         handler().handleCapture()
         testScheduler.advanceUntilIdle()
 
+        verify { cb.setFlagSecure(false) }
         verify { cb.setFlagSecure(true) }
-        verify(exactly = 0) { cb.setFlagSecure(false) }
     }
 
     @Test
@@ -394,8 +394,8 @@ class CaptureHandlerTest {
         handler().handleCapture()
         testScheduler.advanceUntilIdle()
 
+        verify { cb.setFlagSecure(false) }
         verify { cb.setFlagSecure(true) }
-        verify(exactly = 0) { cb.setFlagSecure(false) }
     }
 
     // ─────────────────────────────────────────────────────────────────

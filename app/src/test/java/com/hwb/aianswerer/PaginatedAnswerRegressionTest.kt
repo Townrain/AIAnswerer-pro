@@ -56,6 +56,7 @@ class PaginatedAnswerRegressionTest {
             override fun isLeftSide() = true
             override fun getDensity() = 3f
             override fun setFlagSecure(enabled: Boolean) {}
+            override fun setWindowAlpha(alpha: Float) {}
             override fun updateWindowPosition() {}
             override fun updateWindowHeight() {}
             override fun animateWindowX(targetX: Float, animated: Boolean) {}
