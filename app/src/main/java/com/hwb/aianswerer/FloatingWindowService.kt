@@ -210,6 +210,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             override fun isLeftSide(): Boolean { val w = resources.displayMetrics.widthPixels.toFloat(); return viewModel.floatOffsetX.value < w / 2f }
             override fun getDensity() = resources.displayMetrics.density
             override fun setFlagSecure(enabled: Boolean) { windowMgr.setFlagSecure(touchLayout, enabled) }
+            override fun setWindowAlpha(alpha: Float) { windowMgr.setAlpha(touchLayout, alpha) }
             override fun updateWindowPosition() { this@FloatingWindowService.updateWindowPosition() }
             override fun updateWindowHeight() { updateFloatingWindowHeight() }
             override fun animateWindowX(targetX: Float, animated: Boolean) { this@FloatingWindowService.animateWindowX(targetX, animated) }
@@ -309,15 +310,18 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         fun isLeftSide() = viewModel.floatOffsetX.value < screenW / 2f
 
-        val windowWidthPx = 360 * density
+        // 动态宽度：空闲时窄（仅包住按钮），展开时自动扩宽
+        val narrowW = buttonSizePx + 16 * density
+        viewModel.currentWindowWidthPx = narrowW
 
         fun windowX(): Int {
+            val w = viewModel.currentWindowWidthPx
             return if (isLeftSide()) 0
-            else (screenW - windowWidthPx).toInt().coerceAtLeast(0)
+            else (screenW - w).toInt().coerceAtLeast(0)
         }
 
         val params = windowMgr.createLayoutParams(
-            windowWidthPx = windowWidthPx.toInt(),
+            windowWidthPx = viewModel.currentWindowWidthPx.toInt(),
             windowHeightPx = viewModel.currentWindowHeightPx.toInt(),
             isLeftSide = isLeftSide(),
             offsetY = viewModel.floatOffsetY.value,
@@ -365,6 +369,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             viewModel.paginatedCopyTexts.value = emptyList()
                             viewModel.floatingStatus.value = FloatingStatus.Idle
                             viewModel.statusMessage.value = null
+                            updateFloatingWindowWidth()
                         },
                         onCloseStatus = {
                             viewModel.currentFetchJob?.cancel()
@@ -381,6 +386,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             viewModel.paginatedCopyTexts.value = emptyList()
                             viewModel.floatingStatus.value = FloatingStatus.Idle
                             viewModel.statusMessage.value = null
+                            updateFloatingWindowWidth()
                         },
                         onCopyAnswer = {
                             ClipboardUtil.copyToClipboard(this@FloatingWindowService, viewModel.answerText.value ?: "")
@@ -398,6 +404,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onDragEnd = { leftSide ->
                             viewModel.floatOffsetX.value = if (leftSide) buttonHalf else screenW - buttonHalf
                             animateWindowX(windowX().toFloat(), true)
+                            updateFloatingWindowWidth()
                         },
                         visionEnabled = settings.visionEnabled.value,
                         searchEnabled = settings.searchEnabled.value,
@@ -482,14 +489,17 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                 }
                                 viewModel.startRecording(recorder)
                             }
+                            updateFloatingWindowWidth()
                         },
                         onArcExpandChanged = { expanded ->
                             viewModel.isArcExpanded = expanded
                             updateFloatingWindowHeight()
+                            updateFloatingWindowWidth()
                         },
                         onContentVisibilityChanged = { visible ->
                             viewModel.hasContent = visible
                             updateFloatingWindowHeight()
+                            updateFloatingWindowWidth()
                         },
                         onInteractiveAreaChanged = { left, top, right, bottom ->
                             val contentH = (bottom - top).toInt()
@@ -533,6 +543,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             view = touchLayout,
             windowX = viewModel.displayWindowX.floatValue.toInt(),
             windowY = viewModel.floatOffsetY.value.toInt(),
+            windowWidth = viewModel.currentWindowWidthPx.toInt(),
             windowHeight = viewModel.currentWindowHeightPx.toInt(),
             screenW = screenW,
             screenH = screenH
@@ -559,6 +570,42 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
     }
 
+    /** 动态调整窗口宽度——空闲时窄，有内容时宽，配合 FLAG_NOT_TOUCH_MODAL 实现触摸穿透 */
+    private fun updateFloatingWindowWidth() {
+        if (viewModel.captureInProgress || destroyed) return
+        val density = resources.displayMetrics.density
+        val screenW = resources.displayMetrics.widthPixels.toFloat()
+        val buttonSizePx = settings.floatButtonSizeDp.value * density
+        val marginPx = 8 * density
+        val isLeft = viewModel.floatOffsetX.value < screenW / 2f
+
+        val hasCardContent = viewModel.showAnswer.value ||
+            viewModel.recordingAnswers.value.isNotEmpty() || viewModel.paginatedAnswers.value.isNotEmpty()
+
+        val narrowW = buttonSizePx + 2 * marginPx
+
+        val newWidth = if (hasCardContent || viewModel.hasContent || viewModel.isRecording.value) {
+            360 * density
+        } else if (viewModel.isArcExpanded) {
+            val gapPx = 8 * density
+            val quickRowW = (4 * 40 + 3 * 6 + 8) * density
+            buttonSizePx + 2 * marginPx + gapPx + quickRowW
+        } else {
+            narrowW
+        }
+
+        val prevWidth = viewModel.currentWindowWidthPx
+        if (kotlin.math.abs(newWidth - prevWidth) < 4) return
+
+        val delta = newWidth - prevWidth
+        viewModel.currentWindowWidthPx = newWidth
+
+        if (!isLeft && delta != 0f) {
+            viewModel.displayWindowX.floatValue =
+                (viewModel.displayWindowX.floatValue - delta).coerceAtLeast(0f)
+        }
+        updateWindowPosition()
+    }
     private fun setWindowVisible(visible: Boolean) {
         windowMgr.setVisible(touchLayout, visible, settings.stealthMode.value)
     }

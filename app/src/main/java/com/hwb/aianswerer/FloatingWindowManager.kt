@@ -73,6 +73,7 @@ class FloatingWindowManager(private val context: Context) {
         view: View?,
         windowX: Int,
         windowY: Int,
+        windowWidth: Int,
         windowHeight: Int,
         alpha: Float = 1f,
         screenW: Float,
@@ -80,6 +81,7 @@ class FloatingWindowManager(private val context: Context) {
     ) {
         view ?: return
         val p = windowParams ?: return
+        p.width = windowWidth
         p.x = windowX.coerceIn(0, maxOf(0, screenW.toInt() - p.width))
         p.y = windowY.coerceIn(0, maxOf(0, screenH.toInt() - p.height))
         p.height = windowHeight
@@ -113,6 +115,18 @@ class FloatingWindowManager(private val context: Context) {
             windowManager.updateViewLayout(view, p)
         } catch (e: Exception) {
             AppLog.e("FWM", "setFlagSecure failed", e)
+        }
+    }
+
+    /** 设置窗口透明度，用于截图期间完全隐藏悬浮窗 */
+    fun setAlpha(view: View?, alpha: Float) {
+        view ?: return
+        val p = windowParams ?: return
+        p.alpha = alpha
+        try {
+            windowManager.updateViewLayout(view, p)
+        } catch (e: Exception) {
+            AppLog.e("FWM", "setAlpha failed", e)
         }
     }
 

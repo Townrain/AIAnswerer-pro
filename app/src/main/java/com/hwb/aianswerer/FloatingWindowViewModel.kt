@@ -35,6 +35,7 @@ class FloatingWindowViewModel : ViewModel() {
         fun isLeftSide(): Boolean
         fun getDensity(): Float
         fun setFlagSecure(enabled: Boolean)
+        fun setWindowAlpha(alpha: Float)
         fun updateWindowPosition()
         fun updateWindowHeight()
         fun animateWindowX(targetX: Float, animated: Boolean)
@@ -62,6 +63,7 @@ class FloatingWindowViewModel : ViewModel() {
     var isArcExpanded = false
     var hasContent = false
     var currentWindowHeightPx = 0f
+    var currentWindowWidthPx = 0f
     var measuredContentHeightPx = 0f
     var captureInProgress = false
 
@@ -190,6 +192,7 @@ class FloatingWindowViewModel : ViewModel() {
         override fun setCurrentWindowHeightPx(h: Float) { currentWindowHeightPx = h; ctx?.setCurrentWindowHeightPx(h) }
 
         override fun setFlagSecure(enabled: Boolean) { ctx?.setFlagSecure(enabled) }
+        override fun setWindowAlpha(alpha: Float) { ctx?.setWindowAlpha(alpha) }
         override fun updateWindowPosition() { ctx?.updateWindowPosition() }
         override fun updateWindowHeight() { ctx?.updateWindowHeight() }
         override fun showError(message: String) { ctx?.showErrorToUser(message) }

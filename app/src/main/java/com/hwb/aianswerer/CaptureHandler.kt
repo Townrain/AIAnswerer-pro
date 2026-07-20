@@ -42,6 +42,7 @@ interface CaptureHandlerCallbacks {
 
     // ── Window operations ──────────────────────────────────────────────
     fun setFlagSecure(enabled: Boolean)
+    fun setWindowAlpha(alpha: Float)
     fun updateWindowPosition()
     fun updateWindowHeight()
 
@@ -152,42 +153,46 @@ class CaptureHandler(
                 } else {
                     // Screenshot path: non-accessibility mode, or accessibility+VLM
                     val wasStealth = callbacks.isStealthModeEnabled()
-                    callbacks.setFlagSecure(enabled = true)
-                    delay(FLAG_SECURE_DELAY_MS)
-                    var bitmap = screenCaptureManager?.captureScreen()
-                    if (bitmap == null) {
-                        delay(300)
-                        bitmap = screenCaptureManager?.captureScreen()
-                    }
-                    if (!wasStealth) {
-                        callbacks.setFlagSecure(enabled = false)
-                    }
-                    callbacks.setCaptureInProgress(false)
-                    if (bitmap == null) {
-                        // Accessibility+VLM mode: fall back to screen text (same as normal mode)
-                        if (AppConfig.isAccessibilityCaptureMode()) {
-                            // Accessibility+VLM fallback: read screen text
-                            val screenText = readScreenWithRetry()
-                            if (screenText.isNullOrBlank()) {
-                                callbacks.showError("截图失败且屏幕读取失败")
+                    try {
+                        callbacks.setWindowAlpha(0f)           // hide window
+                        callbacks.setFlagSecure(enabled = false) // remove FLAG_SECURE for clean screenshot
+                        delay(FLAG_SECURE_DELAY_MS)
+                        var bitmap = screenCaptureManager?.captureScreen()
+                        if (bitmap == null) {
+                            delay(300)
+                            bitmap = screenCaptureManager?.captureScreen()
+                        }
+                        callbacks.setCaptureInProgress(false)
+                        if (bitmap == null) {
+                            // Accessibility+VLM mode: fall back to screen text (same as normal mode)
+                            if (AppConfig.isAccessibilityCaptureMode()) {
+                                // Accessibility+VLM fallback: read screen text
+                                val screenText = readScreenWithRetry()
+                                if (screenText.isNullOrBlank()) {
+                                    callbacks.showError("截图失败且屏幕读取失败")
+                                    return@launch
+                                }
+                                if (!pipeline.looksLikeQuestion(screenText)) {
+                                    callbacks.showError("未识别到题目")
+                                    return@launch
+                                }
+                                callbacks.setHasContent(true)
+                                callbacks.updateWindowHeight()
+                                callbacks.showToast("视觉模型截图失败，已使用屏幕文字")
+                                recorder.processText(screenText)
+                            } else {
+                                callbacks.showError("截图失败")
                                 return@launch
                             }
-                            if (!pipeline.looksLikeQuestion(screenText)) {
-                                callbacks.showError("未识别到题目")
-                                return@launch
-                            }
+                        } else {
                             callbacks.setHasContent(true)
                             callbacks.updateWindowHeight()
-                            callbacks.showToast("视觉模型截图失败，已使用屏幕文字")
-                            recorder.processText(screenText)
-                        } else {
-                            callbacks.showError("截图失败")
-                            return@launch
+                            dispatchCropForRecording(bitmap)
                         }
-                    } else {
-                        callbacks.setHasContent(true)
-                        callbacks.updateWindowHeight()
-                        dispatchCropForRecording(bitmap)
+                    } finally {
+                        callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)  // restore alpha
+                        if (wasStealth) { callbacks.setFlagSecure(enabled = true) } // restore FLAG_SECURE
+                        callbacks.setCaptureInProgress(false)
                     }
                 }
                 callbacks.setStatus(FloatingStatus.Idle)
@@ -237,13 +242,13 @@ class CaptureHandler(
                     }
 
                     val wasStealth = callbacks.isStealthModeEnabled()
-                    callbacks.setFlagSecure(enabled = true)
+                    callbacks.setWindowAlpha(0f)
+                    callbacks.setFlagSecure(enabled = false)
                     delay(FLAG_SECURE_DELAY_MS)
-
-                bitmap = screenCaptureManager?.captureScreen()
+                    bitmap = screenCaptureManager?.captureScreen()
                     callbacks.setCaptureInProgress(false)
-
-                    if (!wasStealth) callbacks.setFlagSecure(enabled = false)
+                    callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
+                    if (wasStealth) callbacks.setFlagSecure(enabled = true)
 
                     if (bitmap == null) {
                         callbacks.showError("截图失败")
@@ -297,8 +302,9 @@ class CaptureHandler(
         }
 
         callbacks.getCurrentFetchJob()?.cancel()
-        // Actually set it — use the service’s own Job holder
+        // Actually set it — use the service's own Job holder
         val job = serviceScope.launch {
+            val wasStealth = callbacks.isStealthModeEnabled()
             try {
                 callbacks.setShowAnswer(false)
                 callbacks.setStatus(FloatingStatus.Idle)
@@ -324,19 +330,17 @@ class CaptureHandler(
                 callbacks.setCurrentWindowHeightPx(idleH)
                 callbacks.updateWindowPosition()
 
-                val wasStealth = callbacks.isStealthModeEnabled()
-                callbacks.setFlagSecure(enabled = true)
+                callbacks.setWindowAlpha(0f)
+                callbacks.setFlagSecure(enabled = false)
                 delay(FLAG_SECURE_DELAY_MS)
-
                 val bitmap = withTimeout(8_000L) {
                     screenCaptureManager?.captureScreen()
                 }
-                AppLog.d("CaptureHandler", "captureScreen done, bitmap=${bitmap != null}")
-
-                if (!wasStealth) {
-                    callbacks.setFlagSecure(enabled = false)
-                }
+                callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
+                if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
                 callbacks.setCaptureInProgress(false)
+
+                AppLog.d("CaptureHandler", "captureScreen done, bitmap=${bitmap != null}")
 
                 if (bitmap == null) {
                     callbacks.showError("截图失败")
@@ -347,6 +351,9 @@ class CaptureHandler(
 
                 dispatchCropThenRecognize(bitmap)
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
+                if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
+                callbacks.setCaptureInProgress(false)
                 callbacks.setStatus(FloatingStatus.Idle)
                 callbacks.setStatusMessage(null)
                 callbacks.showToast("截图超时，请重试")
@@ -391,7 +398,13 @@ class CaptureHandler(
             callbacks.setCaptureInProgress(true)
             callbacks.setStatus(FloatingStatus.Capturing)
             delay(COMPOSE_DELAY_MS)
+            val wasStealth = callbacks.isStealthModeEnabled()
+            callbacks.setWindowAlpha(0f)
+            callbacks.setFlagSecure(enabled = false)
+            delay(FLAG_SECURE_DELAY_MS)
             val bitmap = screenCaptureManager?.captureScreen()
+            callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
+            if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
             callbacks.setCaptureInProgress(false)
             if (bitmap != null) {
                 processBitmapWithVlm(bitmap)
