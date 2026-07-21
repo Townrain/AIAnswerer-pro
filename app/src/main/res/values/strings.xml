@@ -459,4 +459,31 @@
     <string name="recording_processing_header">处理中 (%1$d/%2$d)</string>
     <string name="recording_done_header">全部完成 (共 %1$d 题)</string>
     <string name="recording_more_coming">更多答题中…</string>
+
+    <!-- 调试日志 -->
+    <string name="debug_section_title">调试工具</string>
+    <string name="debug_log_toggle">详细调试日志</string>
+    <string name="debug_log_toggle_desc">开启后在日志中记录详细的调试信息，便于排查问题</string>
+    <string name="debug_export_logs">导出日志</string>
+    <string name="debug_export_logs_desc">将最近的日志打包为 ZIP 文件并分享</string>
+    <string name="debug_export_success">日志已导出</string>
+    <string name="debug_export_failed">日志导出失败</string>
+    <string name="debug_no_logs">暂无日志文件</string>
+    <string name="debug_log_share_title">AI答题助手调试日志</string>
+
+    <!-- 增强错误信息 -->
+    <string name="error_api_empty_stream">AI 未返回有效内容，请检查：
+1. 模型是否支持流式输出
+2. API Key 是否有效
+3. 如果是推理模型（R1），可尝试在设置中切换非推理模型</string>
+    <string name="error_api_http_status">API 返回错误 (HTTP %1$d)，请检查 API 地址和 Key</string>
+    <string name="error_network_unavailable">网络不可用，请检查网络连接</string>
+    <string name="error_llm_timeout">AI 响应超时 (60s)，可尝试：
+1. 检查网络状况
+2. 换用更快的模型
+3. 减少联网搜索</string>
+    <string name="error_llm_unknown">AI 请求失败: %s
+可尝试：检查 API 配置、重启应用、或导出日志排查</string>
+    <string name="error_multi_question_all_failed">所有题目答题失败，请检查 API 配置</string>
+    <string name="error_multi_question_partial">%1$d 题成功，%2$d 题失败</string>
 </resources>
