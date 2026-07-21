@@ -573,6 +573,7 @@ private suspend fun Call.awaitStreamContent(): String =
                         if (content.isBlank()) {
                             AppLog.w("API", "stream returned empty content (parsed $contentChunks content + $reasonChunks reasoning from $chunkCount total chunks)")
                             cont.resumeWithException(IOException("stream returned empty content"))
+                        } else {
                             AppLog.d("API", "stream completed: ${content.length} chars (content=$contentChunks chunks, reasoning=$reasonChunks chunks, total=$chunkCount)")
                             cont.resume(content)
                         }
