@@ -111,14 +111,16 @@ class OpenAIClient {
                 model = modelName,
                 messages = messages,
                 temperature = AppConfig.getLlmTemperature(),
-                maxTokens = 512,
+                maxTokens = 4096,
                 reasoningEffort = AppConfig.getReasoningEffort(),
                 stream = true
             )
 
-            val requestBody = gson.toJson(chatRequest)
+            val requestJson = gson.toJson(chatRequest)
+                // 移除以 null 值序列化的字段，避免 API 误解（如 reasoning_effort:null 被当作启用推理）
+                .replace(Regex(""",\\s*\"[^\"]+\":\\s*null"""), "")
+            val requestBody = requestJson
                 .toRequestBody("application/json; charset=utf-8".toMediaType())
-
             val request = Request.Builder()
                 .url(apiUrl)
                 .addHeader("Authorization", "Bearer $apiKey")
@@ -132,7 +134,7 @@ class OpenAIClient {
             }
 
             AppLog.d("API", "AI原始响应长度: ${answerContent.length}")
-
+            AppLog.i("API", "AI原始完整响应: $answerContent")
             // 解析AI返回的JSON答案
             // 策略：先直接解析原文（AI通常返回干净JSON），失败再提取+修复
             val result = Result.success(answerExtractor.parseJsonAnswers(answerContent))
@@ -141,11 +143,32 @@ class OpenAIClient {
             result
 
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            Result.failure(Exception(MyApplication.getString(R.string.error_api_timeout)))
+            AppLog.e("API", "analyzeQuestion timeout after ${WITH_TIMEOUT_MS}ms")
+            Result.failure(java.io.IOException(MyApplication.getString(R.string.error_llm_timeout)))
         } catch (e: CancellationException) {
             throw e
+        } catch (e: java.io.IOException) {
+            val msg = e.message ?: ""
+            AppLog.e("API", "analyzeQuestion IOException: $msg")
+            val userMsg = when {
+                msg.contains("stream returned empty content") ->
+                    MyApplication.getString(R.string.error_api_empty_stream)
+                msg.startsWith("HTTP") -> {
+                    val code = msg.removePrefix("HTTP ").split(" ").firstOrNull()?.toIntOrNull() ?: 0
+                    MyApplication.getString(R.string.error_api_http_status, code)
+                }
+                msg.contains("Unable to resolve host") || msg.contains("UnknownHost") ->
+                    MyApplication.getString(R.string.error_api_unknown_host)
+                msg.contains("timeout") || msg.contains("timed out") ->
+                    MyApplication.getString(R.string.error_api_timeout)
+                msg.contains("SSL") || msg.contains("certificate") ->
+                    MyApplication.getString(R.string.error_api_ssl)
+                else -> MyApplication.getString(R.string.error_llm_unknown, msg)
+            }
+            Result.failure(java.io.IOException(userMsg))
         } catch (e: Exception) {
-            Result.failure(e)
+            AppLog.e("API", "analyzeQuestion unexpected: ${e.message}", e)
+            Result.failure(Exception(MyApplication.getString(R.string.error_llm_unknown, e.message ?: "未知错误")))
         }
     }
 
@@ -471,12 +494,13 @@ private data class ChatStreamChunk(
         val finish_reason: String?
     )
     data class StreamDelta(
-        val content: String?
+        val content: String?,
+        val reasoning_content: String? = null
     )
 }
 
 /**
- * 流式读取 SSE 响应，累积所有 delta.content 后返回完整文本。
+ * 流式读取 SSE 响应，累积所有 delta.content 与 delta.reasoning_content 后返回完整文本。
  *
  * 协程取消时调用 call.cancel() 中断 HTTP 连接。
  * 与 awaitCancellable 不同，本函数在返回前完成整个 SSE 流的读取，
@@ -512,7 +536,11 @@ private suspend fun Call.awaitStreamContent(): String =
                         val body = resp.body
                             ?: run { cont.resumeWithException(IOException("empty body")); return }
                         val reader = body.charStream().buffered()
-                        val contentBuilder = StringBuilder()
+                        val answerBuilder = StringBuilder()
+                        val reasonBuilder = StringBuilder()
+                        var chunkCount = 0
+                        var contentChunks = 0
+                        var reasonChunks = 0
                         reader.useLines { lines ->
                             for (line in lines) {
                                 if (!line.startsWith("data: ")) continue
@@ -520,18 +548,32 @@ private suspend fun Call.awaitStreamContent(): String =
                                 if (data == "[DONE]") break
                                 try {
                                     val chunk = JsonUtil.gson.fromJson(data, ChatStreamChunk::class.java)
-                                    chunk.choices?.firstOrNull()?.delta?.content?.let {
-                                        contentBuilder.append(it)
+                                    chunk.choices?.firstOrNull()?.delta?.let { delta ->
+                                        delta.content?.let { answerBuilder.append(it); contentChunks++ }
+                                        delta.reasoning_content?.let { reasonBuilder.append(it); reasonChunks++ }
                                     }
+                                    chunkCount++
                                 } catch (_: Exception) {
                                     // 跳过无法解析的 chunk（如注释行或空白 data）
                                 }
                             }
                         }
-                        val content = contentBuilder.toString()
+                        // 优先用 answer（content），为空时检查 reasoning_content 是否含 JSON
+                        var content = answerBuilder.toString()
+                        if (content.isBlank() && reasonBuilder.isNotEmpty()) {
+                            val reason = reasonBuilder.toString()
+                            // 仅当 reasoning_content 包含 JSON 结构时才回退，避免使用纯思考文本
+                            if (reason.contains('{') || reason.contains('[')) {
+                                AppLog.d("API", "content empty, falling back to reasoning_content (${reason.length} chars, contains JSON)")
+                                content = reason
+                            } else {
+                                AppLog.w("API", "content empty, reasoning_content is non-JSON text (${reason.length} chars) — skipping fallback")
+                            }
+                        }
                         if (content.isBlank()) {
+                            AppLog.w("API", "stream returned empty content (parsed $contentChunks content + $reasonChunks reasoning from $chunkCount total chunks)")
                             cont.resumeWithException(IOException("stream returned empty content"))
-                        } else {
+                            AppLog.d("API", "stream completed: ${content.length} chars (content=$contentChunks chunks, reasoning=$reasonChunks chunks, total=$chunkCount)")
                             cont.resume(content)
                         }
                     }

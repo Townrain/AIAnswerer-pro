@@ -2,53 +2,12 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
-## [1.6.5] - 2026-07-22
+## [1.6.2] - 2026-07-22
 
 ### Fixed
 - **多厂商页测试连接绕过模型选择**：`ModelsPage` 测试按钮在 `selectedModels` 为空时 fallback 到 `availableModels.firstOrNull()`，导致用户未显式选模型也能测试。移除该 fallback，强制要求先选中模型才能测试连接
-
-### Changed
-- 多厂商模型测试连接逻辑：`ps.selectedModels.firstOrNull() ?: ps.def.availableModels.firstOrNull()` → `ps.selectedModels.firstOrNull()`，仅使用用户显式选中的模型
-
-## [1.6.4] - 2026-07-20
-
-### Fixed
 - **悬浮按钮拖拽卡死**：`pointerInput(pillW)` 在 pill 首次布局测量完成后因 key 变化重启手势检测器，导致 `onDragCancel` 触发后无法重新开始拖拽。修复为 `pointerInput(Unit)` 稳定键
-- **动态窗口宽度拖拽裁剪**：v1.6.3 引入的窄空闲窗口（56dp）导致 pill 拖拽时右边缘超出窗口被裁剪。修复为始终全屏宽度，通过 `InteractiveTouchLayout.setInteractiveRect()` 做选择性触摸穿透（该机制已在 v1.6.3 定义但从未被调用）
-- **pill 右边缘超出屏幕**：拖拽约束 `coerceIn(marginPx, sW - marginPx)` 只限制左边缘，右边缘越界。改为 `coerceIn(0, sW - pillW)` 使用实时测量宽度限制右边缘
-- **pill 贴边优化**：初始位置、snap 目标、闲置位置三处 `marginPx`（8dp）统一改为 0，pill 完全贴紧屏幕边缘
 - **录制进度卡片不显示**：`FloatingAnswerCard` 提取时误将 `!showAnswer` 写成 `!showCard`，导致录制中状态判断错误
-
-### Changed
-- 窗口宽度初始化从 `narrowW`（~56dp）改为 `screenW`（全屏宽），`updateFloatingWindowWidth()` 增加 `.coerceAtLeast(screenW)` 保底
-- `FloatingWindowContent` 答案卡片区提取为独立组件 `FloatingAnswerCard.kt`（97行）
-
-### Refactored
-- **图标去重**：`IcCapture`（放大镜）合并至 `LocalIcons.Search`；`IcVision` 改为 `LocalIcons.Vision` 别名。删除 31 行重复 path 定义
-- **主题合规**：`PillButtonCard.kt` 中 `pillVisual()` 6 处 + `StatusDot()` 3 处硬编码 `Color(0xFF...)` 全部替换为主题色常量。新增 `ImageCollectingPurple/Dark/Light` 颜色常量
-- **动画可测试性**：提取 `computeButtonScale()` 纯函数 + `resolvePillClickAction()` 纯函数，新增 8 个单元测试
-- **onInteractiveAreaChanged 连线**：`LaunchedEffect` 中的交互区域计算现在正确传递给 `touchLayout.setInteractiveRect()`（之前仅用于高度测量）
-
-### Added
-- `FloatingAnswerCard.kt` — 答案卡片独立组件，支持翻页/进度/单题三种模式
-- 18 个回归测试（`resolvePillClickAction` 4 个 + `computeButtonScale` 4 个，从原 10 个增至 18 个）
-## [1.6.3] - 2026-07-20
-
-### Fixed
-- **悬浮窗触摸阻挡问题**：主按钮改为动态窗口宽度——空闲时窗口仅 56dp 宽（刚好包住 pill 按钮），长按唤出快捷按钮时自动扩至 ~280dp，显示答案/录制时保持 360dp。配合 `FLAG_NOT_TOUCH_MODAL`，窗口外的触摸自然穿透给底层 App，不再阻挡正常操作
-- **截图时窗口闪烁修复**：截图期间通过 `setWindowAlpha(0f)` 隐藏悬浮窗替代 FLAG_SECURE 闪烁方案，配合 `setFlagSecure(false)` 确保截图不含悬浮窗残留，截图完成后恢复透明度
-- **隐身模式截图黑屏**：`FLAG_SECURE` 导致 MediaProjection 截图窗口区域为黑色方块，OCR 无法识别。修复：截图前移除 FLAG_SECURE + alpha=0 隐藏悬浮窗，截图后依隐身模式恢复。4 条截图路径全部统一处理，Recording 路径增加 try-finally、Normal 模式超时 catch 补充恢复逻辑，确保 FLAG_SECURE 不泄漏
-
-### Changed
-- `FloatingWindowManager.updateLayout()` 新增 `windowWidth` 参数支持动态窗口宽度
-- `FloatingWindowViewModel` 新增 `currentWindowWidthPx` 字段追踪窗口宽度
-- `FloatingWindowService.updateFloatingWindowWidth()` 根据状态（空闲/快捷按钮展开/有内容）自动计算并应用窗口宽度
-- 右侧悬浮窗扩宽时自动向左延伸，保证 pill 按钮屏幕位置不变
-- `CaptureHandler` 截图流程改用 `setWindowAlpha` 透明化方案：截图前 `alpha=0f`，截图后恢复，超时异常路径同样恢复
-
-## [1.6.2] - 2026-07-20
-
-### Fixed
 - **暗色模式按钮主题响应**：`AnimatedButton` 的 Primary/Tonal 变体改用 `sandboxTheme()` 的 `t.p` 动态取色，替换硬编码 `PremiumPrimary`(#6C5CE7) 和 `darkAccentGradient`。切换主题预设后按钮会随主色变化，不再固定紫色
 - **LLM 提供商 URL 双版本拼接 Bug**：`resolveApiUrl()` / `resolveVisionBaseUrl()` / `DynamicApiClient.testConnection()` 修复仅识别 `/v1` 的问题，用正则 `.*/v\\d+\\w*$` 匹配任意 `/vN` 版本号（含 v1/v2/v3/v4/v1beta 等），智谱(v4)、豆包(v3)、百度千帆(v2) 不再误拼 `/v4/v1/chat/completions`
 - **DynamicApiClient URL 双倍路径**：`buildModelListUrl()` 拼接 `/models` 前清除已知端点后缀，`testConnection()` 增加 host 已是完整 chat URL 的检测
@@ -56,8 +15,19 @@ All notable changes to AIAnswerer will be documented in this file.
 - **DynamicApiClient 重复 catch**：移除 `testConnection()` 中重复的 `TimeoutCancellationException` catch 块 + 重复 `throw e`
 
 ### Changed
+- 多厂商模型测试连接逻辑：仅使用用户显式选中的模型，不再 fallback 到可用列表第一个
 - `ProviderConfigResolver.resolveApiUrl()` 增加 `endsWith("/chat/completions")` 前置判断，避免已有完整 URL 重复拼接
 - 测试 `resolveApiUrl - host with trailing slash` 用例更新为修复后的期望值
+- **LLM 答题 `maxTokens` 512 → 4096**，避免推理模式/复杂题目答案截断
+
+### Refactored
+- **图标去重**：`IcCapture`（放大镜）合并至 `LocalIcons.Search`；`IcVision` 改为 `LocalIcons.Vision` 别名。删除 31 行重复 path 定义
+- **主题合规**：`PillButtonCard.kt` 中 `pillVisual()` 6 处 + `StatusDot()` 3 处硬编码 `Color(0xFF...)` 全部替换为主题色常量。新增 `ImageCollectingPurple/Dark/Light` 颜色常量
+- **动画可测试性**：提取 `computeButtonScale()` 纯函数 + `resolvePillClickAction()` 纯函数，新增 8 个单元测试
+
+### Added
+- `FloatingAnswerCard.kt` — 答案卡片独立组件，支持翻页/进度/单题三种模式
+- 18 个回归测试（`resolvePillClickAction` 4 个 + `computeButtonScale` 4 个，从原 10 个增至 18 个）
 
 ## [1.6.1] - 2026-07-19
 
