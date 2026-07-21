@@ -286,7 +286,7 @@ fun ModelsPage(t: Th, onBack: () -> Unit) {
                                 testStates = testStates + (ps.def.id to TestState.Error("请先填写 API Host 和 Key"))
                                 return@ModelProviderCard
                             }
-                            val model = ps.selectedModels.firstOrNull() ?: ps.def.availableModels.firstOrNull()
+                            val model = ps.selectedModels.firstOrNull()
                             if (model.isNullOrBlank()) {
                                 testStates = testStates + (ps.def.id to TestState.Error("请先添加并选择一个模型"))
                                 return@ModelProviderCard

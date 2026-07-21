@@ -2,6 +2,13 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
+## [1.6.5] - 2026-07-22
+
+### Fixed
+- **多厂商页测试连接绕过模型选择**：`ModelsPage` 测试按钮在 `selectedModels` 为空时 fallback 到 `availableModels.firstOrNull()`，导致用户未显式选模型也能测试。移除该 fallback，强制要求先选中模型才能测试连接
+
+### Changed
+- 多厂商模型测试连接逻辑：`ps.selectedModels.firstOrNull() ?: ps.def.availableModels.firstOrNull()` → `ps.selectedModels.firstOrNull()`，仅使用用户显式选中的模型
 
 ## [1.6.4] - 2026-07-20
 
