@@ -190,7 +190,7 @@ class CaptureHandler(
                             dispatchCropForRecording(bitmap)
                         }
                     } finally {
-                        callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)  // restore alpha
+                        callbacks.setWindowAlpha(if (wasStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)  // restore alpha
                         if (wasStealth) { callbacks.setFlagSecure(enabled = true) } // restore FLAG_SECURE
                         callbacks.setCaptureInProgress(false)
                     }
@@ -247,7 +247,7 @@ class CaptureHandler(
                     delay(FLAG_SECURE_DELAY_MS)
                     bitmap = screenCaptureManager?.captureScreen()
                     callbacks.setCaptureInProgress(false)
-                    callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
+                    callbacks.setWindowAlpha(if (wasStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
                     if (wasStealth) callbacks.setFlagSecure(enabled = true)
 
                     if (bitmap == null) {
@@ -336,7 +336,7 @@ class CaptureHandler(
                 val bitmap = withTimeout(8_000L) {
                     screenCaptureManager?.captureScreen()
                 }
-                callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
+                callbacks.setWindowAlpha(if (wasStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
                 if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
                 callbacks.setCaptureInProgress(false)
 
@@ -351,7 +351,7 @@ class CaptureHandler(
 
                 dispatchCropThenRecognize(bitmap)
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
+                callbacks.setWindowAlpha(if (wasStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
                 if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
                 callbacks.setCaptureInProgress(false)
                 callbacks.setStatus(FloatingStatus.Idle)
@@ -403,8 +403,8 @@ class CaptureHandler(
             callbacks.setFlagSecure(enabled = false)
             delay(FLAG_SECURE_DELAY_MS)
             val bitmap = screenCaptureManager?.captureScreen()
-            callbacks.setWindowAlpha(if (wasStealth) 0.99f else 1f)
-            if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
+                callbacks.setWindowAlpha(if (wasStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
+                if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
             callbacks.setCaptureInProgress(false)
             if (bitmap != null) {
                 processBitmapWithVlm(bitmap)

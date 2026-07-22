@@ -14,6 +14,14 @@ object Constants {
     const val NOTIFICATION_CHANNEL_ID = "ai_answerer_service"
     const val NOTIFICATION_ID = 1001
 
+    // ── 悬浮窗隐身模式常量 ──
+    /** 隐身模式下的窗口透明度（接近可见但截图/录屏时显示空白） */
+    const val STEALTH_ALPHA = 0.99f
+    /** 完全可见透明度 */
+    const val VISIBLE_ALPHA = 1f
+    /** 完全隐藏透明度（用于截图时隐藏窗口） */
+    const val HIDDEN_ALPHA = 0f
+
     // 提示词版本（修改提示词后递增，便于追踪效果变化）
     const val PROMPT_VERSION = 2
 

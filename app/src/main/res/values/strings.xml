@@ -130,7 +130,7 @@
     <string name="about_libraries_title">核心第三方库</string>
     <string name="about_github_title">GitHub</string>
     <string name="about_github_subtitle">GitHub</string>
-    <string name="about_github_link" translatable="false">https://github.com/Townrain/AIAnswerer-Android</string>
+    <string name="about_github_link" translatable="false">https://github.com/Townrain/AIAnswerer-pro</string>
     <string name="about_language_title">语言设置</string>
     <string name="about_language_chinese">简体中文</string>
     <string name="about_language_english">English</string>

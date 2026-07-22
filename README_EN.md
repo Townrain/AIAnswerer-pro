@@ -12,7 +12,7 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 ### Feature Highlights
 - 🖼️ Quick Screen Capture: One-click screenshot of the current screen, automatically focusing on the question area
 - 📖 Screen Reading Mode: Directly read screen text through accessibility services without screenshots, faster speed
-- 📝 Smart Text Recognition: Supports Chinese and English recognition, with editing and correction before submission
+- 📝 Smart Text Recognition: Supports CJK/FR/DE/ES/PT local OCR + VLM cloud recognition for RU/AR
 - 👁️ Vision Model Support: Can use vision models instead of OCR, suitable for noisy pages
 - 🔍 Web Search Enhancement: Automatically search related materials as answering references
 - 🤖 AI Real-time Answering: Generate analysis based on question types and automatically copy answers
@@ -20,14 +20,15 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 - ⚡ Parallel Answering: Support concurrent processing in multi-question mode, significantly improving answering speed
 - 💬 Floating Window Operation: Complete screenshots, preview, and submission without switching apps
 - 🔒 Local Control: Custom API Key, start/stop network requests anytime
-- 🌐 Bilingual Support: Support Chinese and English interface switching
+- 🎨 8 Built-in Themes: Including Claude Warm coral tones + JSON import for custom themes, floating button auto-colors with theme
+- 🌐 Multilingual UI: Chinese/English interface + 11 AI output languages (CN/EN/JP/FR/DE/ES/PT/KO/RU/AR + adaptive)
 
 ### Tech Stack
 | Category | Technology |
 |----------|------------|
 | Language | Kotlin 2.0.21 |
 | UI | Jetpack Compose + Material3 |
-| OCR | Google ML Kit (Chinese + Latin) |
+| OCR | Google ML Kit (Chinese/Latin/Japanese/Korean) + VLM fallback |
 | Vision Model | OpenAI Compatible API (DeepSeek/GPT-4o, etc.) |
 | Web Search | Multi-provider (Tavily/Bocha/Zhipu etc.) |
 | Network | OkHttp 4.12.0 |
@@ -71,18 +72,21 @@ com.hwb.aianswerer/
 ├── MyApplication.kt          # Application initialization
 ├── MainActivity.kt           # Main interface (permission management, answer settings)
 ├── FloatingWindowService.kt  # Floating window core service
-├── ScreenReaderService.kt    # Accessibility screen reading service
-├── ScreenCaptureManager.kt   # Screenshot management (MediaProjection)
-├── TextRecognitionManager.kt # OCR text recognition
+├── FloatingWindowManager.kt  # Window management (position/animation)
+├── FloatingWindowViewModel.kt # Floating window state management
+├── InteractiveTouchLayout.kt # Touch-through container
+├── CaptureHandler.kt         # Screenshot → crop → recognition pipeline
+├── CapturePipeline.kt        # Core recognition pipeline (OCR→VLM→LLM)
+├── FloatingAnswerCard.kt     # Answer card component
 ├── ConfirmTextActivity.kt    # Recognition text confirmation/editing
 ├── ImageCropActivity.kt      # Image cropping (four-corner drag)
 ├── SettingsActivity.kt       # General settings
 ├── ModelSettingsActivity.kt  # API model configuration
 ├── AboutActivity.kt          # About page
-├── Constants.kt              # Constants and system prompts
+├── Constants.kt              # Constants · prompt assembly · i18n routing hub
 ├── api/
 │   ├── OpenAIClient.kt       # OpenAI compatible API client
-│   ├── WebSearchProviders.kt  # Multi-provider web search
+│   ├── WebSearchProviders.kt # Multi-provider web search
 │   └── vision/               # Vision model module
 │       ├── VisionProvider.kt
 │       ├── VisionProviderFactory.kt
@@ -105,8 +109,8 @@ com.hwb.aianswerer/
 
 ### Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). Recent highlights:
+See [CHANGELOG.md](CHANGELOG.md) or [变更日志](变更日志.md). Recent highlights:
+- **v1.7.0**: Three-window floating architecture (A/B/C independent windows) + stealth mode constants extraction + notification stealth protection + deprecated API cleanup
 - **v1.6.2**: Dark mode button theme responsiveness + multi-version API URL fix (v2/v3/v4 compatibility)
-- **v1.6.1**: 11 output languages + new logo + 24x test speedup
 ### License
 This project is released under the [GNU Affero General Public License v3.0](/LICENSE)

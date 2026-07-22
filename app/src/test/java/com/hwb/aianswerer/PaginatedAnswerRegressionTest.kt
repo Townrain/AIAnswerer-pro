@@ -57,15 +57,10 @@ class PaginatedAnswerRegressionTest {
             override fun getDensity() = 3f
             override fun setFlagSecure(enabled: Boolean) {}
             override fun setWindowAlpha(alpha: Float) {}
-            override fun updateWindowPosition() {}
-            override fun updateWindowHeight() {}
             override fun animateWindowX(targetX: Float, animated: Boolean) {}
-            override fun getCurrentWindowHeightPx() = 0f
-            override fun setCurrentWindowHeightPx(h: Float) {}
             override fun setHasContent(has: Boolean) {}
             override fun onImageText(text: String) {}
             override fun onRecordingBitmap(bitmap: android.graphics.Bitmap) {}
-            override fun updateFloatingWindowHeight() {}
         })
 
         vm.startRecording(mockRecorder)
