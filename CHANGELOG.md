@@ -2,251 +2,273 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
+## [1.7.0] - 2026-07-22
+
+### Added
+- Three-window floating architecture: Split single floating window into A (Pill), B (Toggles), C (Card) independent windows, each self-contained with natural touch-through in gaps
+- Constants: Added STEALTH_ALPHA, VISIBLE_ALPHA, HIDDEN_ALPHA named constants replacing hardcoded magic numbers
+
+### Fixed
+- Notification content now hidden when stealth mode is enabled — shows app name only instead of detailed content
+- Stealth mode reading consolidated through AppConfig.isStealthModeEnabled(), eliminating duplicate direct MMKV access
+
+### Changed
+- FloatingWindowManager fully rewritten for multi-window management: added attachA/B/C, detachA/B/C, per-window updateLayoutA/B/C
+- FloatingWindowService heavily refactored for three-window coordination and position synchronization
+- FloatingWindowViewModel: Removed deprecated single-window methods (updateWindowPosition, updateWindowHeight, getCurrentWindowHeightPx, setCurrentWindowHeightPx, updateFloatingWindowHeight)
+- RecordingResultCard refactored
+- FloatingComponents: Added cardWidthDp (360.dp) as Window C fixed width
+- FloatingWindowManagerTest: Added 669 lines of multi-window operation test coverage
+
+### Removed
+- PaginatedAnswerRegressionTest (obsolete after three-window architecture change)
+- Deprecated ServiceContext single-window interface methods
+
 ## [1.6.2] - 2026-07-22
 
 ### Fixed
-- **多厂商页测试连接绕过模型选择**：`ModelsPage` 测试按钮在 `selectedModels` 为空时 fallback 到 `availableModels.firstOrNull()`，导致用户未显式选模型也能测试。移除该 fallback，强制要求先选中模型才能测试连接
-- **悬浮按钮拖拽卡死**：`pointerInput(pillW)` 在 pill 首次布局测量完成后因 key 变化重启手势检测器，导致 `onDragCancel` 触发后无法重新开始拖拽。修复为 `pointerInput(Unit)` 稳定键
-- **录制进度卡片不显示**：`FloatingAnswerCard` 提取时误将 `!showAnswer` 写成 `!showCard`，导致录制中状态判断错误
-- **暗色模式按钮主题响应**：`AnimatedButton` 的 Primary/Tonal 变体改用 `sandboxTheme()` 的 `t.p` 动态取色，替换硬编码 `PremiumPrimary`(#6C5CE7) 和 `darkAccentGradient`。切换主题预设后按钮会随主色变化，不再固定紫色
-- **LLM 提供商 URL 双版本拼接 Bug**：`resolveApiUrl()` / `resolveVisionBaseUrl()` / `DynamicApiClient.testConnection()` 修复仅识别 `/v1` 的问题，用正则 `.*/v\\d+\\w*$` 匹配任意 `/vN` 版本号（含 v1/v2/v3/v4/v1beta 等），智谱(v4)、豆包(v3)、百度千帆(v2) 不再误拼 `/v4/v1/chat/completions`
-- **DynamicApiClient URL 双倍路径**：`buildModelListUrl()` 拼接 `/models` 前清除已知端点后缀，`testConnection()` 增加 host 已是完整 chat URL 的检测
-- **SettingsPage 快速测试 URL**：剥离逻辑升级为版本感知，支持 `/v2/`、`/v3/` 等路径
-- **DynamicApiClient 重复 catch**：移除 `testConnection()` 中重复的 `TimeoutCancellationException` catch 块 + 重复 `throw e`
+- **Multi-vendor page test connection bypassing model selection**: `ModelsPage` test button falls back to `availableModels.firstOrNull()` when `selectedModels` is empty, allowing testing without explicit model selection. Removed the fallback, now requires explicit model selection before testing
+- **Floating pill drag freeze**: `pointerInput(pillW)` restarts gesture detector due to key change after pill's first layout measurement completes, causing `onDragCancel` to prevent re-dragging. Fixed to `pointerInput(Unit)` stable key
+- **Recording progress card not showing**: `FloatingAnswerCard` extraction mistakenly used `!showCard` instead of `!showAnswer`, causing incorrect recording state judgment
+- **Dark mode button theme responsiveness**: `AnimatedButton` Primary/Tonal variants now use `sandboxTheme()` `t.p` dynamic color, replacing hardcoded `PremiumPrimary`(#6C5CE7) and `darkAccentGradient`. Buttons now follow theme color changes instead of staying fixed purple
+- **LLM provider URL dual-version concatenation bug**: `resolveApiUrl()` / `resolveVisionBaseUrl()` / `DynamicApiClient.testConnection()` fixed to recognize only `/v1` — now uses regex `.*/v\\d+\\w*$` to match any `/vN` version suffix (v1/v2/v3/v4/v1beta etc.), fixing incorrect `/v4/v1/chat/completions` concatenation for Zhipu(v4), Doubao(v3), Baidu Qianfan(v2)
+- **DynamicApiClient URL double path**: `buildModelListUrl()` clears known endpoint suffixes before appending `/models`; `testConnection()` adds detection for hosts that are already complete chat URLs
+- **SettingsPage quick test URL**: URL stripping logic upgraded to be version-aware, supporting `/v2/`, `/v3/` etc. paths
+- **DynamicApiClient duplicate catch**: Removed duplicate `TimeoutCancellationException` catch block and duplicate `throw e` in `testConnection()`
 
 ### Changed
-- 多厂商模型测试连接逻辑：仅使用用户显式选中的模型，不再 fallback 到可用列表第一个
-- `ProviderConfigResolver.resolveApiUrl()` 增加 `endsWith("/chat/completions")` 前置判断，避免已有完整 URL 重复拼接
-- 测试 `resolveApiUrl - host with trailing slash` 用例更新为修复后的期望值
-- **LLM 答题 `maxTokens` 512 → 4096**，避免推理模式/复杂题目答案截断
+- Multi-vendor model test connection logic: Uses only explicitly selected models, no longer falls back to the first available model
+- `ProviderConfigResolver.resolveApiUrl()` adds `endsWith("/chat/completions")` precondition check to avoid duplicate concatenation when URL is already complete
+- Test `resolveApiUrl - host with trailing slash` case updated to match fixed expected value
+- **LLM answer `maxTokens` 512 → 4096**, preventing truncation in reasoning mode / complex questions
 
 ### Refactored
-- **图标去重**：`IcCapture`（放大镜）合并至 `LocalIcons.Search`；`IcVision` 改为 `LocalIcons.Vision` 别名。删除 31 行重复 path 定义
-- **主题合规**：`PillButtonCard.kt` 中 `pillVisual()` 6 处 + `StatusDot()` 3 处硬编码 `Color(0xFF...)` 全部替换为主题色常量。新增 `ImageCollectingPurple/Dark/Light` 颜色常量
-- **动画可测试性**：提取 `computeButtonScale()` 纯函数 + `resolvePillClickAction()` 纯函数，新增 8 个单元测试
+- **Icon deduplication**: `IcCapture` (magnifier) merged into `LocalIcons.Search`; `IcVision` changed to `LocalIcons.Vision` alias. Removed 31 lines of duplicate path definitions
+- **Theme compliance**: In `PillButtonCard.kt`, 6 hardcoded `Color(0xFF...)` values in `pillVisual()` and 3 in `StatusDot()` all replaced with theme color constants. Added `ImageCollectingPurple/Dark/Light` color constants
+- **Animation testability**: Extracted `computeButtonScale()` pure function and `resolvePillClickAction()` pure function, added 8 unit tests
 
 ### Added
-- `FloatingAnswerCard.kt` — 答案卡片独立组件，支持翻页/进度/单题三种模式
-- 18 个回归测试（`resolvePillClickAction` 4 个 + `computeButtonScale` 4 个，从原 10 个增至 18 个）
+- `FloatingAnswerCard.kt` — independent answer card component, supporting pagination/progress/single-question three modes
+- 18 regression tests (`resolvePillClickAction` 4 + `computeButtonScale` 4, expanded from original 10 to 18)
 
 ## [1.6.1] - 2026-07-19
 
 ### Added
-- 多语言输出支持：主页输出语言下拉扩展至 11 项，覆盖中文/English/日本語/Francais/Deutsch/Espanol/Portugues/한국어/Русский(VLM)/العربية(VLM)/其他语言(VLM)
-- 首次启动弹窗新增「跟随系统」选项，选择后不再覆写 Android Locale
-- 新增 11 个语言常量与完整 Locale/Prompt 映射
-- `Constants.PROMPT_VERSION = 2`：提示词版本追踪常量 + 构建时 AppLog 日志
-- `Constants.promptStr()` 私有辅助函数，统一提示词字符串加载入口
-- 输出语言下拉列表 日本語/한국어 标注 `(VLM)`，提示需切视觉模式
+- Multi-language output support: Home page output language dropdown expanded to 11 items, covering Chinese/English/Japanese/French/German/Spanish/Portuguese/Korean/Russian(VLM)/Arabic(VLM)/Other(VLM)
+- First-launch dialog adds "Follow System" option — no longer overrides Android Locale when selected
+- Added 11 language constants with full Locale/Prompt mapping
+- `Constants.PROMPT_VERSION = 2`: Prompt version tracking constant + build-time AppLog logging
+- `Constants.promptStr()` private helper function, unified prompt string loading entry point
+- Output language dropdown marks Japanese/Korean with `(VLM)`, indicating vision mode requirement
 
 ### Changed
-- LLM 核心系统提示词重构：新增角色定义、行为准则、4 个 Few-shot 示例
-- 应用图标重设计：新 logo 以书本+AI电路节点+珊瑚暖调问号为视觉核心，品牌奶油底 (#FAF9F5)
-- 自适应图标背景色从蓝色 (#4A6CF7) 更新为品牌奶油色，与 Claude Warm 设计体系统一
-- Play Store 展示图标同步更新为 512px 新 logo
-- 联网搜索上下文指令明确化：增加搜索结果使用规则
-- VLM 视觉提示词（单图/多图）从硬编码中文改为中英文双语资源
-- `countQuestions()` 提示词从硬编码中文改为中英文双语资源
-- 输出语言指令 `"请用X回答"` 从硬编码改为字符串资源
-- SettingsCard 题型标签不再硬编码中文，改为 `MyApplication.getString()` locale-aware
-- LanguageUtil 注释更新：从"支持中英两种"改为"支持中英日韩法德西葡俄阿等"
-- LanguageUtil：跟随系统模式下跳过 attachBaseContext 覆写
-- Constants：promptLocale 支持全部语言 + 系统默认
-- PillButtonCard：悬浮按钮主色改为主题响应式（`t.p→t.pe`），Idle 态不再硬编码深紫 `#2D2B55`，完全匹配 DESIGN.md Claude Warm 设计规范；阴影/光晕/进度弧同步改用主题色板
-- **测试性能优化**：消除单元测试中的人工延迟（delay/sleep），全量测试延迟从 ~28s 降至 ~1.2s（24x 加速）
-  - `CaptureHandlerTest` 改用 `TestCoroutineScheduler` 虚拟时间，22 处 `delay()` 替换为 `advanceUntilIdle()`
-  - `RecordingCoordinatorTest` 25 处 `delay(500/300/100)` 降至 `delay(1)`，`coAnswers` 延迟保留但大幅减少
-  - `AnswerFetcherTest` 4 处 `Thread.sleep()` 降至 1ms
-  - `RecordingCoordinatorProgressTest` 独立 `delay()` 降至 1ms，mock 内部延迟降至 50/30ms
-  - `OpenAIClientTest` MockWebServer `setBodyDelay` 5s→2s，协程 delay 缩减
-- 所有 96 个测试通过，生产代码零改动
+- LLM core system prompt restructured: Added role definition, behavior guidelines, 4 Few-shot examples
+- App icon redesigned: New logo features book + AI circuit nodes + coral warm-tone question mark, brand cream background (#FAF9F5)
+- Adaptive icon background changed from blue (#4A6CF7) to brand cream, unified with Claude Warm design system
+- Play Store listing icon updated to 512px new logo
+- Web search context instructions clarified: Added search result usage rules
+- VLM vision prompts (single/multi-image) changed from hardcoded Chinese to bilingual Chinese/English resources
+- `countQuestions()` prompt changed from hardcoded Chinese to bilingual resources
+- Output language instruction "Please answer in X" changed from hardcoded to string resource
+- SettingsCard question type labels no longer hardcoded in Chinese, uses `MyApplication.getString()` locale-aware
+- LanguageUtil comments updated: from "supports Chinese/English" to "supports Chinese/English/Japanese/Korean/French/German/Spanish/Portuguese/Russian/Arabic etc."
+- LanguageUtil: Skips `attachBaseContext` override in Follow System mode
+- Constants: `promptLocale` supports all languages + system default
+- PillButtonCard: Floating pill primary color changed to theme-responsive (`t.p→t.pe`), Idle state no longer hardcoded dark purple `#2D2B55`, fully matching DESIGN.md Claude Warm specification; shadows/glow/progress arc synced with theme palette
+- **Test performance optimization**: Eliminated artificial delays (delay/sleep) in unit tests, full test suite latency reduced from ~28s to ~1.2s (24x speedup)
+  - `CaptureHandlerTest` switched to `TestCoroutineScheduler` virtual time, 22 `delay()` calls replaced with `advanceUntilIdle()`
+  - `RecordingCoordinatorTest` 25 `delay(500/300/100)` reduced to `delay(1)`, `coAnswers` delay retained but significantly reduced
+  - `AnswerFetcherTest` 4 `Thread.sleep()` reduced to 1ms
+  - `RecordingCoordinatorProgressTest` independent `delay()` reduced to 1ms, mock internal delays reduced to 50/30ms
+  - `OpenAIClientTest` MockWebServer `setBodyDelay` 5s→2s, coroutine delay reduced
+- All 96 tests passing, zero production code changes
 
 ### Removed
-- 移除开屏显示：取消 SplashActivity，启动直达 MainActivity，零延迟
-- 移除旧机器人图标前景 (icon_foreground.png) 及旧 mipmap webp 回落文件
+- Removed splash screen: SplashActivity removed, app launches directly to MainActivity with zero delay
+- Removed old robot icon foreground (icon_foreground.png) and old mipmap webp fallback files
 
 ### Fixed
-- 输出语言选择不再覆盖 UI 语言：MergedCard 移除 `saveLanguage(code)` 调用，输出语言与 UI 语言完全解耦
-- `promptResources` 从 lazy val 改为 `getPromptResources()` 函数，语言切换后提示词实时生效不再需要重启
-- LanguageUtil 未知语言代码回退统一为 ENGLISH（与 Constants 提示词路由一致）
-- VLM 后缀 `(VLM)` 剥离逻辑从 3 处重复提取为 `cleanOutputLang()` 辅助函数
-- `normalizeQuestionTypes` 新增 `"不定项"` 匹配，同时支持中英文题型标签的 locale-aware 归一化
-- FloatingWindowRegressionTest：pillVisual 签名适配 `Th` 主题参数
-- LanguageUtilTest：未知代码回退断言从 `SIMPLIFIED_CHINESE` 同步为 `ENGLISH`
-- OpenAIClientTest：mock 适配 `getPromptResources()` 新 API
-- 消除全部 28 个测试编译警告：Robolectric/Android 废弃 API、Kotlin createTempDir、缺少 @OptIn 及冗余 is 检查
-- ConfigStorageTest 永真断言修复：改为无崩溃验证
+- Output language selection no longer overrides UI language: MergedCard removed `saveLanguage(code)` call, output language fully decoupled from UI language
+- `promptResources` changed from lazy val to `getPromptResources()` function — prompts take effect immediately on language switch without restart
+- LanguageUtil unknown language code fallback unified to ENGLISH (consistent with Constants prompt routing)
+- VLM suffix `(VLM)` stripping logic extracted from 3 duplicate locations into `cleanOutputLang()` helper function
+- `normalizeQuestionTypes`: Added "不定项" matching, supports locale-aware normalization for both Chinese and English question type labels
+- FloatingWindowRegressionTest: `pillVisual` signature adapted for `Th` theme parameter
+- LanguageUtilTest: unknown code fallback assertion updated from SIMPLIFIED_CHINESE to ENGLISH
+- OpenAIClientTest: mock adapted for new `getPromptResources()` API
+- Eliminated all 28 test compilation warnings: Robolectric/Android deprecated APIs, Kotlin `createTempDir`, missing `@OptIn`, redundant `is` checks
+- ConfigStorageTest tautological assertion fixed: Changed to crash-free validation
 
 ## [1.6.0] - 2026-07-18
 
 ### Added
-- 自定义提示词：LLM 系统提示词与 VLM 视觉提示词均可在设置页自定义，留空使用默认
-- 放大镜图标缩放：设置页悬浮窗外观分区新增图标缩放滑块 (0.5x~2.0x)，独立调节图标大小
-- 多图模式：录制多张截图自动去重、合并发送 LLM 答题
-- 主题可选项系统：多主题切换 + JSON 导入/导出接口
+- Custom prompts: LLM system prompts and VLM vision prompts both customizable in settings page, leave empty for defaults
+- Magnifier icon scaling: Settings page floating window appearance section adds icon scale slider (0.5x~2.0x), independently adjusts icon size
+- Multi-image mode: Multiple screenshots automatically deduplicated and merged for LLM answering
+- Theme options system: Multi-theme switching + JSON import/export interface
 
 ### Fixed
-- RecordingCoordinator 线程安全加固（AtomicInteger + CopyOnWriteArrayList + synchronized）
-- ImageCollector 线程安全加固
-- 悬浮窗收起时显示答案摘要而非完整题目
-- 主页设置图标用 VectorDrawable 替代有误差的内联 ImageVector
-- 主页下拉框第二下点击无法关闭
-- UIConfig 硬编码主题 ID 改为常量引用
+- RecordingCoordinator thread safety hardening (AtomicInteger + CopyOnWriteArrayList + synchronized)
+- ImageCollector thread safety hardening
+- Show answer summary instead of full question when floating window is collapsed
+- Home page settings icon uses VectorDrawable instead of inaccurate inline ImageVector
+- Home page dropdown cannot be closed on second click
+- UIConfig hardcoded theme ID changed to constant reference
 
 ### Changed
-- 厂商数据源切换至 OpenCode，同步管理器适配
-- 新增 provider_data.json 生成脚本
-- 测试覆盖提升：新增 RecordingCoordinator 测试
+- Vendor data source switched to OpenCode, sync manager adapted
+- Added provider_data.json generation script
+- Test coverage improved: Added RecordingCoordinator tests
 
 ## [1.5.1] - 2025-11
 
 ### Fixed
-- 并行模式答案顺序修复：答案不再乱序，按题目原始顺序排列
+- Parallel mode answer order fix: Answers no longer out of order, now follow original question sequence
 
 ## [1.5.0] - 2025-10
 
 ### Changed
-- 大文件拆分：CommonComponents(1256行)→5文件、OpenAIClient(996行)→2文件、AppConfig(1005行)→8文件(门面模式)
-- 新增 38 个单元测试覆盖 JSON 解析、弹窗排队、提示词生成
-- 厂商列表从 13 个扩充至 52 个
-- System Prompt 精简约 80%
-- maxTokens 1024→512，超时时间 180s→60s
-- 并行模式默认开启，并发数默认 10
+- Large file splitting: CommonComponents(1256 lines)→5 files, OpenAIClient(996 lines)→2 files, AppConfig(1005 lines)→8 files (Facade pattern)
+- Added 38 unit tests covering JSON parsing, dialog queuing, prompt generation
+- Vendor list expanded from 13 to 52
+- System prompt condensed by ~80%
+- maxTokens 1024→512, timeout 180s→60s
+- Parallel mode enabled by default, concurrency defaults to 10
 
 ### Fixed
-- 录制模式 captureCount 不递增导致结果无法显示
-- 隐身模式/悬浮窗外观设置不立即生效
-- 悬浮窗大小滑块不生效
-- 厂商链接/关于页 GitHub 链接点击无反应
-- 搜索开关重启后状态丢失
-- 题型选择翻译不一致导致 AI 输出串题型
-- 答案卡片过长被裁
+- Recording mode captureCount not incrementing causes results not to display
+- Stealth mode / floating window appearance settings not taking effect immediately
+- Floating window size slider not working
+- Vendor URL / About page GitHub link unresponsive to clicks
+- Search toggle state lost after restart
+- Inconsistent question type translation causes AI to output wrong question types
+- Answer card truncated when too long
 
 ### UI
-- 自定义应用图标（神经网络节点 + 对勾设计）
-- Android 12+ 启动屏联动新图标
-- 悬浮窗默认大小 56→40
-- VLM 快捷开关默认跟随视觉模型配置自动开启
+- Custom app icon (neural network nodes + checkmark design)
+- Android 12+ splash screen linked with new icon
+- Floating window default size 56→40
+- VLM quick toggle automatically enabled based on vision model configuration
 
 ## [1.4.1] - 2025-09
 
 ### Added
-- 快捷按钮排列方式设置：弧形排列 / 横向排列
+- Quick button layout setting: Arc layout / Horizontal layout
 
 ### Fixed
-- 深色模式下状态卡片图标颜色适配
-- 设置页合并并发数设置与连接测试为同一卡片
+- Status card icon color adaptation in dark mode
+- Settings page merges concurrency setting and connection test into the same card
 
 ## [1.4.0] - 2025-08
 
 ### Added
-- 录制模式：连续拍摄多道题目，自动去重，统一输出答案
-- 中止搜索：HTTP 请求改用 OkHttp 异步 API，协程取消时断开连接
-- 快捷面板弹簧动画
+- Recording mode: Continuously capture multiple questions, auto-deduplicate, unified answer output
+- Cancel search: HTTP requests switched to OkHttp async API, connections cancelled on coroutine cancellation
+- Quick panel spring animation
 
 ## [1.3.1] - 2025-07
 
 ### Fixed
-- 12 个空安全/线程安全/资源泄漏/逻辑错误修复
-- 安全增强：EncryptedSharedPreferences 降级保护、日志脱敏、证书固定
-- 构建优化：签名 fallback、abiFilters 兼容、AGP 内部 API 替换
-- 悬浮窗快捷开关（VLM、联网搜索、深度思考）
-- 悬浮窗交互与窗口位置修复
+- 12 null-safety / thread-safety / resource leak / logic error fixes
+- Security enhancements: EncryptedSharedPreferences downgrade protection, log sanitization, certificate pinning
+- Build optimization: Signature fallback, abiFilters compatibility, AGP internal API replacement
+- Floating window quick toggles (VLM, web search, deep thinking)
+- Floating window interaction and position fixes
 
 ## [1.3.0] - 2025-06
 
 ### Changed
-- 悬浮窗 UI 重构：按钮独立显示，统一深灰色调
-- 状态消息集成到标题右侧
-- 并发测试反馈修复
+- Floating window UI refactored: Buttons displayed independently, unified dark gray color scheme
+- Status messages integrated into title right side
+- Concurrent test feedback fixes
 
 ## [1.2.1] - 2025-05
 
 ### Changed
-- 全局点击反馈：深色模式紫色发光轮廓 + 浅色模式柔和涟漪
-- CTA 按钮重做为明亮紫色发光渐变
-- 背景色调优化（象牙暖色调）
+- Global click feedback: Dark mode purple glow outline + light mode soft ripple
+- CTA buttons redesigned as bright purple glow gradient
+- Background color optimized (ivory warm tone)
 
 ## [1.2.0] - 2025-04
 
 ### Added
-- 屏幕读取模式：通过 AccessibilityService 获取屏幕文字
-- VLM 视觉模型集成替代 OCR
+- Screen reading mode: Extracts on-screen text via AccessibilityService
+- VLM vision model integration as OCR alternative
 
 ### Fixed
-- 正则崩溃修复、复制内容优化
-- 深色模式 UI 修复（双层边框、阴影系统重写）
-- 组件渲染修复（graphicsLayer 顺序、图标颜色等）
+- Regex crash fixes, copy content optimization
+- Dark mode UI fixes (double border, shadow system rewrite)
+- Component rendering fixes (graphicsLayer order, icon colors, etc.)
 
 ## [1.1.0] - 2025-03
 
 ### Added
-- 正则过滤开关（多题搜索控制）
-- 思考模式开关（DeepSeek-R1 等推理模型）
+- Regex filter toggle (multi-question search control)
+- Thinking mode toggle (DeepSeek-R1 and other reasoning models)
 
 ## [1.0.0] - 2025-02
 
 ### Fixed
-- 10 个 Bug 修复（VLM 降级、内存泄漏、竞态条件等）
-- 性能优化：全局 Gson 实例、HTTP 连接自动关闭
-- JSON 解析 5 级降级策略
+- 10 bug fixes (VLM fallback, memory leaks, race conditions, etc.)
+- Performance optimization: Global Gson instance, automatic HTTP connection closure
+- JSON parsing 5-level fallback strategy
 
 ## [0.9.0] - 2025-01
 
 ### Added
-- 并行答题模式（可配置并发数 1-10）
-- API 延迟测试按钮
-- GitHub Actions 自动打包
+- Parallel answering mode (configurable concurrency 1-10)
+- API latency test button
+- GitHub Actions auto-build
 
 ## [0.8.0] - 2024-12
 
 ### Changed
-- 毛玻璃材质卡片
-- 渐变发光按钮
-- 实时主题切换（跟随系统/浅色/深色）
-- 色彩体系重构
+- Frosted glass material cards
+- Gradient glow buttons
+- Real-time theme switching (Follow System / Light / Dark)
+- Color system refactoring
 
 ## [0.7.0] - 2024-11
 
 ### Added
-- 视觉模型 (VLM) 集成
-- 多题模式逐题搜索优化
-- 图片压缩优化（2048x2048 限制）
-- `api/vision/` 模块独立
+- Vision Model (VLM) integration
+- Multi-question mode per-question search optimization
+- Image compression optimization (2048x2048 limit)
+- `api/vision/` module separated
 
 ## [0.6.0] - 2024-10
 
 ### Added
-- Tavily 联网搜索引擎集成
-- 悬浮窗拖拽移动 + 吸附边缘
-- 悬浮窗外观自定义（按钮大小、透明度）
+- Tavily web search engine integration
+- Floating window drag-and-drop + edge snap
+- Floating window appearance customization (button size, opacity)
 
 ## [0.5.0] - 2024-09
 
 ### Changed
-- API Key 加密存储（EncryptedSharedPreferences）
-- BaseActivity 语言配置统一
-- 国际化完善（中英文切换）
-- 网络预检 + 自动重试
-- 移除冗余 ML Kit 依赖（-10MB）
+- API Key encrypted storage (EncryptedSharedPreferences)
+- BaseActivity unified language configuration
+- Internationalization improvements (Chinese/English switching)
+- Network pre-check + auto-retry
+- Removed redundant ML Kit dependencies (-10MB)
 
 ## [0.4.0] - 2024-08
 
 ### Fixed
-- Prompt 优化
-- GPT-5 markdown 格式兼容
+- Prompt optimization
+- GPT-5 markdown format compatibility
 
 ## [0.3.0] - 2024-07
 
 ### Added
-- OCR 前裁剪功能
+- Pre-OCR cropping functionality
 
 ## [0.2.0] - 2024-06
 
 ### Fixed
-- Release 包无法请求 AI API
+- Release build unable to make AI API requests
 
 ## [0.1.0] - 2024-05
 
 ### Added
-- 初次发版
+- Initial release

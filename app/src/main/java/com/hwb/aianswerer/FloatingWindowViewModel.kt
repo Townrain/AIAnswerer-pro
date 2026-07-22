@@ -26,6 +26,12 @@ import kotlinx.coroutines.cancel
 class FloatingWindowViewModel : ViewModel() {
 
     // ===== ServiceContext =====
+    /** Bridge between ViewModel and Service for operations that require platform/context.
+     *
+     *  Window operations are now per-window via FloatingWindowManager.
+     *  Removed: updateWindowPosition, updateWindowHeight, getCurrentWindowHeightPx,
+     *  setCurrentWindowHeightPx, updateFloatingWindowHeight — 3-window arch manages
+     *  window geometry independently per window. */
     interface ServiceContext {
         fun showToast(msg: String)
         fun getString(id: Int): String
@@ -36,15 +42,10 @@ class FloatingWindowViewModel : ViewModel() {
         fun getDensity(): Float
         fun setFlagSecure(enabled: Boolean)
         fun setWindowAlpha(alpha: Float)
-        fun updateWindowPosition()
-        fun updateWindowHeight()
         fun animateWindowX(targetX: Float, animated: Boolean)
-        fun getCurrentWindowHeightPx(): Float
-        fun setCurrentWindowHeightPx(h: Float)
         fun setHasContent(has: Boolean)
         fun onRecordingBitmap(bitmap: Bitmap)
         fun onImageText(text: String)
-        fun updateFloatingWindowHeight()
     }
 
     private var ctx: ServiceContext? = null
@@ -170,10 +171,7 @@ class FloatingWindowViewModel : ViewModel() {
         override fun isVisionEnabled() = com.hwb.aianswerer.config.AppConfig.isVisionEnabled()
         override fun isSearchEnabled() = com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
         override fun isStealthModeEnabled(): Boolean {
-            return try {
-                val mmkv = com.tencent.mmkv.MMKV.defaultMMKV()
-                mmkv.decodeBool("stealth_mode", false)
-            } catch (_: Exception) { false }
+            return AppConfig.isStealthModeEnabled()
         }
         override fun getFloatButtonSizeDp(): Int {
             return try {
@@ -189,12 +187,12 @@ class FloatingWindowViewModel : ViewModel() {
         override fun setCaptureInProgress(enabled: Boolean) { captureInProgress = enabled }
         override fun setShowAnswer(show: Boolean) { showAnswer.value = show }
         override fun getCurrentWindowHeightPx(): Float = currentWindowHeightPx
-        override fun setCurrentWindowHeightPx(h: Float) { currentWindowHeightPx = h; ctx?.setCurrentWindowHeightPx(h) }
+        override fun setCurrentWindowHeightPx(h: Float) { currentWindowHeightPx = h }
 
         override fun setFlagSecure(enabled: Boolean) { ctx?.setFlagSecure(enabled) }
         override fun setWindowAlpha(alpha: Float) { ctx?.setWindowAlpha(alpha) }
-        override fun updateWindowPosition() { ctx?.updateWindowPosition() }
-        override fun updateWindowHeight() { ctx?.updateWindowHeight() }
+        override fun updateWindowPosition() { /* noop — 3-window architecture */ }
+        override fun updateWindowHeight() { /* noop — each window-sized independently */ }
         override fun showError(message: String) { ctx?.showErrorToUser(message) }
         override fun showToast(message: String) { ctx?.showToast(message) }
         override fun setStatus(status: FloatingStatus) { floatingStatus.value = status }

@@ -13,68 +13,67 @@ import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
-import com.hwb.aianswerer.ui.theme.AIAnswererTheme
-import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.getValue
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.lifecycle.ViewModelProvider
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.hwb.aianswerer.ui.components.FloatingStatus
+import com.hwb.aianswerer.ui.components.FWDims
+import com.hwb.aianswerer.ui.components.QuickAction
+import com.hwb.aianswerer.ui.components.WindowAContent
+import com.hwb.aianswerer.ui.components.WindowBContent
+import com.hwb.aianswerer.ui.components.WindowCContent
+import com.hwb.aianswerer.ui.components.WindowDContent
+import com.hwb.aianswerer.ui.components.IcGlobe
+import com.hwb.aianswerer.ui.components.IcBulb
+import com.hwb.aianswerer.ui.components.IcImage
+import com.hwb.aianswerer.ui.components.IcRecord
+import com.hwb.aianswerer.ui.components.IcVision
+import com.hwb.aianswerer.ui.theme.AIAnswererTheme
+import com.hwb.aianswerer.ui.theme.sandboxTheme
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.CropRect
-import com.hwb.aianswerer.models.formatAnswerWithConfig
-import com.hwb.aianswerer.ui.components.FloatingWindowContent
 import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.ClipboardUtil
-import com.hwb.aianswerer.utils.ImageCropUtil
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import androidx.lifecycle.ViewModelProvider
 
 /**
  * Floating window service — the runtime core of answer mode.
  *
+ * Manages 3 independent WindowManager windows:
+ *   Window A (Pill) — always visible, draggable pill button
+ *   Window B (Toggles) — quick-toggle panel, shown/hidden on long-press
+ *   Window C (Card) — answer/status card, shown when content is available
+ *
  * Lifecycle:
  *   1. MainActivity requests permissions then starts via startForegroundService,
  *      passing MediaProjection intent data and answer settings in onStartCommand.
- *   2. onCreate creates the floating window and registers a BroadcastReceiver.
- *   3. onDestroy releases MediaProjection, cancels coroutines, removes the window.
+ *   2. onCreate creates Window A and registers BroadcastReceiver.
+ *   3. B and C are created dynamically as needed.
+ *   4. onDestroy releases everything.
  *
  * Heavy lifting is delegated to:
  *   - [SettingsService]     — settings reads / refresh
@@ -97,8 +96,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     // ── Infrastructure ──────────────────────────────────────────────────
 
-    private var floatingView: ComposeView? = null
-    private var touchLayout: InteractiveTouchLayout? = null
+    // Window A, B, C ComposeViews (owned by service, managed through windowMgr)
+    private var windowAView: ComposeView? = null
+    private var windowBView: ComposeView? = null
+    private var windowCView: ComposeView? = null
+    private var windowDView: ComposeView? = null
+
     @Volatile private var destroyed = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -115,6 +118,20 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private lateinit var captureHandler: CaptureHandler
     private lateinit var answerFetcher: AnswerFetcher
     private lateinit var viewModel: FloatingWindowViewModel
+
+    // ── Arc / toggle state ──────────────────────────────────────────────
+
+    /** Whether quick-toggle window (B) is currently shown. */
+    private var isArcExpanded = false
+
+    /** Measured size of Window A content (width, height) in px. */
+    private var measuredSizeA: Pair<Float, Float>? = null
+
+    /** Measured height of Window C content in px. */
+    private var measuredWindowCHeight: Float? = null
+
+    /** Whether Window D (detail content) is currently expanded. */
+    private var isDetailExpanded = mutableStateOf(false)
 
     // ── LifecycleOwner / ViewModelStoreOwner / SavedStateRegistryOwner ──
 
@@ -209,17 +226,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             override fun copyToClipboard(text: String) { ClipboardUtil.copyToClipboard(this@FloatingWindowService, text) }
             override fun isLeftSide(): Boolean { val w = resources.displayMetrics.widthPixels.toFloat(); return viewModel.floatOffsetX.value < w / 2f }
             override fun getDensity() = resources.displayMetrics.density
-            override fun setFlagSecure(enabled: Boolean) { windowMgr.setFlagSecure(touchLayout, enabled) }
-            override fun setWindowAlpha(alpha: Float) { windowMgr.setAlpha(touchLayout, alpha) }
-            override fun updateWindowPosition() { this@FloatingWindowService.updateWindowPosition() }
-            override fun updateWindowHeight() { updateFloatingWindowHeight() }
+            override fun setFlagSecure(enabled: Boolean) { windowMgr.setAllFlagSecure(enabled) }
+            override fun setWindowAlpha(alpha: Float) { windowMgr.setAllAlpha(alpha) }
             override fun animateWindowX(targetX: Float, animated: Boolean) { this@FloatingWindowService.animateWindowX(targetX, animated) }
-            override fun getCurrentWindowHeightPx() = viewModel.currentWindowHeightPx
-            override fun setCurrentWindowHeightPx(h: Float) { viewModel.currentWindowHeightPx = h }
             override fun setHasContent(has: Boolean) { viewModel.hasContent = has }
             override fun onRecordingBitmap(bitmap: Bitmap) { recorder.processBitmap(bitmap) }
             override fun onImageText(text: String) { imageCollector.addText(text) }
-            override fun updateFloatingWindowHeight() { this@FloatingWindowService.updateFloatingWindowHeight() }
         })
 
         recorder = RecordingCoordinator(pipeline, serviceScope, viewModel.recordingCallbacks)
@@ -250,6 +262,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         showFloatingWindow()
+
+        // ── Stealth mode observer (D3: dynamic FLAG_SECURE + notification) ─
+        // Monitored from within Window A's composable via LaunchedEffect + snapshotFlow
+        // (see showFloatingWindow setContent block)
 
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
@@ -293,9 +309,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     private val captureCallbacks get() = viewModel.captureCallbacks
 
+    // ── Floating window UI (3-window architecture) ──────────────────────
 
-    // ── Floating window UI ──────────────────────────────────────────────
-
+    /**
+     * Creates Window A (Pill) — the primary always-visible window.
+     * Windows B and C are created lazily when needed.
+     */
     private fun showFloatingWindow() {
         val metrics = resources.displayMetrics
         val screenW = metrics.widthPixels.toFloat()
@@ -303,43 +322,402 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val density = metrics.density
         val buttonSizePx = settings.floatButtonSizeDp.value * density
         val buttonHalf = buttonSizePx / 2f
+        val isStealth = settings.stealthMode.value
 
-        viewModel.currentWindowHeightPx = 200 * density
+        // Initial position: right edge, 30% down
         viewModel.floatOffsetX.value = screenW - buttonHalf
         viewModel.floatOffsetY.value = screenH * 0.30f
 
-        fun isLeftSide() = viewModel.floatOffsetX.value < screenW / 2f
-
-        // 始终全宽——通过 InteractiveTouchLayout.setInteractiveRect 做选择性触摸穿透
-        viewModel.currentWindowWidthPx = screenW
-
-        fun windowX(): Int {
-            val w = viewModel.currentWindowWidthPx
-            return if (isLeftSide()) 0
-            else (screenW - w).toInt().coerceAtLeast(0)
-        }
-
-        val params = windowMgr.createLayoutParams(
-            windowWidthPx = viewModel.currentWindowWidthPx.toInt(),
-            windowHeightPx = viewModel.currentWindowHeightPx.toInt(),
-            isLeftSide = isLeftSide(),
-            offsetY = viewModel.floatOffsetY.value,
-            screenW = screenW,
-            screenH = screenH,
-            isStealth = settings.stealthMode.value
-        )
-
-        touchLayout = InteractiveTouchLayout(this).apply {
-            clipChildren = false  // 允许pill拖拽时渲染超出窗口边界
+        val aComposeView = ComposeView(this).apply {
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            clipChildren = false
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+            if (isStealth) {
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+
+            setContent {
+                AIAnswererTheme {
+                    // Window A — always visible pill button
+                    WindowAContent(
+                        buttonSize = settings.floatButtonSizeDp.value,
+                        buttonAlpha = settings.floatButtonAlpha.value,
+                        floatingStatus = viewModel.floatingStatus.value,
+                        isRecording = viewModel.isRecording.value,
+                        isImageCollecting = viewModel.isImageCollecting.value,
+                        isLeftSide = viewModel.floatOffsetX.value < screenW / 2f,
+                        isDragging = false,
+                        onCaptureClick = { captureHandler.handleCapture() },
+                        onLongPress = {
+                            AppLog.d("FWS", "onLongPress triggered, isArcExpanded=$isArcExpanded")
+                            isArcExpanded = !isArcExpanded
+                            if (isArcExpanded) {
+                                try {
+                                    AppLog.d("FWS", "ensureWindowB calling...")
+                                    ensureWindowB()
+                                    AppLog.d("FWS", "ensureWindowB done")
+                                } catch (e: Exception) {
+                                    AppLog.e("FWS", "ensureWindowB failed", e)
+                                }
+                            } else {
+                                removeWindowB()
+                            }
+                        },
+                        onMove = { deltaX, deltaY -> dragWindowBy(deltaX, deltaY) },
+                        onDragEnd = { leftSide ->
+                            val snapX = if (leftSide) buttonHalf else screenW - buttonHalf
+                            viewModel.floatOffsetX.value = snapX
+                            val windowX = if (leftSide) 0f else (screenW - getAWindowSize()).coerceAtLeast(0f)
+                            animateWindowX(windowX, animated = true)
+                        },
+                        onMeasuredSize = { w, h -> measuredSizeA = w to h }
+                    )
+
+                    // Window C lifecycle observer — creates C when content appears,
+                    // lets onDismissRequest handle removal.
+                    LaunchedEffect(Unit) {
+                        snapshotFlow { viewModel.showAnswer.value to viewModel.statusMessage.value }
+                            .collect { (show, msg) ->
+                                AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg cView=${windowMgr.cView != null}")
+                                if (show || msg != null) {
+                                    if (windowMgr.cView == null) {
+                                        AppLog.d("FWS", "snapshotFlow: calling ensureWindowC()")
+                                        ensureWindowC()
+                                    }
+                                    // Auto-expand Window D when answer is ready
+                                    if (show) {
+                                        isDetailExpanded.value = true
+                                        if (windowMgr.dView == null) ensureWindowD()
+                                    }
+                                }
+                            }
+                    }
+
+                    // Stealth mode toggle observer (D3) — reactively update FLAG_SECURE
+                    // on all 3 windows when the user toggles stealth in settings.
+                    LaunchedEffect(Unit) {
+                        snapshotFlow { settings.stealthMode.value }
+                            .distinctUntilChanged()
+                            .collect { isStealth ->
+                                windowMgr.setAllFlagSecure(isStealth)
+                                windowMgr.setAllAlpha(if (isStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
+                                listOfNotNull(windowAView, windowBView, windowCView).forEach { view ->
+                                    view.importantForAccessibility = if (isStealth)
+                                        View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                                    else View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                                }
+                                updateNotification(isStealth)
+                            }
+                    }
+                }
+            }
         }
 
-        floatingView = ComposeView(this).apply {
+        val aParams = windowMgr.createLayoutParams(
+            windowId = FloatingWindowManager.WindowId.A,
+            buttonSizePx = buttonSizePx.toInt(),
+            isStealth = isStealth
+        )
+
+        windowMgr.attachA(aComposeView, aParams)
+        windowAView = aComposeView
+        updateWindowAPosition()
+    }
+
+    // ── Window B (Quick Toggles) ────────────────────────────────────────
+
+    /** Creates and attaches Window B, positioned adjacent to A. */
+    private fun ensureWindowB() {
+        AppLog.d("FWS", "ensureWindowB: start")
+        if (windowMgr.bView != null) { AppLog.d("FWS", "ensureWindowB: already exists, return"); return }
+
+        val metrics = resources.displayMetrics
+        val density = metrics.density
+        val buttonSizePx = settings.floatButtonSizeDp.value * density
+        val isStealth = settings.stealthMode.value
+        val isLeft = viewModel.floatOffsetX.value < resources.displayMetrics.widthPixels.toFloat() / 2f
+        AppLog.d("FWS", "ensureWindowB: isLeft=$isLeft density=$density buttonSizePx=$buttonSizePx")
+
+        // 1. Build quick actions FIRST (before creating ComposeView) to catch any resource exceptions early
+        AppLog.d("FWS", "ensureWindowB: building quick actions...")
+        // NOT calling composable buildQuickActions here - will use inside setContent
+
+        AppLog.d("FWS", "ensureWindowB: creating ComposeView...")
+        val bComposeView = ComposeView(this).apply {
+            AppLog.d("FWS", "ensureWindowB: ComposeView.apply start")
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
             clipChildren = false
-            clipToPadding = false
+            setViewTreeLifecycleOwner(this@FloatingWindowService)
+            setViewTreeViewModelStoreOwner(this@FloatingWindowService)
+            setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+            if (isStealth) {
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+
+            AppLog.d("FWS", "ensureWindowB: calling setContent...")
+            setContent {
+                AIAnswererTheme {
+                    WindowBContent(
+                        t = sandboxTheme(),
+                        actions = buildQuickActions(),
+                        scale = 1f,
+                        isLeftSide = isLeft,
+                        transformOrigin = if (isLeft) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f),
+                        onMeasuredSize = { w, h ->
+                            AppLog.d("FWS", "WindowB onMeasuredSize: $w x $h")
+                            if (w > 0 && h > 0) {
+                                val bParams = windowMgr.bParams ?: return@WindowBContent
+                                windowMgr.updateLayoutB(
+                                    windowX = bParams.x,
+                                    windowY = bParams.y,
+                                    width = w.toInt(),
+                                    height = h.toInt(),
+                                    alpha = Constants.VISIBLE_ALPHA,
+                                    screenW = resources.displayMetrics.widthPixels.toFloat(),
+                                    screenH = resources.displayMetrics.heightPixels.toFloat()
+                                )
+                                syncB()
+                            }
+                        }
+                    )
+                }
+            }
+            AppLog.d("FWS", "ensureWindowB: setContent done")
+        }
+
+        AppLog.d("FWS", "ensureWindowB: creating layout params...")
+        val bParams = windowMgr.createLayoutParams(
+            windowId = FloatingWindowManager.WindowId.B,
+            buttonSizePx = buttonSizePx.toInt(),
+            isStealth = isStealth
+        )
+        AppLog.d("FWS", "ensureWindowB: bParams size=${bParams.width}x${bParams.height}")
+
+        // IMPORTANT: Do NOT remove/re-add Window A for Z-order here.
+        // Doing so while inside a Compose callback (onLongPress) causes a
+        // reentrancy deadlock in Compose's snapshot system (removeView triggers
+        // onDetachedFromWindow → composition disposal while still in the callback).
+        // B will appear on top of A — acceptable since they are side-by-side.
+
+        AppLog.d("FWS", "ensureWindowB: calling attachB...")
+        try {
+            windowMgr.attachB(bComposeView, bParams)
+            AppLog.d("FWS", "ensureWindowB: attachB done")
+        } catch (e: Exception) {
+            AppLog.e("FWS", "attachB failed", e)
+        }
+
+        windowBView = bComposeView
+        AppLog.d("FWS", "ensureWindowB: calling syncB...")
+        syncB()
+        AppLog.d("FWS", "ensureWindowB: COMPLETE")
+    }
+
+    /** Detaches and disposes Window B. */
+    private fun removeWindowB() {
+        windowMgr.detachB()
+        windowBView?.disposeComposition()
+        windowBView = null
+    }
+
+    /** Builds the quick-toggle action list from current settings state. */
+    private fun buildQuickActions(): List<QuickAction> {
+        val vlmLabel = getString(R.string.float_quick_vlm)
+        val searchLabel = getString(R.string.float_quick_search)
+        val reasoningLabel = getString(R.string.float_quick_reasoning)
+        val recordLabel = getString(R.string.float_quick_record)
+        val imageLabel = getString(R.string.float_quick_image)
+        return listOf(
+            QuickAction(
+                icon = IcVision,
+                label = vlmLabel,
+                enabled = settings.visionEnabled.value,
+                onClick = {
+                    settings.visionEnabled.value = !settings.visionEnabled.value
+                    AppConfig.saveVisionEnabled(settings.visionEnabled.value)
+                    Toast.makeText(this@FloatingWindowService,
+                        if (settings.visionEnabled.value) getString(R.string.float_toggle_vlm_on) else getString(R.string.float_toggle_vlm_off),
+                        Toast.LENGTH_SHORT).show()
+                }
+            ),
+            QuickAction(
+                icon = IcGlobe,
+                label = searchLabel,
+                enabled = settings.searchEnabled.value,
+                onClick = {
+                    val hasProviders = com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
+                    if (!hasProviders && !settings.searchEnabled.value) {
+                        Toast.makeText(this@FloatingWindowService,
+                            getString(R.string.float_toggle_search_no_provider),
+                            Toast.LENGTH_SHORT).show()
+                        return@QuickAction
+                    }
+                    settings.searchEnabled.value = !settings.searchEnabled.value
+                    com.hwb.aianswerer.providers.WebSearchStorage.saveSearchEnabled(settings.searchEnabled.value)
+                    Toast.makeText(this@FloatingWindowService,
+                        if (settings.searchEnabled.value) getString(R.string.float_toggle_search_on) else getString(R.string.float_toggle_search_off),
+                        Toast.LENGTH_SHORT).show()
+                }
+            ),
+            QuickAction(
+                icon = IcBulb,
+                label = reasoningLabel,
+                enabled = settings.reasoningEnabled.value,
+                onClick = {
+                    settings.reasoningEnabled.value = !settings.reasoningEnabled.value
+                    AppConfig.saveReasoningEffort(settings.reasoningEnabled.value)
+                    Toast.makeText(this@FloatingWindowService,
+                        if (settings.reasoningEnabled.value) getString(R.string.float_toggle_reasoning_on) else getString(R.string.float_toggle_reasoning_off),
+                        Toast.LENGTH_SHORT).show()
+                }
+            ),
+            QuickAction(
+                icon = IcImage,
+                label = imageLabel,
+                enabled = settings.imageEnabled.value,
+                onClick = {
+                    if (viewModel.isImageCollecting.value) {
+                        imageCollector.stop()
+                        viewModel.isImageCollecting.value = false
+                        viewModel.isProcessingImages.value = imageCollector.isProcessing
+                        settings.imageEnabled.value = false
+                        Toast.makeText(this@FloatingWindowService,
+                            getString(R.string.image_analyzing),
+                            Toast.LENGTH_SHORT).show()
+                    } else {
+                        if (recorder.isActive) {
+                            viewModel.stopRecording(recorder)
+                        }
+                        imageCollector.start()
+                        viewModel.isImageCollecting.value = true
+                        viewModel.imageCollectCount.value = 0
+                        viewModel.showAnswer.value = false
+                        viewModel.paginatedAnswers.value = emptyList()
+                        settings.imageEnabled.value = true
+                        Toast.makeText(this@FloatingWindowService,
+                            getString(R.string.image_collection_start),
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            ),
+            QuickAction(
+                icon = IcRecord,
+                label = recordLabel,
+                enabled = viewModel.isRecording.value,
+                onClick = {
+                    if (viewModel.isRecording.value) {
+                        viewModel.stopRecording(recorder)
+                    } else {
+                        if (viewModel.isImageCollecting.value) {
+                            imageCollector.cancel()
+                            viewModel.isImageCollecting.value = false
+                            viewModel.isProcessingImages.value = false
+                            settings.imageEnabled.value = false
+                        }
+                        viewModel.startRecording(recorder)
+                    }
+                }
+            )
+        )
+    }
+
+    // ── Window C (Answer/Status Card) ──────────────────────────────────
+
+    /** Creates and attaches Window C, positioned below A. */
+    private fun ensureWindowC() {
+        AppLog.d("FWS", "ensureWindowC: start")
+        if (windowMgr.cView != null) { AppLog.d("FWS", "ensureWindowC: already exists, return"); return }
+
+        val metrics = resources.displayMetrics
+        val density = metrics.density
+        val buttonSizePx = settings.floatButtonSizeDp.value * density
+        val isStealth = settings.stealthMode.value
+        AppLog.d("FWS", "ensureWindowC: density=$density isStealth=$isStealth")
+
+        val cComposeView = ComposeView(this).apply {
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            clipChildren = false
+            setViewTreeLifecycleOwner(this@FloatingWindowService)
+            setViewTreeViewModelStoreOwner(this@FloatingWindowService)
+            setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+            if (isStealth) {
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+
+            setContent {
+                AIAnswererTheme {
+                    WindowCContent(
+                        showAnswer = viewModel.showAnswer.value,
+                        hasAnswer = hasCardContent(),
+                        statusMessage = viewModel.statusMessage.value,
+                        floatingStatus = viewModel.floatingStatus.value,
+                        cardAlpha = settings.floatCardAlpha.value,
+                        recordingCaptureCount = viewModel.recordingCaptureCount.value,
+                        isRecording = viewModel.isRecording.value,
+                        isProcessingRecording = viewModel.isProcessingRecording.value,
+                        onCloseAnswer = { closeAnswer() },
+                        onCloseStatus = { closeStatus() },
+                        onMeasuredHeight = { h ->
+                            measuredWindowCHeight = h
+                            syncC()
+                        },
+                        onDismissRequest = { removeWindowC() },
+                        isExpanded = isDetailExpanded.value,
+                        onToggleExpanded = { expanded ->
+                            isDetailExpanded.value = expanded
+                            if (expanded) ensureWindowD() else removeWindowD()
+                        }
+                    )
+                }
+            }
+        }
+
+        AppLog.d("FWS", "ensureWindowC: creating layout params...")
+        val cParams = windowMgr.createLayoutParams(
+            windowId = FloatingWindowManager.WindowId.C,
+            buttonSizePx = buttonSizePx.toInt(),
+            isStealth = isStealth
+        )
+        AppLog.d("FWS", "ensureWindowC: params size=${cParams.width}x${cParams.height}")
+
+        AppLog.d("FWS", "ensureWindowC: calling attachC... cView before=${windowMgr.cView != null}")
+        try {
+            windowMgr.attachC(cComposeView, cParams)
+            AppLog.d("FWS", "ensureWindowC: attachC done, cView after=${windowMgr.cView != null} cParams=${cParams.width}x${cParams.height} x=${cParams.x} y=${cParams.y}")
+        } catch (e: Exception) {
+            AppLog.e("FWS", "attachC failed", e)
+        }
+
+        windowCView = cComposeView
+        AppLog.d("FWS", "ensureWindowC: calling syncC... measuredCHeight=$measuredWindowCHeight")
+        syncC()
+        AppLog.d("FWS", "ensureWindowC: COMPLETE. final cParams=${windowMgr.cParams?.width}x${windowMgr.cParams?.height}")
+    }
+
+    /** Detaches and disposes Window C. */
+    private fun removeWindowC() {
+        AppLog.d("FWS", "removeWindowC called! cView=${windowMgr.cView != null}")
+        removeWindowD()
+        windowMgr.detachC()
+        windowCView?.disposeComposition()
+        windowCView = null
+        measuredWindowCHeight = null
+    }
+
+    // ── Window D (Answer Detail) ─────────────────────────────────────────
+
+    /** Creates and attaches Window D (full answer content) below Window C. */
+    private fun ensureWindowD() {
+        if (windowMgr.dView != null) return
+        AppLog.d("FWS", "ensureWindowD: start")
+
+        val density = resources.displayMetrics.density
+
+        val dComposeView = ComposeView(this).apply {
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            clipChildren = false
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
@@ -349,268 +727,337 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
             setContent {
                 AIAnswererTheme {
-                    FloatingWindowContent(
-                        answerText = viewModel.answerText.value,
-                        showAnswer = viewModel.showAnswer.value,
-                        statusMessage = viewModel.statusMessage.value,
-                        buttonSize = settings.floatButtonSizeDp.value,
-                        buttonAlpha = settings.floatButtonAlpha.value,
-                        cardAlpha = settings.floatCardAlpha.value,
-                        isLeftSide = isLeftSide(),
-                        windowScreenX = viewModel.displayWindowX.floatValue,
-                        windowScreenY = viewModel.floatOffsetY.value,
-                        floatingStatus = viewModel.floatingStatus.value,
-                        onCaptureClick = { captureHandler.handleCapture() },
-                        onCloseAnswer = {
-                            viewModel.currentFetchJob?.cancel()
-                            viewModel.currentFetchJob = null
-                            viewModel.showAnswer.value = false
-                            viewModel.answerText.value = null
-                            viewModel.recordingAnswers.value = emptyList()
-                            viewModel.paginatedAnswers.value = emptyList()
-                            viewModel.paginatedCopyTexts.value = emptyList()
-                            viewModel.floatingStatus.value = FloatingStatus.Idle
-                            viewModel.statusMessage.value = null
-                            updateFloatingWindowWidth()
-                        },
-                        onCloseStatus = {
-                            viewModel.currentFetchJob?.cancel()
-                            viewModel.currentFetchJob = null
-                            recorder.cancel()
-                            imageCollector.cancel()
-                            viewModel.isImageCollecting.value = false
-                            viewModel.isProcessingImages.value = false
-                            viewModel.isProcessingRecording.value = false
-                            viewModel.showAnswer.value = false
-                            viewModel.answerText.value = null
-                            viewModel.recordingAnswers.value = emptyList()
-                            viewModel.paginatedAnswers.value = emptyList()
-                            viewModel.paginatedCopyTexts.value = emptyList()
-                            viewModel.floatingStatus.value = FloatingStatus.Idle
-                            viewModel.statusMessage.value = null
-                            updateFloatingWindowWidth()
-                        },
-                        onCopyAnswer = {
-                            ClipboardUtil.copyToClipboard(this@FloatingWindowService, viewModel.answerText.value ?: "")
-                        },
-                        onMove = { deltaX, deltaY ->
-                            val prevX = viewModel.floatOffsetX.value
-                            val prevY = viewModel.floatOffsetY.value
-                            viewModel.floatOffsetX.value = (viewModel.floatOffsetX.value + deltaX)
-                                .coerceIn(buttonHalf, screenW - buttonHalf)
-                            viewModel.floatOffsetY.value = (viewModel.floatOffsetY.value + deltaY)
-                                .coerceIn(0f, screenH - viewModel.currentWindowHeightPx)
-                            animateWindowX(windowX().toFloat(), false)
-                            updateWindowPosition()
-                        },
-                        onDragEnd = { leftSide ->
-                            viewModel.floatOffsetX.value = if (leftSide) buttonHalf else screenW - buttonHalf
-                            animateWindowX(windowX().toFloat(), true)
-                            updateFloatingWindowWidth()
-                        },
-                        visionEnabled = settings.visionEnabled.value,
-                        searchEnabled = settings.searchEnabled.value,
-                        reasoningEnabled = settings.reasoningEnabled.value,
-                        imageEnabled = settings.imageEnabled.value,
-                        onVisionToggle = {
-                            settings.visionEnabled.value = !settings.visionEnabled.value
-                            AppConfig.saveVisionEnabled(settings.visionEnabled.value)
-                            Toast.makeText(this@FloatingWindowService,
-                                if (settings.visionEnabled.value) getString(R.string.float_toggle_vlm_on) else getString(R.string.float_toggle_vlm_off),
-                                Toast.LENGTH_SHORT).show()
-                        },
-                        onSearchToggle = {
-                            val hasProviders = com.hwb.aianswerer.providers.WebSearchStorage.getEnabledProviders().isNotEmpty()
-                            if (!hasProviders && !settings.searchEnabled.value) {
-                                Toast.makeText(this@FloatingWindowService,
-                                    getString(R.string.float_toggle_search_no_provider),
-                                    Toast.LENGTH_SHORT).show()
-                                return@FloatingWindowContent
-                            }
-                            settings.searchEnabled.value = !settings.searchEnabled.value
-                            com.hwb.aianswerer.providers.WebSearchStorage.saveSearchEnabled(settings.searchEnabled.value)
-                            Toast.makeText(this@FloatingWindowService,
-                                if (settings.searchEnabled.value) getString(R.string.float_toggle_search_on) else getString(R.string.float_toggle_search_off),
-                                Toast.LENGTH_SHORT).show()
-                        },
-                        onReasoningToggle = {
-                            settings.reasoningEnabled.value = !settings.reasoningEnabled.value
-                            AppConfig.saveReasoningEffort(settings.reasoningEnabled.value)
-                            Toast.makeText(this@FloatingWindowService,
-                                if (settings.reasoningEnabled.value) getString(R.string.float_toggle_reasoning_on) else getString(R.string.float_toggle_reasoning_off),
-                                Toast.LENGTH_SHORT).show()
-                        },
-                        onImageToggle = {
-                            if (viewModel.isImageCollecting.value) {
-                                // 停止图片采集，开始分析
-                                imageCollector.stop()
-                                viewModel.isImageCollecting.value = false
-                                viewModel.isProcessingImages.value = imageCollector.isProcessing
-                                settings.imageEnabled.value = false
-                                Toast.makeText(this@FloatingWindowService,
-                                    getString(R.string.image_analyzing),
-                                    Toast.LENGTH_SHORT).show()
-                            } else {
-                                // 开始图片采集：如果录制模式活跃，自动终止
-                                if (recorder.isActive) {
-                                    viewModel.stopRecording(recorder)
-                                }
-                                imageCollector.start()
-                                viewModel.isImageCollecting.value = true
-                                viewModel.imageCollectCount.value = 0
-                                viewModel.showAnswer.value = false
-                                viewModel.paginatedAnswers.value = emptyList()
-                                settings.imageEnabled.value = true
-                                Toast.makeText(this@FloatingWindowService,
-                                    getString(R.string.image_collection_start),
-                                    Toast.LENGTH_SHORT).show()
-                            }
-                        },
+                    WindowDContent(
+                        hasAnswer = hasCardContent(),
+                        paginatedAnswers = viewModel.paginatedAnswers.value,
+                        recordingAnswers = viewModel.recordingAnswers.value,
                         isRecording = viewModel.isRecording.value,
                         isProcessingRecording = viewModel.isProcessingRecording.value,
-                        isImageCollecting = viewModel.isImageCollecting.value,
-                        imageCollectCount = viewModel.imageCollectCount.value,
-                        isProcessingImages = viewModel.isProcessingImages.value,
-                        recordingCaptureCount = viewModel.recordingCaptureCount.value,
-                        recordingProcessedCount = viewModel.recordingProcessedCount.value,
-                        recordingAnswers = viewModel.recordingAnswers.value,
-                        paginatedAnswers = viewModel.paginatedAnswers.value,
-                        paginatedCopyTexts = viewModel.paginatedCopyTexts.value,
                         onCopyRecordingAnswer = { text ->
                             ClipboardUtil.copyToClipboard(this@FloatingWindowService, text)
                         },
-                        onRecordingToggle = {
-                            if (viewModel.isRecording.value) {
-                                viewModel.stopRecording(recorder)
-                            } else {
-                                if (viewModel.isImageCollecting.value) {
-                                    imageCollector.cancel()
-                                    viewModel.isImageCollecting.value = false
-                                    viewModel.isProcessingImages.value = false
-                                    settings.imageEnabled.value = false
-                                }
-                                viewModel.startRecording(recorder)
-                            }
-                            updateFloatingWindowWidth()
-                        },
-                        onArcExpandChanged = { expanded ->
-                            viewModel.isArcExpanded = expanded
-                            updateFloatingWindowHeight()
-                            updateFloatingWindowWidth()
-                        },
-                        onContentVisibilityChanged = { visible ->
-                            viewModel.hasContent = visible
-                            updateFloatingWindowHeight()
-                            updateFloatingWindowWidth()
-                        },
-                        onInteractiveAreaChanged = { left, top, right, bottom ->
-                            val contentH = (bottom - top).toInt()
-                            if (contentH > 0 && viewModel.showAnswer.value) {
-                                viewModel.measuredContentHeightPx = contentH.toFloat()
-                                updateFloatingWindowHeight()
-                            }
+                        onCloseAnswer = { closeAnswer() },
+                        onMeasuredHeight = { h ->
+                            AppLog.d("FWS", "WindowD measuredHeight=$h")
+                            syncD()
                         }
                     )
                 }
             }
         }
 
-        viewModel.displayWindowX.floatValue = windowX().toFloat()
-        windowMgr.attach(touchLayout!!, params)
-        touchLayout!!.addView(floatingView)
+        val dParams = windowMgr.createLayoutParams(
+            windowId = FloatingWindowManager.WindowId.D,
+            buttonSizePx = (settings.floatButtonSizeDp.value * density).toInt(),
+            isStealth = settings.stealthMode.value
+        )
+        AppLog.d("FWS", "ensureWindowD: dParams size=${dParams.width}x${dParams.height}")
+
+        windowMgr.attachD(dComposeView, dParams)
+        windowDView = dComposeView
+        syncD()
+        AppLog.d("FWS", "ensureWindowD: COMPLETE")
     }
 
-    // ── Window animation & position ─────────────────────────────────────
-
-    private fun animateWindowX(targetX: Float, animated: Boolean) {
-        viewModel.windowXAnimJob?.cancel()
-        if (!animated) {
-            viewModel.displayWindowX.floatValue = targetX
-            return
-        }
-        viewModel.windowXAnimJob = windowMgr.animateWindowX(
-            scope = serviceScope, from = viewModel.displayWindowX.floatValue, to = targetX
-        ) { currentX ->
-            viewModel.displayWindowX.floatValue = currentX
-            updateWindowPosition()
-        }
+    /** Detaches and disposes Window D. */
+    private fun removeWindowD() {
+        windowMgr.detachD()
+        windowDView?.disposeComposition()
+        windowDView = null
+        isDetailExpanded.value = false
     }
 
-    private fun updateWindowPosition() {
-        if (destroyed) return
-        val metrics = resources.displayMetrics
-        val screenW = metrics.widthPixels.toFloat()
-        val screenH = metrics.heightPixels.toFloat()
-        windowMgr.updateLayout(
-            view = touchLayout,
-            windowX = viewModel.displayWindowX.floatValue.toInt(),
-            windowY = viewModel.floatOffsetY.value.toInt(),
-            windowWidth = viewModel.currentWindowWidthPx.toInt(),
-            windowHeight = viewModel.currentWindowHeightPx.toInt(),
+    /** Positions Window D below Window C. */
+    private fun syncD() {
+        if (windowMgr.dView == null) return
+        val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val realMetrics = android.util.DisplayMetrics()
+        wm2.defaultDisplay.getRealMetrics(realMetrics)
+        val screenW = realMetrics.widthPixels.toFloat()
+        val screenH = realMetrics.heightPixels.toFloat()
+        val density = realMetrics.density
+        val cParams = windowMgr.cParams
+
+        val dW = (FWDims.cardWidthDp.value * density).toInt()
+        val cH = measuredWindowCHeight ?: (200 * density)
+        val dH = (cH * 4).toInt() // 400% of C height
+        val gapPx = 6 // fixed 6px gap
+
+        val aParams = windowMgr.aParams
+        val cX = if (cParams != null) cParams.x
+                 else if (aParams != null) aParams.x + (aParams.width - dW) / 2
+                 else 0
+        val cBottom = if (cParams != null) cParams.y + cH.toInt()
+                      else if (aParams != null) aParams.y + aParams.height
+                      else 0
+
+        val dX = cX
+        val dY = cBottom + gapPx
+
+        windowMgr.updateLayoutD(
+            windowX = dX.coerceIn(0, maxOf(0, screenW.toInt() - dW)),
+            windowY = dY.coerceIn(0, maxOf(0, screenH.toInt() - dH)),
+            width = dW,
+            height = dH,
+            alpha = Constants.VISIBLE_ALPHA,
             screenW = screenW,
             screenH = screenH
         )
     }
 
-    private fun updateFloatingWindowHeight() {
-        if (viewModel.captureInProgress || destroyed) return
-        val density = resources.displayMetrics.density
-        val newHeight = windowMgr.calculateHeight(
-            density = density,
-            screenHeightPx = resources.displayMetrics.heightPixels,
-            buttonSizeDp = settings.floatButtonSizeDp.value,
-            isRecording = viewModel.isRecording.value,
-            isProcessingRecording = viewModel.isProcessingRecording.value,
-            hasContent = viewModel.hasContent,
-            showAnswer = viewModel.showAnswer.value,
-            hasAnswers = viewModel.recordingAnswers.value.isNotEmpty() || viewModel.paginatedAnswers.value.isNotEmpty(),
-            measuredCardHeightPx = viewModel.measuredContentHeightPx
+    /** Whether there is card-worthy content to display. */
+    private fun hasCardContent(): Boolean {
+        return viewModel.showAnswer.value && (
+            viewModel.answerText.value != null ||
+            viewModel.paginatedAnswers.value.isNotEmpty() ||
+            viewModel.recordingAnswers.value.isNotEmpty()
         )
-        if (newHeight.toFloat() != viewModel.currentWindowHeightPx) {
-            viewModel.currentWindowHeightPx = newHeight.toFloat()
-            updateWindowPosition()
-        }
     }
 
-    /** 动态调整窗口宽度——空闲时窄，有内容时宽，配合 FLAG_NOT_TOUCH_MODAL 实现触摸穿透 */
-    private fun updateFloatingWindowWidth() {
-        if (viewModel.captureInProgress || destroyed) return
+    // ── Window positioning ──────────────────────────────────────────────
+
+    /** Size of Window A (square) in px, based on button size + margins. */
+    private fun getAWindowSize(): Int {
         val density = resources.displayMetrics.density
-        val screenW = resources.displayMetrics.widthPixels.toFloat()
         val buttonSizePx = settings.floatButtonSizeDp.value * density
-        val marginPx = 8 * density
+        val padding = (FWDims.pillEdgeMargin.value * 2 * density).toInt()
+        return buttonSizePx.toInt() + padding
+    }
+
+    /**
+     * Updates Window A position from floatOffsetX / floatOffsetY.
+     * displayWindowX tracks the actual window X coordinate (0 or screenW-aSize).
+     */
+    private fun updateWindowAPosition() {
+        if (destroyed) return
+        val aParams = windowMgr.aParams ?: return
+        val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val realMetrics = android.util.DisplayMetrics()
+        wm2.defaultDisplay.getRealMetrics(realMetrics)
+        val screenW = realMetrics.widthPixels.toFloat()
+        val screenH = realMetrics.heightPixels.toFloat()
+        val aSize = getAWindowSize()
         val isLeft = viewModel.floatOffsetX.value < screenW / 2f
 
-        val hasCardContent = viewModel.showAnswer.value ||
-            viewModel.recordingAnswers.value.isNotEmpty() || viewModel.paginatedAnswers.value.isNotEmpty()
+        val x = if (isLeft) 0 else (screenW - aSize).toInt().coerceAtLeast(0)
+        val y = viewModel.floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - aSize)
 
-        val narrowW = buttonSizePx + 2 * marginPx
+        viewModel.displayWindowX.floatValue = x.toFloat()
+        windowMgr.updateLayoutA(
+            windowX = x,
+            windowY = y,
+            width = aSize,
+            height = aSize,
+            alpha = Constants.VISIBLE_ALPHA,
+            screenW = screenW,
+            screenH = screenH
+        )
 
-        val newWidth = (if (hasCardContent || viewModel.hasContent || viewModel.isRecording.value) {
-            360 * density
-        } else if (viewModel.isArcExpanded) {
-            val gapPx = 8 * density
-            val quickRowW = (4 * 40 + 3 * 6 + 8) * density
-            buttonSizePx + 2 * marginPx + gapPx + quickRowW
+        // Sync companion windows
+        syncB()
+        syncC()
+    }
+
+    /** Positions Window B adjacent to Window A. */
+    private fun syncB() {
+        val aParams = windowMgr.aParams ?: return
+        if (windowMgr.bView == null) return
+        val metrics = resources.displayMetrics
+        val screenW = metrics.widthPixels.toFloat()
+        val screenH = metrics.heightPixels.toFloat()
+        val density = metrics.density
+        val isLeft = viewModel.floatOffsetX.value < screenW / 2f
+        val gapPx = (FWDims.quickPanelGap.value * density).toInt()
+
+        val bP = windowMgr.bParams ?: return
+        val bW = bP.width.coerceAtLeast(1)
+        val bH = bP.height.coerceAtLeast(1)
+
+        val bX = if (isLeft) {
+            aParams.x + aParams.width + gapPx
         } else {
-            narrowW
-        }).coerceAtLeast(screenW)  // 始终全宽，避免拖拽裁剪
-
-        val prevWidth = viewModel.currentWindowWidthPx
-        if (kotlin.math.abs(newWidth - prevWidth) < 4) return
-
-        val delta = newWidth - prevWidth
-        viewModel.currentWindowWidthPx = newWidth
-
-        if (!isLeft && delta != 0f) {
-            viewModel.displayWindowX.floatValue =
-                (viewModel.displayWindowX.floatValue - delta).coerceAtLeast(0f)
+            aParams.x - bW - gapPx
         }
-        updateWindowPosition()
+        val bY = aParams.y + (aParams.height - bH) / 2
+
+        windowMgr.updateLayoutB(
+            windowX = bX,
+            windowY = bY,
+            width = bW,
+            height = bH,
+            alpha = Constants.VISIBLE_ALPHA,
+            screenW = screenW,
+            screenH = screenH
+        )
     }
-    private fun setWindowVisible(visible: Boolean) {
-        windowMgr.setVisible(touchLayout, visible, settings.stealthMode.value)
+
+    /** Positions Window C below (or above) Window A, using real display metrics. */
+    private fun syncC() {
+        val aParams = windowMgr.aParams ?: return
+        if (windowMgr.cView == null) return
+        val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val realMetrics = android.util.DisplayMetrics()
+        wm2.defaultDisplay.getRealMetrics(realMetrics)
+        val screenW = realMetrics.widthPixels.toFloat()
+        val screenH = realMetrics.heightPixels.toFloat()
+        val density = realMetrics.density
+        AppLog.d("FWS", "syncC: realScreen=${screenW.toInt()}x${screenH.toInt()} aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
+
+        val cW = (FWDims.cardWidthDp.value * density).toInt()
+        val defaultH = (200 * density).toInt()
+        val cH = (measuredWindowCHeight ?: defaultH.toFloat()).toInt()
+
+        val gapPx = (8 * density).toInt()
+        val cX = aParams.x + (aParams.width - cW) / 2
+
+        val spaceBelow = screenH.toInt() - (aParams.y + aParams.height + gapPx)
+        val cY = if (cH > 0 && spaceBelow >= cH) {
+            aParams.y + aParams.height + gapPx
+        } else if (cH > 0) {
+            (aParams.y - cH - gapPx).coerceAtLeast(0)
+        } else {
+            aParams.y + aParams.height + gapPx
+        }
+
+        val clampedX = cX.coerceIn(0, maxOf(0, screenW.toInt() - cW))
+        val clampedY = cY.coerceIn(0, maxOf(0, screenH.toInt() - cH))
+        AppLog.d("FWS", "syncC: computed cX=$cX cY=$cY clamped=$clampedX,$clampedY cSize=${cW}x${cH}")
+        windowMgr.updateLayoutC(
+            windowX = clampedX,
+            windowY = clampedY,
+            width = cW,
+            height = cH,
+            alpha = Constants.VISIBLE_ALPHA,
+            screenW = screenW,
+            screenH = screenH
+        )
+        syncD()
     }
+
+    /** Handles drag gesture on Window A — updates offset and repositions all windows. */
+    private fun dragWindowBy(deltaX: Float, deltaY: Float) {
+        val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val realMetrics = android.util.DisplayMetrics()
+        wm2.defaultDisplay.getRealMetrics(realMetrics)
+        val screenW = realMetrics.widthPixels.toFloat()
+        val screenH = realMetrics.heightPixels.toFloat()
+        val aSize = getAWindowSize().toFloat()
+        val buttonHalf = (settings.floatButtonSizeDp.value * realMetrics.density) / 2f
+
+        viewModel.floatOffsetX.value = (viewModel.floatOffsetX.value + deltaX)
+            .coerceIn(buttonHalf, screenW - buttonHalf)
+        viewModel.floatOffsetY.value = (viewModel.floatOffsetY.value + deltaY)
+            .coerceIn(0f, screenH - aSize)
+
+        // During drag: position window at actual finger position (continuous, not snapped)
+        val dragX = (viewModel.floatOffsetX.value - buttonHalf).toInt()
+            .coerceIn(0, maxOf(0, screenW.toInt() - aSize.toInt()))
+        val dragY = viewModel.floatOffsetY.value.toInt()
+            .coerceIn(0, maxOf(0, screenH.toInt() - aSize.toInt()))
+        viewModel.displayWindowX.floatValue = dragX.toFloat()
+        windowMgr.updateLayoutA(
+            windowX = dragX,
+            windowY = dragY,
+            width = aSize.toInt(),
+            height = aSize.toInt(),
+            alpha = Constants.VISIBLE_ALPHA,
+            screenW = screenW,
+            screenH = screenH
+        )
+        syncB()
+        syncC()
+    }
+
+    /**
+     * Animates Window A to target X position (edge snap).
+     * Uses displayWindowX as the animated window coordinate.
+     * floatOffsetX is not changed during animation (side stays constant during snap).
+     */
+    private fun animateWindowX(targetX: Float, animated: Boolean) {
+        viewModel.windowXAnimJob?.cancel()
+        if (!animated) {
+            viewModel.displayWindowX.floatValue = targetX
+            // Apply final position directly
+            val aParams = windowMgr.aParams ?: return
+            val metrics = resources.displayMetrics
+            windowMgr.updateLayoutA(
+                windowX = targetX.toInt(),
+                windowY = aParams.y,
+                width = aParams.width,
+                height = aParams.height,
+                alpha = Constants.VISIBLE_ALPHA,
+                screenW = metrics.widthPixels.toFloat(),
+                screenH = metrics.heightPixels.toFloat()
+            )
+            syncB()
+            syncC()
+            return
+        }
+        viewModel.windowXAnimJob = windowMgr.animateWindowX(
+            scope = serviceScope,
+            from = viewModel.displayWindowX.floatValue,
+            to = targetX
+        ) anim@{ currentX ->
+            viewModel.displayWindowX.floatValue = currentX
+            // Directly update Window A position using animated X
+            val aParams = windowMgr.aParams ?: return@anim
+            val metrics = resources.displayMetrics
+            windowMgr.updateLayoutA(
+                windowX = currentX.toInt(),
+                windowY = aParams.y,
+                width = aParams.width,
+                height = aParams.height,
+                alpha = Constants.VISIBLE_ALPHA,
+                screenW = metrics.widthPixels.toFloat(),
+                screenH = metrics.heightPixels.toFloat()
+            )
+            syncB()
+            syncC()
+        }
+    }
+
+    // ── Stealth notification update ──────────────────────────────────────
+
+    /** Rebuilds and re-posts the foreground notification with stealth-aware content. */
+    private fun updateNotification(isStealth: Boolean) {
+        val notification = NotificationHelper.buildNotification(this, isStealth)
+        val nm = getSystemService(android.app.NotificationManager::class.java)
+        nm?.notify(Constants.NOTIFICATION_ID, notification)
+    }
+
+    // ── Card action handlers ────────────────────────────────────────────
+
+    private fun closeAnswer() {
+        AppLog.d("FWS", "closeAnswer called")
+        viewModel.currentFetchJob?.cancel()
+        viewModel.currentFetchJob = null
+        viewModel.showAnswer.value = false
+        viewModel.answerText.value = null
+        viewModel.recordingAnswers.value = emptyList()
+        viewModel.paginatedAnswers.value = emptyList()
+        viewModel.paginatedCopyTexts.value = emptyList()
+        viewModel.floatingStatus.value = FloatingStatus.Idle
+        viewModel.statusMessage.value = null
+    }
+
+    private fun closeStatus() {
+        viewModel.currentFetchJob?.cancel()
+        viewModel.currentFetchJob = null
+        recorder.cancel()
+        imageCollector.cancel()
+        viewModel.isImageCollecting.value = false
+        viewModel.isProcessingImages.value = false
+        viewModel.isProcessingRecording.value = false
+        viewModel.showAnswer.value = false
+        viewModel.answerText.value = null
+        viewModel.recordingAnswers.value = emptyList()
+        viewModel.paginatedAnswers.value = emptyList()
+        viewModel.paginatedCopyTexts.value = emptyList()
+        viewModel.floatingStatus.value = FloatingStatus.Idle
+        viewModel.statusMessage.value = null
+    }
+
+    // ── Cleanup ─────────────────────────────────────────────────────────
 
     override fun onDestroy() {
         destroyed = true
@@ -624,10 +1071,24 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         serviceScope.cancel()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         try { unregisterReceiver(answerReceiver) } catch (_: IllegalArgumentException) {}
-        floatingView?.disposeComposition()
-        touchLayout?.let { windowMgr.detach(it) }
-        touchLayout = null
-        floatingView = null
+
+        // Remove all windows
+        windowMgr.detachD()
+        windowMgr.detachC()
+        windowMgr.detachB()
+        windowMgr.detachA()
+
+        // Dispose composition for each
+        windowDView?.disposeComposition()
+        windowCView?.disposeComposition()
+        windowBView?.disposeComposition()
+        windowAView?.disposeComposition()
+
+        windowDView = null
+        windowCView = null
+        windowBView = null
+        windowAView = null
+
         screenCaptureManager?.releaseAll()
         _viewModelStore.clear()
         super.onDestroy()

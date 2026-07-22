@@ -45,7 +45,7 @@ object NotificationHelper {
     }
 
     /** 构建前台服务通知（含停止按钮） */
-    fun buildNotification(context: Context): Notification {
+    fun buildNotification(context: Context, isStealth: Boolean = false): Notification {
         val stopIntent = PendingIntent.getService(
             context,
             1,
@@ -55,7 +55,10 @@ object NotificationHelper {
         )
         return NotificationCompat.Builder(context, Constants.NOTIFICATION_CHANNEL_ID)
             .setContentTitle(context.getString(R.string.app_name))
-            .setContentText(context.getString(R.string.notification_content))
+            .setContentText(
+                if (isStealth) context.getString(R.string.app_name)
+                else context.getString(R.string.notification_content)
+            )
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(
                 PendingIntent.getActivity(

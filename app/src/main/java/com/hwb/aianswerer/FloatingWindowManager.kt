@@ -4,9 +4,9 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
 import android.view.Gravity
-import android.view.WindowManager
 import android.view.View
-import com.hwb.aianswerer.config.AppConfig
+import android.view.WindowManager
+import com.hwb.aianswerer.ui.components.FWDims
 import com.hwb.aianswerer.utils.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -15,122 +15,271 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * 悬浮窗管理 — 纯粹的窗口创建、位置、动画、高度操作。
+ * 悬浮窗管理 — 三窗口（A=Pill, B=Toggles, C=Card）的创建、位置、动画操作。
  *
  * 不管 Compose 内容是什么，不管答题业务逻辑。
- * 只负责把 ComposeView 贴到屏幕上，并响应位置/高度变化。
+ * 只负责把 ComposeView 贴到屏幕上，并响应位置/大小变化。
  */
 class FloatingWindowManager(private val context: Context) {
     val windowManager: WindowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var animJob: Job? = null
-    private var windowParams: WindowManager.LayoutParams? = null
 
-    /** 创建悬浮窗布局参数 */
+    enum class WindowId { A, B, C, D }
+
+    var aParams: WindowManager.LayoutParams? = null
+    var bParams: WindowManager.LayoutParams? = null
+    var cParams: WindowManager.LayoutParams? = null
+    var dParams: WindowManager.LayoutParams? = null
+
+    var aView: View? = null
+    var bView: View? = null
+    var cView: View? = null
+    var dView: View? = null
+
+    // ── Layout params factory ────────────────────────────────────────
+
+    /** 创建指定窗口的布局参数 */
     fun createLayoutParams(
-        windowWidthPx: Int,
-        windowHeightPx: Int,
-        isLeftSide: Boolean,
-        offsetY: Float,
-        screenW: Float,
-        screenH: Float,
+        windowId: WindowId,
+        buttonSizePx: Int,
         isStealth: Boolean
     ): WindowManager.LayoutParams {
-        val x = if (isLeftSide) 0 else (screenW - windowWidthPx).toInt().coerceAtLeast(0)
-        val y = offsetY.toInt().coerceIn(0, screenH.toInt() - windowHeightPx)
+        val density = context.resources.displayMetrics.density
+        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            (if (isStealth) WindowManager.LayoutParams.FLAG_SECURE else 0)
+
+        val (width, height) = when (windowId) {
+            WindowId.A -> {
+                val padding = (FWDims.pillEdgeMargin.value * 2 * density).toInt()
+                val size = buttonSizePx + padding
+                size to size
+            }
+            WindowId.B -> {
+                // Estimated size for 5 toggles (40dp each + spacing). Actual size from windowBContent onMeasuredSize.
+                val estW = ((FWDims.quickBtnSize.value * 5 + FWDims.quickBtnSpacing.value * 4 + FWDims.quickPanelHPadding.value * 2) * density).toInt()
+                val estH = ((FWDims.quickBtnSize.value + FWDims.quickPanelVPadding.value * 2) * density).toInt()
+                estW.coerceAtLeast(50) to estH.coerceAtLeast(40)
+            }
+            WindowId.C -> (FWDims.cardWidthDp.value * density).toInt() to (200 * density).toInt()
+            WindowId.D -> {
+                // Window D: same width as C, height = 400% of C's initial height (800dp)
+                val cInitialH = (200 * density).toInt()
+                (FWDims.cardWidthDp.value * density).toInt() to (cInitialH * 4)
+            }
+        }
 
         return WindowManager.LayoutParams(
-            windowWidthPx,
-            windowHeightPx,
+            width,
+            height,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else {
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE
             },
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    or if (isStealth) WindowManager.LayoutParams.FLAG_SECURE else 0,
+            flags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            this.x = x
-            this.y = y
-            if (isStealth) alpha = 0.99f
+            x = 0
+            y = 0
+            if (isStealth) alpha = Constants.STEALTH_ALPHA
         }
     }
 
-    /** 把 ComposeView 添加到窗口 */
-    fun attach(view: View, params: WindowManager.LayoutParams) {
-        windowParams = params
+    // ── Attach ───────────────────────────────────────────────────────
+
+    fun attachA(view: View, params: WindowManager.LayoutParams) {
+        aView = view
+        aParams = params
         windowManager.addView(view, params)
     }
 
-    /** 更新窗口位置和大小 */
-    fun updateLayout(
-        view: View?,
-        windowX: Int,
-        windowY: Int,
-        windowWidth: Int,
-        windowHeight: Int,
-        alpha: Float = 1f,
-        screenW: Float,
-        screenH: Float
+    fun attachB(view: View, params: WindowManager.LayoutParams) {
+        bView = view
+        bParams = params
+        windowManager.addView(view, params)
+    }
+
+    fun attachC(view: View, params: WindowManager.LayoutParams) {
+        cView = view
+        cParams = params
+        windowManager.addView(view, params)
+    }
+
+    fun attachD(view: View, params: WindowManager.LayoutParams) {
+        dView = view
+        dParams = params
+        windowManager.addView(view, params)
+    }
+
+    // ── Detach ──────────────────────────────────────────────────────
+
+    fun detachA() {
+        animJob?.cancel()
+        aView?.let { windowManager.removeView(it) }
+        aView = null
+        aParams = null
+    }
+
+    fun detachB() {
+        bView?.let { windowManager.removeView(it) }
+        bView = null
+        bParams = null
+    }
+
+    fun detachC() {
+        cView?.let { windowManager.removeView(it) }
+        cView = null
+        cParams = null
+    }
+
+    fun detachD() {
+        dView?.let { windowManager.removeView(it) }
+        dView = null
+        dParams = null
+    }
+
+    // ── Per-window layout update ─────────────────────────────────────
+
+    fun updateLayoutA(
+        windowX: Int, windowY: Int, width: Int, height: Int,
+        alpha: Float, screenW: Float, screenH: Float
     ) {
-        view ?: return
-        val p = windowParams ?: return
-        p.width = windowWidth
+        val view = aView ?: return
+        val p = aParams ?: return
+        p.width = width
+        p.height = height
         p.x = windowX.coerceIn(0, maxOf(0, screenW.toInt() - p.width))
         p.y = windowY.coerceIn(0, maxOf(0, screenH.toInt() - p.height))
-        p.height = windowHeight
         p.alpha = alpha
         try {
             windowManager.updateViewLayout(view, p)
         } catch (e: Exception) {
-            AppLog.e("FWM", "updateLayout failed", e)
+            AppLog.e("FWM", "updateLayoutA failed", e)
         }
     }
 
-    /** 设置窗口可见性（用于截图期间隐藏） */
-    fun setVisible(view: View?, visible: Boolean, isStealth: Boolean) {
-        view ?: return
-        val p = windowParams ?: return
-        p.alpha = if (visible) (if (isStealth) 0.99f else 1f) else 0f
-        try {
-            windowManager.updateViewLayout(view, p)
-        } catch (e: Exception) {
-            AppLog.e("FWM", "setVisible failed", e)
-        }
-    }
-
-    /** 添加/移除 FLAG_SECURE，用于截图期间隐藏窗口内容 */
-    fun setFlagSecure(view: View?, enabled: Boolean) {
-        view ?: return
-        val p = windowParams ?: return
-        p.flags = if (enabled) p.flags or WindowManager.LayoutParams.FLAG_SECURE
-                  else p.flags and WindowManager.LayoutParams.FLAG_SECURE.inv()
-        try {
-            windowManager.updateViewLayout(view, p)
-        } catch (e: Exception) {
-            AppLog.e("FWM", "setFlagSecure failed", e)
-        }
-    }
-
-    /** 设置窗口透明度，用于截图期间完全隐藏悬浮窗 */
-    fun setAlpha(view: View?, alpha: Float) {
-        view ?: return
-        val p = windowParams ?: return
+    fun updateLayoutB(
+        windowX: Int, windowY: Int, width: Int, height: Int,
+        alpha: Float, screenW: Float, screenH: Float
+    ) {
+        val view = bView ?: return
+        val p = bParams ?: return
+        p.width = width
+        p.height = height
+        p.x = windowX.coerceIn(0, maxOf(0, screenW.toInt() - p.width))
+        p.y = windowY.coerceIn(0, maxOf(0, screenH.toInt() - p.height))
         p.alpha = alpha
         try {
             windowManager.updateViewLayout(view, p)
         } catch (e: Exception) {
-            AppLog.e("FWM", "setAlpha failed", e)
+            AppLog.e("FWM", "updateLayoutB failed", e)
         }
     }
 
-    /** 平滑动画窗口 X 位置（ease-out cubic） */
+    fun updateLayoutC(
+        windowX: Int, windowY: Int, width: Int, height: Int,
+        alpha: Float, screenW: Float, screenH: Float
+    ) {
+        val view = cView ?: return
+        val p = cParams ?: return
+        p.width = width
+        p.height = height
+        p.x = windowX.coerceIn(0, maxOf(0, screenW.toInt() - p.width))
+        p.y = windowY.coerceIn(0, maxOf(0, screenH.toInt() - p.height))
+        p.alpha = alpha
+        try {
+            windowManager.updateViewLayout(view, p)
+        } catch (e: Exception) {
+            AppLog.e("FWM", "updateLayoutC failed", e)
+        }
+    }
+
+    fun updateLayoutD(
+        windowX: Int, windowY: Int, width: Int, height: Int,
+        alpha: Float, screenW: Float, screenH: Float
+    ) {
+        val view = dView ?: return
+        val p = dParams ?: return
+        p.width = width
+        p.height = height
+        p.x = windowX.coerceIn(0, maxOf(0, screenW.toInt() - p.width))
+        p.y = windowY.coerceIn(0, maxOf(0, screenH.toInt() - p.height))
+        p.alpha = alpha
+        try {
+            windowManager.updateViewLayout(view, p)
+        } catch (e: Exception) {
+            AppLog.e("FWM", "updateLayoutD failed", e)
+        }
+    }
+
+    // ── Batch operations ────────────────────────────────────────────
+
+    /** Apply individual actions to matched windows by view identity. */
+    fun applyToAllWindows(vararg views: Pair<View?, (WindowManager.LayoutParams) -> Unit>) {
+        for ((view, action) in views) {
+            val p = when (view) {
+                aView -> aParams
+                bView -> bParams
+                cView -> cParams
+                else -> null
+            }
+            if (view != null && p != null) {
+                action(p)
+                try {
+                    windowManager.updateViewLayout(view, p)
+                } catch (e: Exception) {
+                    AppLog.e("FWM", "applyToAllWindows failed", e)
+                }
+            }
+        }
+    }
+
+    /** Add or remove FLAG_SECURE on all windows. */
+    fun setAllFlagSecure(enabled: Boolean) {
+        val flag = WindowManager.LayoutParams.FLAG_SECURE
+        listOfNotNull(
+            aView to aParams,
+            bView to bParams,
+            cView to cParams,
+            dView to dParams
+        ).forEach { (view, p) ->
+            val np = p ?: return@forEach
+            np.flags = if (enabled) np.flags or flag else np.flags and flag.inv()
+            try {
+                windowManager.updateViewLayout(view, np)
+            } catch (e: Exception) {
+                AppLog.e("FWM", "setAllFlagSecure failed", e)
+            }
+        }
+    }
+
+    /** Set alpha on all windows. */
+    fun setAllAlpha(alpha: Float) {
+        listOfNotNull(
+            aView to aParams,
+            bView to bParams,
+            cView to cParams,
+            dView to dParams
+        ).forEach { (view, p) ->
+            val np = p ?: return@forEach
+            np.alpha = alpha
+            try {
+                windowManager.updateViewLayout(view, np)
+            } catch (e: Exception) {
+                AppLog.e("FWM", "setAllAlpha failed", e)
+            }
+        }
+    }
+
+    // ── Animation ───────────────────────────────────────────────────
+
+    /** 平滑动画窗口 X 位置（ease-out cubic），用于 Window A 边缘吸附 */
     fun animateWindowX(
         scope: CoroutineScope,
         from: Float,
@@ -154,34 +303,33 @@ class FloatingWindowManager(private val context: Context) {
         return job
     }
 
-    /** 计算悬浮窗高度 */
-    fun calculateHeight(
-        density: Float,
-        screenHeightPx: Int,
-        buttonSizeDp: Int,
-        isRecording: Boolean,
-        isProcessingRecording: Boolean,
-        hasContent: Boolean,
-        showAnswer: Boolean,
-        hasAnswers: Boolean,
-        measuredCardHeightPx: Float = 0f
-    ): Int {
-        val buttonSizePx = buttonSizeDp * density
-        val idleHeight = buttonSizePx + com.hwb.aianswerer.ui.components.FWDims.idleHeightPaddingDp.value * density
-        val progressHeight = buttonSizePx + 120 * density
-        val contentHeight = if (measuredCardHeightPx > 0f) measuredCardHeightPx.toInt() else (700 * density).toInt()
+    // ── Backward compat delegates ───────────────────────────────────
 
-        return when {
-            isRecording || isProcessingRecording -> progressHeight
-            hasContent && (showAnswer || hasAnswers) -> contentHeight
-            hasContent -> progressHeight
-            else -> idleHeight
-        }.toInt()
+    fun attach(view: View, params: WindowManager.LayoutParams) {
+        attachA(view, params)
     }
 
-    /** 移除窗口 */
+    fun setAlpha(view: View?, alpha: Float) {
+        val p = when (view) {
+            aView -> aParams
+            bView -> bParams
+            cView -> cParams
+            else -> null
+        } ?: return
+        p.alpha = alpha
+        try {
+            windowManager.updateViewLayout(view!!, p)
+        } catch (e: Exception) {
+            AppLog.e("FWM", "setAlpha failed", e)
+        }
+    }
+
     fun detach(view: View?) {
-        animJob?.cancel()
-        view?.let { windowManager.removeView(it) }
+        when (view) {
+            aView -> detachA()
+            bView -> detachB()
+            cView -> detachC()
+            else -> {}
+        }
     }
 }

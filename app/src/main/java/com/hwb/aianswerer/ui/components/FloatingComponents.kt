@@ -48,6 +48,7 @@ internal object FWDims {
     val pillEdgeMargin = 8.dp
 
     val cardWidthRatio = 0.88f
+    val cardWidthDp = 360.dp  // 三窗口下 Window C 固定宽度
     val cardCornerRadius = 20.dp
     val cardMaxHeight = 560.dp
     val cardSectionSpacing = 10.dp

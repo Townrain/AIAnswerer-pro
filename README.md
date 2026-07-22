@@ -112,9 +112,9 @@ com.hwb.aianswerer/
 
 ### 更新说明
 
-详见 [CHANGELOG.md](CHANGELOG.md)。近期重要修复：
+详见 [变更日志](变更日志.md) 或 [CHANGELOG](CHANGELOG.md)。近期重要更新：
+- **v1.7.0**: 三窗口悬浮窗架构（A/B/C 独立窗口） + 隐身模式常量提取 + 通知隐身保护 + 废弃接口清理
 - **v1.6.2**: 多厂商测试连接修复 + 悬浮按钮拖拽卡死修复 + 暗色主题响应 + API URL 多版本兼容 + LLM maxTokens 512→4096 + 图标去重 & 主题合规 & 动画可测试性重构 + 答案卡片独立组件
-- **v1.6.1**: 多语言输出 11 种 + 新 Logo + 测试 24x 加速
 
 ### License
 This project is released under the [GNU Affero General Public License v3.0](/LICENSE)

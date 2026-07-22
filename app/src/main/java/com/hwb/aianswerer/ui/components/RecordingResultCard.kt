@@ -84,9 +84,16 @@ internal fun RecordingResultCard(
     processedCount: Int = 0,
     totalCount: Int = 0
 ) {
-    var expanded by remember { mutableStateOf(answers.size > 3) }
+    com.hwb.aianswerer.utils.AppLog.d("RRC", "RecordingResultCard: answers.size=${answers.size}")
     val cardR = FWDims.cardCornerRadius
     val cardShape = RoundedCornerShape(cardR)
+
+    // Pagination state (always show expanded content, no collapse/expand toggle)
+    val itemsPerPage = 1
+    var curPage by remember { mutableStateOf(0) }
+    LaunchedEffect(answers.size) { curPage = 0 }
+    val totalPages = (answers.size + itemsPerPage - 1) / itemsPerPage
+    val pageAnswers = answers.drop(curPage * itemsPerPage).take(itemsPerPage)
 
     Box(
         Modifier
@@ -99,7 +106,7 @@ internal fun RecordingResultCard(
             .border(0.5.dp, t.ac.copy(alpha = if (t.isLight) 0.10f else 0.06f), cardShape)
     ) {
         Column {
-            // Header: title + copy summary + expand toggle + close
+            // Header: title + copy all + page nav + close
             Row(Modifier.fillMaxWidth().padding(horizontal = FWDims.cardPaddingH, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -112,148 +119,76 @@ internal fun RecordingResultCard(
                     modifier = Modifier.weight(1f)
                 )
                 Row {
-                    // Copy summary
                     CopyBtn(t, onCopy = {
                         onCopyAnswer(answers.joinToString("\n") { "${it.first}. ${extractShortAnswer(it.second)}" })
                     })
                     Spacer(Modifier.width(4.dp))
-                    // Expand/collapse
-                    Bouncy(onClick = { expanded = !expanded }) {
-                        Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(t.ac.copy(alpha = 0.06f)),
-                            contentAlignment = Alignment.Center) {
-                            Text(if (expanded) "▲" else "▼", style = DW.LabelMedium.copy(color = t.osv, fontSize = 12.sp))
-                        }
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    // Close
                     CloseBtn(t, onClose, isBusy = false)
                 }
             }
 
-            // Pagination state (shared between collapsed and expanded)
-            val itemsPerPage = 1
-            var curPage by remember { mutableStateOf(0) }
-            LaunchedEffect(answers.size) { curPage = 0 }
-            val totalPages = (answers.size + itemsPerPage - 1) / itemsPerPage
-            val pageAnswers = answers.drop(curPage * itemsPerPage).take(itemsPerPage)
-
-            // Collapsed: compact list with scroll for overflow
-            if (!expanded) {
-                Column(Modifier
-                    .padding(horizontal = FWDims.cardPaddingH)
-                    .padding(bottom = FWDims.cardPaddingV)
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(rememberScrollState())
-                ) {
-                    pageAnswers.forEach { (num, fullText) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text("$num.", style = DW.LabelMedium.copy(color = t.osv, fontWeight = FontWeight.SemiBold),
-                                modifier = Modifier.width(24.dp))
-                            Text(extractShortAnswer(fullText), style = DW.BodyMedium.copy(color = t.ob))
-                        }
-                    }
-                    if (isProcessing) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = stringResource(R.string.recording_more_coming),
-                                style = DW.BodySmall.copy(color = t.osv)
-                            )
-                        }
-                    }
-                    // Pagination controls for collapsed mode
-                    if (totalPages > 1) {
-                        Spacer(Modifier.height(6.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically) {
-                            if (curPage > 0) {
-                                Bouncy(onClick = { curPage-- }) {
-                                    Text("◀ ${stringResource(R.string.float_prev_page)}", style = DW.BodySmall.copy(color = t.ob))
-                                }
-                            } else {
-                                Text("◀ ${stringResource(R.string.float_prev_page)}", style = DW.BodySmall.copy(color = t.osv))
+            // Full expanded content: paginated questions with detail
+            Column(Modifier.padding(horizontal = FWDims.cardPaddingH).padding(bottom = 8.dp)) {
+                pageAnswers.forEach { (num, fullText) ->
+                    val sections = remember(fullText) { parseSections(fullText) }
+                    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (t.isLight) Color.White.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.04f))
+                        .border(0.5.dp, t.ac.copy(alpha = if (t.isLight) 0.08f else 0.04f), RoundedCornerShape(12.dp))
+                        .padding(10.dp)) {
+                        Column {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(R.string.float_question_index, num), style = DW.LabelMedium.copy(color = t.osv, fontWeight = FontWeight.SemiBold))
+                                CopyBtn(t, onCopy = { onCopyAnswer(fullText) })
                             }
-                            Text(" ${curPage + 1} / $totalPages ", style = DW.BodySmall.copy(color = t.ob))
-                            if (curPage < totalPages - 1) {
-                                Bouncy(onClick = { curPage++ }) {
-                                    Text("${stringResource(R.string.float_next_page)} ▶", style = DW.BodySmall.copy(color = t.ob))
+                            Spacer(Modifier.height(6.dp))
+                            sections.forEach { sec ->
+                                if (sec.label.isNotBlank()) { Text(sec.label, style = DW.LabelSmall.copy(color = t.osv, fontSize = 11.sp)); Spacer(Modifier.height(2.dp)) }
+                                when {
+                                    sec.isAnswer -> Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF34C759).copy(alpha = 0.06f)).padding(8.dp)) {
+                                        Text(sec.content, style = DW.BodyMedium.copy(fontWeight = FontWeight.SemiBold, color = t.ob))
+                                    }
+                                    sec.isExplanation -> Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                        Box(Modifier.width(3.dp).heightIn(min = 24.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF6C5CE7)))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(sec.content, style = DW.LabelLarge.copy(color = t.osv), modifier = Modifier.weight(1f))
+                                    }
+                                    else -> Column {
+                                        sec.content.split("\n").filter { it.isNotBlank() }.forEach { line ->
+                                            val ok = line.contains("✓") || line.contains("√")
+                                            Text(line.trim(), style = DW.LabelLarge.copy(
+                                                fontWeight = if (ok) FontWeight.SemiBold else FontWeight.Normal,
+                                                color = if (ok) t.ob else t.osv))
+                                        }
+                                    }
                                 }
-                            } else {
-                                Text("${stringResource(R.string.float_next_page)} ▶", style = DW.BodySmall.copy(color = t.osv))
                             }
                         }
                     }
                 }
-            }
 
-            // Expanded: paginated questions
-            AnimatedVisibility(visible = expanded, enter = expandVertically(tween(250)) + fadeIn(tween(200)),
-                exit = shrinkVertically(tween(200)) + fadeOut(tween(150))) {
-                Column(Modifier.padding(horizontal = FWDims.cardPaddingH).padding(bottom = 8.dp)) {
-                    pageAnswers.forEach { (num, fullText) ->
-                        val sections = remember(fullText) { parseSections(fullText) }
-                        Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (t.isLight) Color.White.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.04f))
-                            .border(0.5.dp, t.ac.copy(alpha = if (t.isLight) 0.08f else 0.04f), RoundedCornerShape(12.dp))
-                            .padding(10.dp)) {
-                            Column {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Text(stringResource(R.string.float_question_index, num), style = DW.LabelMedium.copy(color = t.osv, fontWeight = FontWeight.SemiBold))
-                                    CopyBtn(t, onCopy = { onCopyAnswer(fullText) })
-                                }
-                                Spacer(Modifier.height(6.dp))
-                                sections.forEach { sec ->
-                                    if (sec.label.isNotBlank()) { Text(sec.label, style = DW.LabelSmall.copy(color = t.osv, fontSize = 11.sp)); Spacer(Modifier.height(2.dp)) }
-                                    when {
-                                        sec.isAnswer -> Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0xFF34C759).copy(alpha = 0.06f)).padding(8.dp)) {
-                                            Text(sec.content, style = DW.BodyMedium.copy(fontWeight = FontWeight.SemiBold, color = t.ob))
-                                        }
-                                        sec.isExplanation -> Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                                            Box(Modifier.width(3.dp).heightIn(min = 24.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF6C5CE7)))
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(sec.content, style = DW.LabelLarge.copy(color = t.osv), modifier = Modifier.weight(1f))
-                                        }
-                                        else -> Column {
-                                            sec.content.split("\n").filter { it.isNotBlank() }.forEach { line ->
-                                                val ok = line.contains("✓") || line.contains("√")
-                                                Text(line.trim(), style = DW.LabelLarge.copy(
-                                                    fontWeight = if (ok) FontWeight.SemiBold else FontWeight.Normal,
-                                                    color = if (ok) t.ob else t.osv))
-                    }
-                }
-            }
-                                }
+                // Pagination controls
+                if (totalPages > 1) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        if (curPage > 0) {
+                            Bouncy(onClick = { curPage-- }) {
+                                Text("◀ ${stringResource(R.string.float_prev_page)}", style = DW.LabelMedium.copy(color = t.p), modifier = Modifier.padding(8.dp))
                             }
+                        } else {
+                            Text("◀ ${stringResource(R.string.float_prev_page)}", style = DW.LabelMedium.copy(color = t.ac.copy(alpha = 0.3f)), modifier = Modifier.padding(8.dp))
                         }
-                    }
-
-                    // Pagination controls
-                    if (totalPages > 1) {
-                        Spacer(Modifier.height(6.dp))
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).padding(bottom = 12.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically) {
-                            if (curPage > 0) {
-                                Bouncy(onClick = { curPage-- }) {
-                                    Text("◀ ${stringResource(R.string.float_prev_page)}", style = DW.LabelMedium.copy(color = t.p), modifier = Modifier.padding(8.dp))
-                                }
-                            } else {
-                                Text("◀ ${stringResource(R.string.float_prev_page)}", style = DW.LabelMedium.copy(color = t.ac.copy(alpha = 0.3f)), modifier = Modifier.padding(8.dp))
+                        Text(" ${curPage + 1} / $totalPages ", style = DW.LabelSmall.copy(color = t.osv))
+                        if (curPage < totalPages - 1) {
+                            Bouncy(onClick = { curPage++ }) {
+                                Text("${stringResource(R.string.float_next_page)} ▶", style = DW.LabelMedium.copy(color = t.p), modifier = Modifier.padding(8.dp))
                             }
-                            Text(" ${curPage + 1} / $totalPages ", style = DW.LabelSmall.copy(color = t.osv))
-                            if (curPage < totalPages - 1) {
-                                Bouncy(onClick = { curPage++ }) {
-                                    Text("${stringResource(R.string.float_next_page)} ▶", style = DW.LabelMedium.copy(color = t.p), modifier = Modifier.padding(8.dp))
-                                }
-                            } else {
-                                Text("${stringResource(R.string.float_next_page)} ▶", style = DW.LabelMedium.copy(color = t.ac.copy(alpha = 0.3f)), modifier = Modifier.padding(8.dp))
-                            }
+                        } else {
+                            Text("${stringResource(R.string.float_next_page)} ▶", style = DW.LabelMedium.copy(color = t.ac.copy(alpha = 0.3f)), modifier = Modifier.padding(8.dp))
                         }
                     }
                 }
