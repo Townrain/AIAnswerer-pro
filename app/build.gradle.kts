@@ -105,9 +105,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Release签名：不完整时直接报错，不使用debug降级
+            // Release签名：签名配置不完整时自动降级到debug签名
             val releaseSigningConfig = signingConfigs.getByName("release")
-            signingConfig = releaseSigningConfig
+            if (releaseSigningConfig.storeFile != null) {
+                signingConfig = releaseSigningConfig
+            }
         }
     }
     compileOptions {
