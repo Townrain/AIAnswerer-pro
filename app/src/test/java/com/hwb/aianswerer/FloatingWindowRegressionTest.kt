@@ -84,6 +84,30 @@ class FloatingWindowRegressionTest {
         assertEquals("\u2717", pillVisual(FloatingStatus.Error, false, false, testTh()).badge!!.first)
     }
 
+    @Test fun `pillVisual Capturing 无 badge`() {
+        assertNull(pillVisual(FloatingStatus.Capturing, false, false, testTh()).badge)
+    }
+
+    @Test fun `pillVisual Recognizing 无 badge`() {
+        assertNull(pillVisual(FloatingStatus.Recognizing, false, false, testTh()).badge)
+    }
+
+    @Test fun `pillVisual Searching 无 badge`() {
+        assertNull(pillVisual(FloatingStatus.Searching, false, false, testTh()).badge)
+    }
+
+    @Test fun `pillVisual GettingAnswer 无 badge`() {
+        assertNull(pillVisual(FloatingStatus.GettingAnswer, false, false, testTh()).badge)
+    }
+
+    @Test fun `pillVisual 图片收集中无 badge`() {
+        assertNull(pillVisual(FloatingStatus.Success, false, true, testTh()).badge)
+    }
+
+    @Test fun `pillVisual 录制中压制 Success badge`() {
+        assertNull(pillVisual(FloatingStatus.Success, true, false, testTh()).badge)
+    }
+
     // ════ parseSections() ════
 
     @Test fun `parseSections 空文本`() {
