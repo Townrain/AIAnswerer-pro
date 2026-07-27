@@ -292,18 +292,24 @@ data class SerializableThemeColors(
     val uiAccent: Long, val uiAccentLight: Long,
     val trackOff: Long, val error: Long, val white: Long,
 ) {
+    /**
+     * 将存储的 Long 值转回 Compose Color。
+     * 使用 [Color] 的 ARGB Int 构造函数而非 Color(ULong)，以避免 JSON 中
+     * 储存的上位颜色空间编码无效时导致 getColorSpace 数组越界崩溃。
+     * 参见: https://issuetracker.google.com/issues/284144291
+     */
     fun toTh(isLight: Boolean) = Th(
-        bg1 = Color(bg1.toULong()), bg2 = Color(bg2.toULong()), bg3 = Color(bg3.toULong()),
-        bg4 = Color(bg4.toULong()), bg5 = Color(bg5.toULong()),
-        p = Color(primary.toULong()), pe = Color(primaryEnd.toULong()), pd = Color(primaryDim.toULong()),
-        pc = Color(primaryContainer.toULong()), opc = Color(onPrimaryContainer.toULong()),
-        ok = Color(success.toULong()),
-        ob = Color(onBg.toULong()), osv = Color(onBgVariant.toULong()),
-        gt = Color(glassTop.toULong()), gb = Color(glassBorder.toULong()), gdp = Color(glassDarkPrimary.toULong()),
-        ht = Color(headerTop.toULong()), hdp = Color(headerDarkPrimary.toULong()),
-        ac = Color(accent.toULong()),
-        ua = Color(uiAccent.toULong()), ual = Color(uiAccentLight.toULong()),
-        to = Color(trackOff.toULong()), err = Color(error.toULong()), w = Color(white.toULong()),
+        bg1 = Color(bg1.toULong().toInt()), bg2 = Color(bg2.toULong().toInt()), bg3 = Color(bg3.toULong().toInt()),
+        bg4 = Color(bg4.toULong().toInt()), bg5 = Color(bg5.toULong().toInt()),
+        p = Color(primary.toULong().toInt()), pe = Color(primaryEnd.toULong().toInt()), pd = Color(primaryDim.toULong().toInt()),
+        pc = Color(primaryContainer.toULong().toInt()), opc = Color(onPrimaryContainer.toULong().toInt()),
+        ok = Color(success.toULong().toInt()),
+        ob = Color(onBg.toULong().toInt()), osv = Color(onBgVariant.toULong().toInt()),
+        gt = Color(glassTop.toULong().toInt()), gb = Color(glassBorder.toULong().toInt()), gdp = Color(glassDarkPrimary.toULong().toInt()),
+        ht = Color(headerTop.toULong().toInt()), hdp = Color(headerDarkPrimary.toULong().toInt()),
+        ac = Color(accent.toULong().toInt()),
+        ua = Color(uiAccent.toULong().toInt()), ual = Color(uiAccentLight.toULong().toInt()),
+        to = Color(trackOff.toULong().toInt()), err = Color(error.toULong().toInt()), w = Color(white.toULong().toInt()),
         isLight = isLight
     )
 

@@ -193,7 +193,7 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.ok.copy(alpha = 0.3f),
             iconTint = t.w.copy(alpha = 0.95f),
-            badge = "\u2713" to t.ok
+            badge = null
         )
         status == FloatingStatus.Error -> PillVisual(
             gradient = Brush.linearGradient(
@@ -202,7 +202,7 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.err.copy(alpha = 0.3f),
             iconTint = t.w.copy(alpha = 0.95f),
-            badge = "\u2717" to t.err
+            badge = null
         )
         else -> PillVisual(
             gradient = Brush.linearGradient(
@@ -257,7 +257,8 @@ internal fun PillButton(
     dragMod: Modifier,
     onCaptureClick: () -> Unit,
     onLongPress: () -> Unit,
-    onQuickToggle: () -> Unit
+    onQuickToggle: () -> Unit,
+    longPressDurationMs: Long = com.hwb.aianswerer.config.AppConfig.getLongPressDuration().toLong()
 ) {
     val density = LocalDensity.current
     val visual = remember(status, isRecording, isImageCollecting, t) { pillVisual(status, isRecording, isImageCollecting, t) }
@@ -341,6 +342,7 @@ internal fun PillButton(
             }
         },
         onLongPress = onLongPress,
+        longPressDurationMs = longPressDurationMs,
         modifier = dragMod,
         progressContent = { progress ->
             if (progress > 0f) {

@@ -130,6 +130,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     /** Measured height of Window C content in px. */
     private var measuredWindowCHeight: Float? = null
 
+    /** Measured height of Window D content in px. */
+    private var measuredWindowDHeight: Float? = null
+
     /** Whether Window D (detail content) is currently expanded. */
     private var isDetailExpanded = mutableStateOf(false)
 
@@ -375,22 +378,27 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onMeasuredSize = { w, h -> measuredSizeA = w to h }
                     )
 
-                    // Window C lifecycle observer — creates C when content appears,
-                    // lets onDismissRequest handle removal.
+                    // Window C/D lifecycle observer — separate windows for status (C)
+                    // and answer content (D). When answer arrives, C is hidden and D
+                    // appears directly below (or above) Window A.
                     LaunchedEffect(Unit) {
                         snapshotFlow { viewModel.showAnswer.value to viewModel.statusMessage.value }
                             .collect { (show, msg) ->
-                                AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg cView=${windowMgr.cView != null}")
-                                if (show || msg != null) {
-                                    if (windowMgr.cView == null) {
-                                        AppLog.d("FWS", "snapshotFlow: calling ensureWindowC()")
-                                        ensureWindowC()
-                                    }
-                                    // Auto-expand Window D when answer is ready
-                                    if (show) {
-                                        isDetailExpanded.value = true
-                                        if (windowMgr.dView == null) ensureWindowD()
-                                    }
+                                val hasContent = show || msg != null
+                                AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg hasContent=$hasContent cView=${windowMgr.cView != null} dView=${windowMgr.dView != null}")
+                                if (show) {
+                                    // Answer ready: show D, hide C
+                                    if (windowMgr.cView != null) removeWindowC()
+                                    if (windowMgr.dView == null) ensureWindowD()
+                                } else if (msg != null) {
+                                    // Status message: show C, hide D
+                                    if (windowMgr.dView != null) removeWindowD()
+                                    if (windowMgr.cView == null) ensureWindowC()
+                                } else {
+                                    // Clean up: nothing to show
+                                    AppLog.d("FWS", "snapshotFlow: cleaning up windows")
+                                    removeWindowD()
+                                    removeWindowC()
                                 }
                             }
                     }
@@ -699,7 +707,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     /** Detaches and disposes Window C. */
     private fun removeWindowC() {
         AppLog.d("FWS", "removeWindowC called! cView=${windowMgr.cView != null}")
-        removeWindowD()
         windowMgr.detachC()
         windowCView?.disposeComposition()
         windowCView = null
@@ -739,8 +746,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onCloseAnswer = { closeAnswer() },
                         onMeasuredHeight = { h ->
                             AppLog.d("FWS", "WindowD measuredHeight=$h")
-                            syncD()
-                        }
+                            measuredWindowDHeight = h
+                            positionWindowD()
+                        },
+                        cardAlpha = settings.floatCardAlpha.value
                     )
                 }
             }
@@ -755,7 +764,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
         windowMgr.attachD(dComposeView, dParams)
         windowDView = dComposeView
-        syncD()
+        measuredWindowDHeight = null // reset before first measure
+        positionWindowD()
         AppLog.d("FWS", "ensureWindowD: COMPLETE")
     }
 
@@ -764,36 +774,43 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         windowMgr.detachD()
         windowDView?.disposeComposition()
         windowDView = null
+        measuredWindowDHeight = null
         isDetailExpanded.value = false
     }
 
-    /** Positions Window D below Window C. */
-    private fun syncD() {
+    /**
+     * Positions Window D directly below (or above) Window A.
+     * Used when answer is ready: Window C is hidden, D attaches to A.
+     * Falls back to a reasonable default if C was never measured.
+     */
+    private fun positionWindowD() {
         if (windowMgr.dView == null) return
+        val aParams = windowMgr.aParams ?: return
         val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
         val realMetrics = android.util.DisplayMetrics()
         wm2.defaultDisplay.getRealMetrics(realMetrics)
         val screenW = realMetrics.widthPixels.toFloat()
         val screenH = realMetrics.heightPixels.toFloat()
         val density = realMetrics.density
-        val cParams = windowMgr.cParams
+        AppLog.d("FWS", "positionWindowD: aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
 
         val dW = (FWDims.cardWidthDp.value * density).toInt()
-        val cH = measuredWindowCHeight ?: (200 * density)
+        val cH = measuredWindowCHeight ?: (60 * density).toFloat()
         val dH = (cH * 4).toInt() // 400% of C height
-        val gapPx = 6 // fixed 6px gap
+        val gapPx = (8 * density).toInt()
 
-        val aParams = windowMgr.aParams
-        val cX = if (cParams != null) cParams.x
-                 else if (aParams != null) aParams.x + (aParams.width - dW) / 2
-                 else 0
-        val cBottom = if (cParams != null) cParams.y + cH.toInt()
-                      else if (aParams != null) aParams.y + aParams.height
-                      else 0
+        // Center D horizontally relative to A
+        val dX = aParams.x + (aParams.width - dW) / 2
 
-        val dX = cX
-        val dY = cBottom + gapPx
+        // Place D below A if there's room, otherwise above A
+        val spaceBelow = screenH.toInt() - (aParams.y + aParams.height + gapPx)
+        val dY = if (dH > 0 && spaceBelow >= dH) {
+            aParams.y + aParams.height + gapPx
+        } else {
+            (aParams.y - dH - gapPx).coerceAtLeast(0)
+        }
 
+        AppLog.d("FWS", "positionWindowD: dX=$dX dY=$dY dSize=${dW}x${dH} below=${spaceBelow >= dH}")
         windowMgr.updateLayoutD(
             windowX = dX.coerceIn(0, maxOf(0, screenW.toInt() - dW)),
             windowY = dY.coerceIn(0, maxOf(0, screenH.toInt() - dH)),
@@ -856,6 +873,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         // Sync companion windows
         syncB()
         syncC()
+        positionWindowD()
     }
 
     /** Positions Window B adjacent to Window A. */
@@ -904,7 +922,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "syncC: realScreen=${screenW.toInt()}x${screenH.toInt()} aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
 
         val cW = (FWDims.cardWidthDp.value * density).toInt()
-        val defaultH = (200 * density).toInt()
+        // Compact card header is ~52dp; use 60dp as initial before measurement
+        val defaultH = (60 * density).toInt()
         val cH = (measuredWindowCHeight ?: defaultH.toFloat()).toInt()
 
         val gapPx = (8 * density).toInt()
@@ -931,7 +950,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             screenW = screenW,
             screenH = screenH
         )
-        syncD()
     }
 
     /** Handles drag gesture on Window A — updates offset and repositions all windows. */
@@ -966,6 +984,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         )
         syncB()
         syncC()
+        positionWindowD()
     }
 
     /**
@@ -991,6 +1010,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             )
             syncB()
             syncC()
+            positionWindowD()
             return
         }
         viewModel.windowXAnimJob = windowMgr.animateWindowX(
@@ -1013,6 +1033,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             )
             syncB()
             syncC()
+            positionWindowD()
         }
     }
 

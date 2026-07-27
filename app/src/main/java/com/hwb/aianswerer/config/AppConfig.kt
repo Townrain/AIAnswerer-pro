@@ -106,6 +106,8 @@ object AppConfig {
     fun getFloatIconScale(): Float = UIConfig.getFloatIconScale()
     fun saveQuickButtonLayout(mode: String) = UIConfig.saveQuickButtonLayout(mode)
     fun getQuickButtonLayout(): String = UIConfig.getQuickButtonLayout()
+    fun saveLongPressDuration(ms: Int) = UIConfig.saveLongPressDuration(ms)
+    fun getLongPressDuration(): Int = UIConfig.getLongPressDuration()
     fun saveOutputLanguage(lang: String) = UIConfig.saveOutputLanguage(lang)
     fun getOutputLanguage(): String = UIConfig.getOutputLanguage()
     fun isFirstLaunch(): Boolean = UIConfig.isFirstLaunch()

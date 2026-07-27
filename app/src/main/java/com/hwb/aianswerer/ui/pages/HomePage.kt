@@ -16,6 +16,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.hwb.aianswerer.config.AppConfig
+import com.hwb.aianswerer.providers.ProviderStorage
 import com.hwb.aianswerer.ui.components.*
 import com.hwb.aianswerer.ui.theme.*
 
@@ -55,6 +56,14 @@ fun HomePage(t: Th, onSettingsClick: () -> Unit, onStartClick: () -> Unit, isAns
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // 检查是否已配置语言模型（最基础需求：有已启用且选了模型的厂商）
+    val modelConfigured by remember(resumeVersion) {
+        derivedStateOf {
+            ProviderStorage.getEnabledProvidersFromUserConfigs()
+                .any { it.selectedModels.any { m -> m.isNotBlank() } }
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(bgGradient)) {
         Column(
             Modifier.fillMaxSize().verticalScroll(scrollState).padding(top = 145.dp)
@@ -70,6 +79,6 @@ fun HomePage(t: Th, onSettingsClick: () -> Unit, onStartClick: () -> Unit, isAns
         Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(t.bg1, t.bg2)))) {
             TitleSection(t, onSettingsClick = onSettingsClick)
         }
-        CtaBar(t, Modifier.align(Alignment.BottomCenter), onStartClick, isAnswerModeActive, onStopClick)
+        CtaBar(t, Modifier.align(Alignment.BottomCenter), onStartClick, isAnswerModeActive, onStopClick, hasModel = modelConfigured)
     }
 }

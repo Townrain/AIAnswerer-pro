@@ -71,49 +71,72 @@ AI答题助手是一款基于 OCR/视觉模型与大语言模型的安卓答题�
 
 ```
 com.hwb.aianswerer/
-├── BaseActivity.kt           # 统一语言配置基类
-├── MyApplication.kt          # Application 初始化
-├── MainActivity.kt           # 主界面（权限管理、答题设置）
-├── FloatingWindowService.kt  # 悬浮窗核心服务
-├── FloatingWindowManager.kt  # 窗口管理（位置/动画）
+├── BaseActivity.kt            # 统一语言配置基类
+├── MyApplication.kt           # Application 初始化
+├── MainActivity.kt            # 主界面（权限管理、答题设置）
+├── FloatingWindowService.kt   # 悬浮窗核心服务（多窗口协调）
+├── FloatingWindowManager.kt   # 窗口管理（A/B/C/D 独立窗口）
 ├── FloatingWindowViewModel.kt # 悬浮窗状态管理
-├── InteractiveTouchLayout.kt # 触摸穿透容器
-├── CaptureHandler.kt         # 截图→裁剪→识别管线
-├── CapturePipeline.kt        # 核心识别管线（OCR→VLM→LLM）
-├── FloatingAnswerCard.kt     # 答案卡片组件
-├── ConfirmTextActivity.kt    # 识别文本确认/编辑
-├── ImageCropActivity.kt      # 图片裁剪（四角拖拽）
-├── SettingsActivity.kt       # 通用设置
-├── ModelSettingsActivity.kt  # API 模型配置
-├── AboutActivity.kt          # 关于页面
-├── Constants.kt              # 常量 · 提示词组装 · 多语言路由中枢
+├── SettingsService.kt         # 集中式设置读取
+├── InteractiveTouchLayout.kt  # 触摸穿透容器
+├── CaptureHandler.kt          # 截图→裁剪→识别管线
+├── CapturePipeline.kt         # 核心识别管线（OCR→VLM→LLM）
+├── RecordingCoordinator.kt    # 录制模式协调器
+├── ImageCollector.kt          # 图片收集器
+├── AnswerFetcher.kt           # 答案获取器
+├── FloatingAnswerCard.kt      # 答案卡片组件
+├── ConfirmTextActivity.kt     # 识别文本确认/编辑
+├── ImageCropActivity.kt       # 图片裁剪（四角拖拽）
+├── SettingsActivity.kt        # 通用设置
+├── ModelSettingsActivity.kt   # API 模型配置
+├── AboutActivity.kt           # 关于页面
+├── Constants.kt               # 常量 · 提示词组装 · 多语言路由中枢
 ├── api/
-│   ├── OpenAIClient.kt       # OpenAI 兼容 API 客户端
+│   ├── OpenAIClient.kt        # OpenAI 兼容 API 客户端
 │   ├── WebSearchProviders.kt  # 多供应商联网搜索
-│   └── vision/               # 视觉模型模块
+│   └── vision/                # 视觉模型模块
 │       ├── VisionProvider.kt
 │       ├── VisionProviderFactory.kt
 │       ├── VisionFilterResult.kt
 │       └── OpenAIVisionProvider.kt
 ├── config/
-│   └── AppConfig.kt          # 配置管理（MMKV + 加密存储）
-├── models/                   # 数据模型
+│   ├── AppConfig.kt           # 配置管理门面（MMKV + 加密存储）
+│   ├── ApiConfig.kt           # API 配置
+│   ├── UIConfig.kt            # UI 配置
+│   ├── VisionConfig.kt        # 视觉模型配置
+│   └── ConfigStorage.kt       # MMKV 存储键定义
+├── models/                    # 数据模型
+├── providers/                 # 模型厂商管理
+│   ├── ProviderStorage.kt
+│   ├── ProviderConfigResolver.kt
+│   └── ProviderSyncManager.kt
 ├── ui/
-│   ├── components/           # 共享 Compose 组件
-│   ├── dialogs/              # 对话框
-│   ├── icons/                # 本地图标定义
-│   └── theme/                # Material3 主题
+│   ├── components/            # 共享 Compose 组件
+│   │   ├── PillButtonCard.kt  # 悬浮按钮 + 长按手势
+│   │   ├── QuickToggles.kt    # 快捷开关面板
+│   │   ├── FloatingWindowContent.kt # Window A/B/C/D Composable
+│   │   ├── FloatingAnswerCard.kt    # 答案卡片
+│   │   ├── RecordingResultCard.kt   # 录制结果卡片
+│   │   ├── AnswerCard.kt      # 单题答案卡片
+│   │   ├── CtaBar.kt          # CTA 按钮（模型检测）
+│   │   └── ...                # 其他组件
+│   ├── pages/                 # 页面
+│   │   ├── HomePage.kt        # 主页
+│   │   └── SettingsPage.kt    # 设置页
+│   ├── dialogs/               # 对话框
+│   ├── icons/                 # 本地图标定义
+│   └── theme/                 # Material3 主题
 └── utils/
-    ├── AppLog.kt             # 统一日志工具
-    ├── ClipboardUtil.kt      # 剪贴板工具
-    ├── ImageCropUtil.kt      # 图片裁剪工具
-    └── LanguageUtil.kt       # 语言切换工具
+    ├── AppLog.kt              # 统一日志工具
+    ├── ClipboardUtil.kt       # 剪贴板工具
+    ├── ImageCropUtil.kt       # 图片裁剪工具
+    └── LanguageUtil.kt        # 语言切换工具
 ```
 
 ### 更新说明
 
 详见 [变更日志](变更日志.md) 或 [CHANGELOG](CHANGELOG.md)。近期重要更新：
-- **v1.7.0**: 三窗口悬浮窗架构（A/B/C 独立窗口） + 隐身模式常量提取 + 通知隐身保护 + 废弃接口清理
+- **v1.7.0**: 四窗口悬浮窗架构（A/B/C/D 独立窗口）+ C/D 生命周期分离 + 长按时长自定义 + 模型配置检测 + 悬浮窗徽标移除 + 多窗口缺陷修复
 - **v1.6.2**: 多厂商测试连接修复 + 悬浮按钮拖拽卡死修复 + 暗色主题响应 + API URL 多版本兼容 + LLM maxTokens 512→4096 + 图标去重 & 主题合规 & 动画可测试性重构 + 答案卡片独立组件
 
 ### License

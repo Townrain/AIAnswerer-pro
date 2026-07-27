@@ -92,6 +92,257 @@ import kotlin.math.max
 import kotlin.math.min
 
 // =============================================================================
+// Window A — Pill button (always visible, draggable)
+// =============================================================================
+
+/**
+ * Window A content: the primary always-visible pill button.
+ * Drag gestures are handled internally and reported via [onMove]/[onDragEnd] so
+ * the service can reposition the underlying WindowManager window.
+ */
+@Composable
+fun WindowAContent(
+    buttonSize: Int,
+    buttonAlpha: Float,
+    floatingStatus: FloatingStatus,
+    isRecording: Boolean,
+    isImageCollecting: Boolean,
+    isLeftSide: Boolean,
+    isDragging: Boolean,
+    onCaptureClick: () -> Unit,
+    onLongPress: () -> Unit,
+    onMove: (Float, Float) -> Unit,
+    onDragEnd: (Boolean) -> Unit,
+    onMeasuredSize: (Float, Float) -> Unit
+) {
+    val t = sandboxTheme()
+    var dragging by remember { mutableStateOf(false) }
+    val currentOnMove by rememberUpdatedState(onMove)
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
+    val currentIsLeftSide by rememberUpdatedState(isLeftSide)
+
+    // Drag gesture — coexists with PillButton's tap/long-press via Bouncy
+    val dragMod = Modifier.pointerInput(Unit) {
+        detectDragGestures(
+            onDragStart = { dragging = true },
+            onDrag = { change, dragAmount ->
+                change.consume()
+                currentOnMove(dragAmount.x, dragAmount.y)
+            },
+            onDragEnd = {
+                dragging = false
+                currentOnDragEnd(currentIsLeftSide)
+            },
+            onDragCancel = { dragging = false }
+        )
+    }
+
+    val effectiveDragging = isDragging || dragging
+
+    Box(
+        Modifier
+            .wrapContentSize()
+            .onGloballyPositioned { coords ->
+                onMeasuredSize(coords.size.width.toFloat(), coords.size.height.toFloat())
+            }
+    ) {
+        PillButton(
+            t = t,
+            status = floatingStatus,
+            expandQuickButtons = false, // Window B managed separately
+            isRecording = isRecording,
+            isImageCollecting = isImageCollecting,
+            buttonAlpha = buttonAlpha,
+            isLeftSide = isLeftSide,
+            isDragging = effectiveDragging,
+            dragMod = dragMod,
+            onCaptureClick = onCaptureClick,
+            onLongPress = onLongPress,
+            onQuickToggle = {} // Window B toggled by service
+        )
+    }
+}
+
+// =============================================================================
+// Window B — Quick-toggle panel
+// =============================================================================
+
+/**
+ * Window B content: the quick-toggle action panel.
+ * Positioned adjacent to Window A by the service; reports its measured size
+ * so the service can update the WindowManager layout.
+ */
+@Composable
+fun WindowBContent(
+    t: Th,
+    actions: List<QuickAction>,
+    scale: Float,
+    isLeftSide: Boolean,
+    transformOrigin: TransformOrigin,
+    onMeasuredSize: (Float, Float) -> Unit
+) {
+    Box(
+        Modifier
+            .wrapContentSize()
+            .onGloballyPositioned { coords ->
+                onMeasuredSize(coords.size.width.toFloat(), coords.size.height.toFloat())
+            }
+    ) {
+        QuickToggles(
+            t = t,
+            actions = actions,
+            scale = scale,
+            isLeftSide = isLeftSide,
+            transformOrigin = transformOrigin
+        )
+    }
+}
+
+// =============================================================================
+// Window C — Answer/Status card (compact)
+// =============================================================================
+
+/**
+ * Window C content: compact answer/status card.
+ *
+ * Shows a status message when [statusMessage] is set, or a minimal "Answer
+ * ready" header when [hasAnswer] is true. The full answer detail is rendered
+ * in Window D, which the service creates when [onToggleExpanded] is called
+ * with `true`.
+ */
+@Composable
+fun WindowCContent(
+    showAnswer: Boolean,
+    hasAnswer: Boolean,
+    statusMessage: String?,
+    floatingStatus: FloatingStatus,
+    cardAlpha: Float,
+    recordingCaptureCount: Int,
+    isRecording: Boolean,
+    isProcessingRecording: Boolean,
+    onCloseAnswer: () -> Unit,
+    onCloseStatus: () -> Unit,
+    onMeasuredHeight: (Float) -> Unit,
+    onDismissRequest: () -> Unit,
+    isExpanded: Boolean,
+    onToggleExpanded: (Boolean) -> Unit
+) {
+    val t = sandboxTheme()
+    val showCard = showAnswer || statusMessage != null
+
+    Box(
+        Modifier
+            .width(FWDims.cardWidthDp)
+            .graphicsLayer { alpha = cardAlpha }
+            .onGloballyPositioned { coords ->
+                onMeasuredHeight(coords.size.height.toFloat())
+            }
+    ) {
+        if (showCard) {
+            when {
+                // Status message with recording progress
+                recordingCaptureCount > 0 && !showAnswer && statusMessage != null &&
+                    (isRecording || isProcessingRecording) -> {
+                    Card(
+                        t = t,
+                        answerText = null,
+                        hasAnswer = false,
+                        statusMessage = statusMessage,
+                        status = floatingStatus,
+                        onCopy = {},
+                        onCloseAnswer = onCloseAnswer,
+                        onCloseStatus = onCloseStatus
+                    )
+                }
+                // Answer-ready notification
+                hasAnswer && showAnswer -> {
+                    Card(
+                        t = t,
+                        answerText = null,
+                        hasAnswer = true,
+                        statusMessage = null,
+                        status = floatingStatus,
+                        onCopy = {},
+                        onCloseAnswer = onCloseAnswer,
+                        onCloseStatus = onCloseStatus
+                    )
+                }
+                // Status message
+                statusMessage != null -> {
+                    Card(
+                        t = t,
+                        answerText = null,
+                        hasAnswer = false,
+                        statusMessage = statusMessage,
+                        status = floatingStatus,
+                        onCopy = {},
+                        onCloseAnswer = onCloseAnswer,
+                        onCloseStatus = onCloseStatus
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Window D — Answer detail (expanded content)
+// =============================================================================
+
+/**
+ * Window D content: full answer detail for paginated/recording answers.
+ *
+ * Rendered as a [RecordingResultCard] that fills the window width.
+ * The service manages this window's position below Window C.
+ */
+@Composable
+fun WindowDContent(
+    hasAnswer: Boolean,
+    paginatedAnswers: List<Pair<Int, String>>,
+    recordingAnswers: List<Pair<Int, String>>,
+    isRecording: Boolean,
+    isProcessingRecording: Boolean,
+    onCopyRecordingAnswer: (String) -> Unit,
+    onCloseAnswer: () -> Unit,
+    onMeasuredHeight: (Float) -> Unit,
+    cardAlpha: Float = 1.0f
+) {
+    val t = sandboxTheme()
+    val scrollState = rememberScrollState()
+
+    val displayAnswers = when {
+        paginatedAnswers.isNotEmpty() -> paginatedAnswers
+        recordingAnswers.isNotEmpty() && !isRecording && !isProcessingRecording -> recordingAnswers
+        else -> emptyList()
+    }
+
+    Box(
+        Modifier
+            .width(FWDims.cardWidthDp)
+            .heightIn(max = FWDims.cardMaxHeight)
+            .verticalScroll(scrollState)
+            .graphicsLayer { alpha = cardAlpha }
+            .onGloballyPositioned { coords ->
+                onMeasuredHeight(coords.size.height.toFloat())
+            }
+    ) {
+        if (displayAnswers.isNotEmpty()) {
+            RecordingResultCard(
+                t = t,
+                answers = displayAnswers,
+                onClose = onCloseAnswer,
+                onCopyAnswer = onCopyRecordingAnswer,
+                isProcessing = false,
+                processedCount = displayAnswers.size,
+                totalCount = displayAnswers.size
+            )
+        }
+    }
+}
+
+// =============================================================================
+
+// =============================================================================
 // 主 Composable
 // =============================================================================
 

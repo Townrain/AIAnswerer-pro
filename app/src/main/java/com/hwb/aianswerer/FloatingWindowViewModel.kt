@@ -123,7 +123,9 @@ class FloatingWindowViewModel : ViewModel() {
         override fun onResult(answers: List<AIAnswer>) {
             val autoCopy = AppConfig.getAutoCopy()
             // Reuse the existing answer display pipeline
-            showAnswer.value = true
+            // NOTE: paginatedAnswers MUST be set BEFORE showAnswer, otherwise
+            // the snapshotFlow observer in FloatingWindowService creates
+            // Window D with empty data before content arrives.
             paginatedAnswers.value = answers.mapIndexed { i, a ->
                 (i + 1) to a.formatAnswerWithConfig(
                     AppConfig.getShowAnswerCardQuestion(),
@@ -133,6 +135,7 @@ class FloatingWindowViewModel : ViewModel() {
             paginatedCopyTexts.value = answers.mapIndexed { i, a ->
                 (i + 1) to "第 ${i + 1} 题：${a.answer}"
             }
+            showAnswer.value = true
             val copyText = if (answers.size == 1) answers.first().answer
                 else answers.mapIndexed { i, a -> "第 ${i + 1} 题：${a.answer}" }.joinToString("\n")
             if (autoCopy) ctx?.copyToClipboard(copyText)

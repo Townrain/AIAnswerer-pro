@@ -15,10 +15,18 @@ import com.hwb.aianswerer.config.AppConfig
  * 使用方式：
  * - 选择主题：`ThemeManager.selectPreset("premium_indigo")`
  * - 获取当前 Th：`val t = ThemeManager.getCurrentTheme()` (在 Composable 中使用)
- * - 导入自定义主题：`ThemeManager.importCustomTheme(json)` 返回成功/失败
+ * - 导入自定义主题：`ThemeManager.importCustomTheme(json)` 返回 [ImportResult]
  * - 导出为 JSON：`ThemeManager.exportTheme(id)` 返回 JSON 字符串
  */
 object ThemeManager {
+
+    /** 导入结果 */
+    sealed class ImportResult {
+        /** 导入成功，携带新主题 ID */
+        data class Success(val themeId: String) : ImportResult()
+        /** 导入失败，携带错误信息 */
+        data class Error(val message: String) : ImportResult()
+    }
 
     private val gson = Gson()
 
@@ -81,10 +89,14 @@ object ThemeManager {
      */
     fun getPreviewColors(presetId: String): Pair<Long, Long>? {
         ThemePresets.BUILT_IN[presetId]?.let { (_, light, _) ->
-            return light.bg1.value.toLong() to light.p.value.toLong()
+            // 只取低 32 位 ARGB，避免颜色空间编码干扰预览渲染
+            val bg1 = light.bg1.value.toLong() and 0xFFFFFFFFL
+            val p = light.p.value.toLong() and 0xFFFFFFFFL
+            return bg1 to p
         }
         customThemes[presetId]?.let { def ->
-            return def.light.bg1 to def.light.primary
+            // 同样只暴露 ARGB 位，兼容手动构造的 JSON 数值
+            return (def.light.bg1 and 0xFFFFFFFFL) to (def.light.primary and 0xFFFFFFFFL)
         }
         return null
     }
@@ -126,30 +138,57 @@ object ThemeManager {
 
     /**
      * 导入自定义主题 (从 JSON 字符串)
-     * @return 成功返回主题 ID，失败返回 null
+     * 自动去除 JSON 中的注释（// 和 /* */），防止 Gson 解析崩溃。
+     * 检查 ID 和 Name 是否与已有主题冲突。
      */
-    fun importCustomTheme(jsonStr: String): String? {
-        return try {
-            val def = gson.fromJson(jsonStr, CustomThemeDefinition::class.java)
-            if (!validateThemeDefinition(def)) return null
+    fun importCustomTheme(jsonStr: String): ImportResult {
+        // 1. 去除 JSON 注释（JSON 标准不支持注释，Gson 会直接抛异常）
+        val cleaned = stripJsonComments(jsonStr)
 
-            // 检查 ID 是否冲突 (内置主题 ID 不可覆盖)
-            if (def.id in ThemePresets.BUILT_IN) {
-                // 自动重命名
-                val newId = "custom_${def.id}"
-                val renamed = def.copy(id = newId, name = "${def.name} (自定义)")
-                customThemes[newId] = renamed
-                saveCustomThemes()
-                newId
-            } else {
-                customThemes[def.id] = def
-                saveCustomThemes()
-                def.id
-            }
+        // 2. 解析 JSON
+        val def: CustomThemeDefinition
+        try {
+            def = gson.fromJson(cleaned, CustomThemeDefinition::class.java)
         } catch (e: Exception) {
-            android.util.Log.w("ThemeManager", "导入主题失败: ${e.message}")
-            null
+            return ImportResult.Error("JSON 格式错误：${e.message ?: "无法解析"}。请检查是否有 // 或 /* */ 注释未去除")
         }
+
+        // 3. 基础校验
+        if (def.id.isBlank()) return ImportResult.Error("主题 ID 不能为空")
+        if (def.name.isBlank()) return ImportResult.Error("主题名称不能为空")
+        val allColors = listOf(def.light.bg1, def.light.bg2, def.dark.bg1, def.dark.bg2)
+        if (allColors.any { it == 0L }) return ImportResult.Error("颜色值不能为 0，请检查 JSON 颜色字段")
+
+        // 4. 检查 ID 冲突（内置主题）
+        if (def.id in ThemePresets.BUILT_IN) {
+            val newId = "custom_${def.id}"
+            val renamed = def.copy(id = newId, name = "${def.name} (自定义)")
+            customThemes[newId] = renamed
+            saveCustomThemes()
+            return ImportResult.Success(newId)
+        }
+
+        // 5. 检查 ID 冲突（已有自定义主题）
+        if (def.id in customThemes) {
+            return ImportResult.Error("主题 ID「${def.id}」已存在，请先删除旧主题或修改 ID")
+        }
+
+        // 6. 检查 Name 冲突（内置主题）
+        val builtInNames = ThemePresets.BUILT_IN.values.map { it.first }
+        if (def.name in builtInNames) {
+            return ImportResult.Error("主题名称「${def.name}」与内置主题重名，请修改 name 字段")
+        }
+
+        // 7. 检查 Name 冲突（已有自定义主题）
+        val customNames = customThemes.values.map { it.name }
+        if (def.name in customNames) {
+            return ImportResult.Error("主题名称「${def.name}」已被其他自定义主题使用，请修改 name 字段")
+        }
+
+        // 8. 保存
+        customThemes[def.id] = def
+        saveCustomThemes()
+        return ImportResult.Success(def.id)
     }
 
     /**
@@ -195,14 +234,18 @@ object ThemeManager {
     //  Private
     // ═══════════════════════════════════════════════
 
-    private fun validateThemeDefinition(def: CustomThemeDefinition): Boolean {
-        if (def.id.isBlank() || def.name.isBlank()) return false
-        // 基本颜色合法性检查：确保不是全0
-        val allColors = listOf(
-            def.light.bg1, def.light.bg2, def.dark.bg1, def.dark.bg2
-        )
-        return allColors.none { it == 0L }
+    /**
+     * 去除 JSON 中的 // 和斜杠星号注释。
+     * 注意：会破坏字符串值中的 // 或斜杠星号，但主题 JSON 中无此需求。
+     */
+    private fun stripJsonComments(json: String): String {
+        // 去除多行注释 /* ... */
+        val noBlock = json.replace(Regex("/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/"), " ")
+        // 去除单行注释 // ...（保留换行符以保证行号不偏移太多）
+        return noBlock.replace(Regex("//[^\n]*"), " ")
     }
+
+
 
     private fun saveCustomThemes() {
         if (customThemes.isEmpty()) {
