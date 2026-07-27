@@ -193,11 +193,7 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.ok.copy(alpha = 0.3f),
             iconTint = t.w.copy(alpha = 0.95f),
-<<<<<<< Updated upstream
-            badge = null
-=======
             badge = "\u2713" to Color.White
->>>>>>> Stashed changes
         )
         status == FloatingStatus.Error -> PillVisual(
             gradient = Brush.linearGradient(
@@ -206,11 +202,7 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.err.copy(alpha = 0.3f),
             iconTint = t.w.copy(alpha = 0.95f),
-<<<<<<< Updated upstream
-            badge = null
-=======
             badge = "\u2717" to Color.White
->>>>>>> Stashed changes
         )
         else -> PillVisual(
             gradient = Brush.linearGradient(
