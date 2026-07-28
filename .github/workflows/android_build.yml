@@ -81,11 +81,13 @@ jobs:
         retention-days: 14
     - name: Publish Test Report
       if: success() || failure()
+      continue-on-error: true
       uses: dorny/test-reporter@v1
       with:
         name: Unit Test Results
         path: app/build/test-results/**/TEST-*.xml
         reporter: java-junit
+        fail-on-error: false
     - name: Generate Coverage Report
       continue-on-error: true
       run: ./gradlew koverXmlReportDebug
