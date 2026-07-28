@@ -11,12 +11,17 @@ on:
         default: 'false'
         type: boolean
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
@@ -30,6 +35,8 @@ jobs:
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -43,7 +50,6 @@ jobs:
       run: |
         echo "sdk.dir=$ANDROID_HOME" > local.properties
         echo "api.url=https://api.openai.com/v1/chat/completions" >> local.properties
-        echo "api.key=CI_DUMMY_KEY" >> local.properties
         echo "api.model=gpt-4" >> local.properties
         mkdir -p keystore
         echo "$KEYSTORE_B64" | base64 -d > keystore/release.jks
@@ -51,6 +57,7 @@ jobs:
         echo "signing.storePassword=$KEYSTORE_PASS" >> local.properties
         echo "signing.keyAlias=$KEY_ALIAS" >> local.properties
         echo "signing.keyPassword=$KEY_PASS" >> local.properties
+
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
@@ -60,7 +67,16 @@ jobs:
     - name: Run Unit Tests
       run: ./gradlew test
 
+    - name: Upload Test Results
+      if: success() || failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: app/build/reports/tests/
+        retention-days: 14
+
     - name: Generate Coverage Report (Kover)
+      continue-on-error: true
       run: ./gradlew koverXmlReportDebug
 
     - name: Upload Debug APK
@@ -78,6 +94,7 @@ jobs:
         retention-days: 30
 
     - name: Upload Test Coverage Report
+      continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: coverage-report
@@ -87,6 +104,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release == 'true')
 
     steps:
@@ -101,6 +119,8 @@ jobs:
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: true
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -114,7 +134,6 @@ jobs:
       run: |
         echo "sdk.dir=$ANDROID_HOME" > local.properties
         echo "api.url=https://api.openai.com/v1/chat/completions" >> local.properties
-        echo "api.key=CI_DUMMY_KEY" >> local.properties
         echo "api.model=gpt-4" >> local.properties
         mkdir -p keystore
         echo "$KEYSTORE_B64" | base64 -d > keystore/release.jks
@@ -138,10 +157,10 @@ jobs:
         name: Release ${{ steps.get_version.outputs.VERSION }}
         body: |
           ## AIAnswerer ${{ steps.get_version.outputs.VERSION }}
-          
+
           ### 下载
           - APK: Release 版本
-          
+
           ### 功能
           - 并行答题模式
           - 并发数可配置（1-10）
