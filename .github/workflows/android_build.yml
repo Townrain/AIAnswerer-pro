@@ -70,7 +70,7 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     - name: Run Unit Tests
-      run: ./gradlew test
+      run: ./gradlew testDebugUnitTest
     - name: Upload Test Results
       if: success() || failure()
       uses: actions/upload-artifact@v4
