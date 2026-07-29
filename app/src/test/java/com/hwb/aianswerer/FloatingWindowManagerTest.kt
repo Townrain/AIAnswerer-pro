@@ -13,7 +13,8 @@ import kotlinx.coroutines.test.*
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * FloatingWindowManager tests for the 4-window architecture (A=Pill, B=Toggles, C=Card, D=Detail).
@@ -22,7 +23,8 @@ import org.junit.runners.JUnit4
  * updateLayoutA/B/C/D, setAllFlagSecure, setAllAlpha, applyToAllWindows,
  * animateWindowX, and backward compat methods.
  */
-@RunWith(JUnit4::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [30])
 class FloatingWindowManagerTest {
 
     private val mockWm = mockk<WindowManager>(relaxed = true)
@@ -53,22 +55,27 @@ class FloatingWindowManagerTest {
     }
 
     @Test
-    fun `createLayoutParams Window B returns zero dimensions`() {
+    fun `createLayoutParams Window B returns estimated toggle panel dimensions`() {
+        val density = 2f
+        val expectedW = ((FWDims.quickBtnSize.value * 5 + FWDims.quickBtnSpacing.value * 4 + FWDims.quickPanelHPadding.value * 2) * density).toInt()
+        val expectedH = ((FWDims.quickBtnSize.value + FWDims.quickPanelVPadding.value * 2) * density).toInt()
+
         val params = wm.createLayoutParams(FloatingWindowManager.WindowId.B, 40, false)
 
-        assertEquals(0, params.width)
-        assertEquals(0, params.height)
+        assertEquals(expectedW, params.width)
+        assertEquals(expectedH, params.height)
     }
 
     @Test
-    fun `createLayoutParams Window C returns card width and zero height`() {
+    fun `createLayoutParams Window C returns card width and initial height`() {
         val density = 2f
         val expectedWidth = (FWDims.cardWidthDp.value * density).toInt()
+        val expectedHeight = (60 * density).toInt() // initial 60dp until measured
 
         val params = wm.createLayoutParams(FloatingWindowManager.WindowId.C, 40, false)
 
         assertEquals(expectedWidth, params.width)
-        assertEquals(0, params.height)
+        assertEquals(expectedHeight, params.height)
     }
 
     @Test
