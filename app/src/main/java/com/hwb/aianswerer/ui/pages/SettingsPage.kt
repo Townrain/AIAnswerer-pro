@@ -83,6 +83,7 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
     var floatButtonAlpha by remember { mutableStateOf(AppConfig.getFloatButtonAlpha()) }
     var floatCardAlpha by remember { mutableStateOf(AppConfig.getFloatCardAlpha()) }
     var floatIconScale by remember { mutableStateOf(AppConfig.getFloatIconScale()) }
+    var longPressDuration by remember { mutableStateOf(AppConfig.getLongPressDuration().toFloat()) }
     var customSystemPrompt by remember { mutableStateOf(AppConfig.getCustomSystemPrompt()) }
     var customVLMPrompt by remember { mutableStateOf(AppConfig.getCustomVLMPrompt()) }
     val darkMode = ThemeState.darkMode
@@ -179,6 +180,7 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
                 SettingSlider(t, "悬浮按钮透明度", floatButtonAlpha, 0.1f..1.0f, "${(floatButtonAlpha * 100).toInt()}%") { floatButtonAlpha = it; AppConfig.saveFloatButtonAlpha(it) }
                 SettingSlider(t, "悬浮卡片透明度", floatCardAlpha, 0.1f..1.0f, "${(floatCardAlpha * 100).toInt()}%") { floatCardAlpha = it; AppConfig.saveFloatCardAlpha(it) }
                 SettingSlider(t, "图标缩放", floatIconScale, 0.5f..2.0f, "${(floatIconScale * 100).toInt()}%") { floatIconScale = it; AppConfig.saveFloatIconScale(it) }
+                SettingSlider(t, "长按触发时长", longPressDuration, 300f..3000f, "${longPressDuration.toInt()}ms") { longPressDuration = it; AppConfig.saveLongPressDuration(it.toInt()) }
             }
 
             // Custom prompts
@@ -504,7 +506,8 @@ private fun Chip(label: String, selected: Boolean, t: Th, onClick: () -> Unit) {
 @Composable
 private fun ThemePresetGrid(t: Th) {
     val currentId = ThemeManager.currentPresetId
-    val themes = remember { ThemeManager.getAllThemes() }
+    // 不缓存列表，确保删除自定义主题后 UI 即时刷新
+    val themes = ThemeManager.getAllThemes()
 
     Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t, p = 12.dp) {
         androidx.compose.foundation.lazy.LazyRow(
@@ -527,9 +530,27 @@ private fun ThemePresetCard(
     t: Th, id: String, name: String, isSelected: Boolean,
     isBuiltIn: Boolean, onSelect: () -> Unit,
 ) {
-    val colors = remember(id) { ThemeManager.getPreviewColors(id) }
-    val bgColor = colors?.let { Color(it.first.toULong()) } ?: t.bg2
-    val accentColor = colors?.let { Color(it.second.toULong()) } ?: t.p
+    val bgColor: androidx.compose.ui.graphics.Color
+    val accentColor: androidx.compose.ui.graphics.Color
+    if (isBuiltIn) {
+        // 内置主题直接从 BUILT_IN 取 Th 对象，颜色天然有效
+        val entry = ThemePresets.BUILT_IN[id]
+        if (entry != null) {
+            val light = entry.second
+            bgColor = light.bg1
+            accentColor = light.p
+        } else {
+            bgColor = t.bg2; accentColor = t.p
+        }
+    } else {
+        val pair = ThemeManager.getPreviewColors(id)
+        if (pair != null) {
+            bgColor = Color(pair.first.toULong().toInt())
+            accentColor = Color(pair.second.toULong().toInt())
+        } else {
+            bgColor = t.bg2; accentColor = t.p
+        }
+    }
 
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -675,12 +696,14 @@ private fun CustomThemeSection(t: Th, toastMsg: String?, setToast: (String?) -> 
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val id = ThemeManager.importCustomTheme(importText.value)
-                        if (id != null) {
-                            ThemeManager.selectPreset(id)
-                            importResult.value = "导入成功！主题已自动选中"
-                        } else {
-                            importResult.value = "导入失败：请检查 JSON 格式"
+                        when (val result = ThemeManager.importCustomTheme(importText.value)) {
+                            is ThemeManager.ImportResult.Success -> {
+                                ThemeManager.selectPreset(result.themeId)
+                                importResult.value = "导入成功！主题已自动选中"
+                            }
+                            is ThemeManager.ImportResult.Error -> {
+                                importResult.value = "导入失败：${result.message}"
+                            }
                         }
                     }) { Text("导入", color = t.p) }
                 },

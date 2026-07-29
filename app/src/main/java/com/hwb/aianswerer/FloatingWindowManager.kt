@@ -64,7 +64,7 @@ class FloatingWindowManager(private val context: Context) {
                 val estH = ((FWDims.quickBtnSize.value + FWDims.quickPanelVPadding.value * 2) * density).toInt()
                 estW.coerceAtLeast(50) to estH.coerceAtLeast(40)
             }
-            WindowId.C -> (FWDims.cardWidthDp.value * density).toInt() to (200 * density).toInt()
+            WindowId.C -> (FWDims.cardWidthDp.value * density).toInt() to (60 * density).toInt()
             WindowId.D -> {
                 // Window D: same width as C, height = 400% of C's initial height (800dp)
                 val cInitialH = (200 * density).toInt()

@@ -11,6 +11,7 @@
     <string name="status_stopped">答题模式未启动</string>
     <string name="status_stopped_desc">点击下方按钮启动</string>
     <string name="button_start_mode">✦  进入答题模式</string>
+    <string name="button_start_mode_disabled">请先配置模型</string>
     <string name="button_stop_mode">退出答题模式</string>
     <string name="stop_confirm_title">停止答题</string>
     <string name="stop_confirm_message">确定要退出答题模式吗？悬浮窗和截图服务将停止。</string>

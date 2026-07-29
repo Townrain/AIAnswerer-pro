@@ -147,4 +147,13 @@ internal object UIConfig {
     fun getCustomThemes(): String {
         return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_CUSTOM_THEMES, "") ?: ""
     }
+
+    /** 长按触发时长（毫秒），默认 1000ms，范围 300~3000 */
+    fun getLongPressDuration(): Int {
+        return ConfigStorage.requireMmkv().decodeInt(ConfigStorage.KEY_LONG_PRESS_DURATION, 1000)
+    }
+
+    fun saveLongPressDuration(ms: Int) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_LONG_PRESS_DURATION, ms.coerceIn(300, 3000))
+    }
 }

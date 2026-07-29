@@ -28,14 +28,23 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.hwb.aianswerer.R
 import com.hwb.aianswerer.ui.theme.*
 
 // ── Gradient helper ──
 private fun g(t: Th) = Brush.linearGradient(listOf(t.p, t.pe), Offset.Zero, Offset.Infinite)
 
 @Composable
-fun CtaBar(t: Th, m: Modifier, onStartClick: () -> Unit, isAnswerModeActive: Boolean, onStopClick: () -> Unit) {
+fun CtaBar(
+    t: Th, m: Modifier,
+    onStartClick: () -> Unit,
+    isAnswerModeActive: Boolean,
+    onStopClick: () -> Unit,
+    hasModel: Boolean = true
+) {
+    val disabled = !hasModel && !isAnswerModeActive
     val inf = rememberInfiniteTransition(label = "cta")
     val pulse by inf.animateFloat(1f, 1.03f, infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "p")
 
@@ -47,6 +56,24 @@ fun CtaBar(t: Th, m: Modifier, onStartClick: () -> Unit, isAnswerModeActive: Boo
         label = "ctaBounce"
     )
 
+    val bg = when {
+        disabled -> Brush.linearGradient(
+            listOf(Color(0xFF9E9E9E), Color(0xFF757575)),
+            Offset.Zero, Offset.Infinite
+        )
+        isAnswerModeActive -> Brush.linearGradient(
+            listOf(Color(0xFFFF3B30), Color(0xFFD32F2F)),
+            Offset.Zero, Offset.Infinite
+        )
+        else -> g(t)
+    }
+
+    val label = when {
+        isAnswerModeActive -> stringResource(R.string.button_stop_mode)
+        disabled -> stringResource(R.string.button_start_mode_disabled)
+        else -> stringResource(R.string.button_start_mode)
+    }
+
     Surface(
         m.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth(),
         color = Color.Transparent,
@@ -56,22 +83,22 @@ fun CtaBar(t: Th, m: Modifier, onStartClick: () -> Unit, isAnswerModeActive: Boo
         Box(
             Modifier.fillMaxWidth()
                 .graphicsLayer {
-                    scaleX = pulse * bounceScale
-                    scaleY = pulse * bounceScale
+                    scaleX = if (disabled) 1f else pulse * bounceScale
+                    scaleY = if (disabled) 1f else pulse * bounceScale
                 }
                 .clip(RoundedCornerShape(32.dp))
-                .background(
-                    if (isAnswerModeActive) Brush.linearGradient(listOf(Color(0xFFFF3B30), Color(0xFFD32F2F)), Offset.Zero, Offset.Infinite)
-                    else g(t)
+                .background(bg)
+                .then(
+                    if (disabled) Modifier
+                    else Modifier.clickable(interactionSource = interactionSource, indication = null) {
+                        if (isAnswerModeActive) onStopClick() else onStartClick()
+                    }
                 )
-                .clickable(interactionSource = interactionSource, indication = null) {
-                    if (isAnswerModeActive) onStopClick() else onStartClick()
-                }
                 .padding(vertical = 16.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                if (isAnswerModeActive) "退出答题模式" else "进入答题模式",
+                label,
                 style = DW.LabelLarge.copy(color = Color.White)
             )
         }

@@ -2,27 +2,43 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
-## [1.7.0] - 2026-07-22
+## [1.7.0] - 2026-07-27
 
 ### Added
-- Three-window floating architecture: Split single floating window into A (Pill), B (Toggles), C (Card) independent windows, each self-contained with natural touch-through in gaps
+- Four-window floating architecture: Split single floating window into A (Pill), B (Toggles), C (Status Card), D (Answer Detail) independent windows
 - Constants: Added STEALTH_ALPHA, VISIBLE_ALPHA, HIDDEN_ALPHA named constants replacing hardcoded magic numbers
+- WindowAContent / WindowBContent / WindowCContent / WindowDContent standalone Composables
+- Configurable long-press duration slider in Settings (300ms~3000ms), user-customizable floating button hold time
+- Model detection on CTA button: grays out "Configure AI Model First" when no language model is configured
 
 ### Fixed
 - Notification content now hidden when stealth mode is enabled — shows app name only instead of detailed content
 - Stealth mode reading consolidated through AppConfig.isStealthModeEnabled(), eliminating duplicate direct MMKV access
+- Window D appearing before content ready: `imageCallbacks.onResult` now sets `showAnswer` AFTER data is populated
+- Window C excess blank space: initial height reduced from 200dp to 60dp, matching compact card header size
+- Windows persisting after close blocking touch: snapshotFlow observer now destroys C/D when `showAnswer=false`
+- Mid-release during long-press triggering scan: `Bouncy` press logic aligned with animation duration, removed 200ms hardcoded commit window
+- Card alpha not applied to Window D: added `cardAlpha` parameter propagation
+- Removed Success/Error badges (✓/✗) from floating pill
+- `removeWindowC()` no longer cascades to destroy Window D; their lifecycles are decoupled
+- Window D positioning changed to relative-to-A (instead of relative-to-C), works correctly when C is hidden
 
 ### Changed
-- FloatingWindowManager fully rewritten for multi-window management: added attachA/B/C, detachA/B/C, per-window updateLayoutA/B/C
-- FloatingWindowService heavily refactored for three-window coordination and position synchronization
+- FloatingWindowManager fully rewritten for multi-window management: added attachA/B/C/D, detachA/B/C/D, per-window updateLayoutA/B/C/D
+- FloatingWindowService heavily refactored for multi-window coordination and position synchronization
 - FloatingWindowViewModel: Removed deprecated single-window methods (updateWindowPosition, updateWindowHeight, getCurrentWindowHeightPx, setCurrentWindowHeightPx, updateFloatingWindowHeight)
 - RecordingResultCard refactored
-- FloatingComponents: Added cardWidthDp (360.dp) as Window C fixed width
+- FloatingComponents: Added cardWidthDp (360.dp) as Window C/D fixed width
+- Window C/D lifecycle decoupled: C for status messages only, D for answer content only
+- Window D height fixed at 400% of Window C height, with vertical scrolling (capped at 560dp)
+- Long-press threshold exactly aligned with animation completion progress
+- HomePage model check uses `ProviderStorage.getEnabledProvidersFromUserConfigs()` to verify actual model selection
 - FloatingWindowManagerTest: Added 669 lines of multi-window operation test coverage
 
 ### Removed
 - PaginatedAnswerRegressionTest (obsolete after three-window architecture change)
 - Deprecated ServiceContext single-window interface methods
+- Floating pill Success/Error status badges (✓/✗)
 
 ## [1.6.2] - 2026-07-22
 

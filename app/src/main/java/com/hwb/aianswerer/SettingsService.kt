@@ -23,6 +23,7 @@ class SettingsService {
     val stealthMode = mutableStateOf(AppConfig.isStealthModeEnabled())
     val floatButtonSizeDp = mutableStateOf(AppConfig.getFloatButtonSize())
     val floatCardAlpha = mutableStateOf(AppConfig.getFloatCardAlpha())
+    val longPressDuration = mutableStateOf(AppConfig.getLongPressDuration())
 
     /** Re-read every setting from persistent storage and push to state holders. */
     fun refresh() {

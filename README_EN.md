@@ -68,49 +68,72 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 
 ```
 com.hwb.aianswerer/
-├── BaseActivity.kt           # Unified language configuration base class
-├── MyApplication.kt          # Application initialization
-├── MainActivity.kt           # Main interface (permission management, answer settings)
-├── FloatingWindowService.kt  # Floating window core service
-├── FloatingWindowManager.kt  # Window management (position/animation)
+├── BaseActivity.kt            # Unified language configuration base class
+├── MyApplication.kt           # Application initialization
+├── MainActivity.kt            # Main interface (permission management, answer settings)
+├── FloatingWindowService.kt   # Floating window core service (multi-window coordination)
+├── FloatingWindowManager.kt   # Window management (A/B/C/D independent windows)
 ├── FloatingWindowViewModel.kt # Floating window state management
-├── InteractiveTouchLayout.kt # Touch-through container
-├── CaptureHandler.kt         # Screenshot → crop → recognition pipeline
-├── CapturePipeline.kt        # Core recognition pipeline (OCR→VLM→LLM)
-├── FloatingAnswerCard.kt     # Answer card component
-├── ConfirmTextActivity.kt    # Recognition text confirmation/editing
-├── ImageCropActivity.kt      # Image cropping (four-corner drag)
-├── SettingsActivity.kt       # General settings
-├── ModelSettingsActivity.kt  # API model configuration
-├── AboutActivity.kt          # About page
-├── Constants.kt              # Constants · prompt assembly · i18n routing hub
+├── SettingsService.kt         # Centralized settings reader
+├── InteractiveTouchLayout.kt  # Touch-through container
+├── CaptureHandler.kt          # Screenshot → crop → recognition pipeline
+├── CapturePipeline.kt         # Core recognition pipeline (OCR→VLM→LLM)
+├── RecordingCoordinator.kt    # Recording mode coordinator
+├── ImageCollector.kt          # Image collector
+├── AnswerFetcher.kt           # Answer fetcher
+├── FloatingAnswerCard.kt      # Answer card component
+├── ConfirmTextActivity.kt     # Recognition text confirmation/editing
+├── ImageCropActivity.kt       # Image cropping (four-corner drag)
+├── SettingsActivity.kt        # General settings
+├── ModelSettingsActivity.kt   # API model configuration
+├── AboutActivity.kt           # About page
+├── Constants.kt               # Constants · prompt assembly · i18n routing hub
 ├── api/
-│   ├── OpenAIClient.kt       # OpenAI compatible API client
-│   ├── WebSearchProviders.kt # Multi-provider web search
-│   └── vision/               # Vision model module
+│   ├── OpenAIClient.kt        # OpenAI compatible API client
+│   ├── WebSearchProviders.kt  # Multi-provider web search
+│   └── vision/                # Vision model module
 │       ├── VisionProvider.kt
 │       ├── VisionProviderFactory.kt
 │       ├── VisionFilterResult.kt
 │       └── OpenAIVisionProvider.kt
 ├── config/
-│   └── AppConfig.kt          # Configuration management (MMKV + encrypted storage)
-├── models/                   # Data models
+│   ├── AppConfig.kt           # Configuration facade (MMKV + encrypted storage)
+│   ├── ApiConfig.kt           # API configuration
+│   ├── UIConfig.kt            # UI configuration
+│   ├── VisionConfig.kt        # Vision model configuration
+│   └── ConfigStorage.kt       # MMKV storage key definitions
+├── models/                    # Data models
+├── providers/                 # Model provider management
+│   ├── ProviderStorage.kt
+│   ├── ProviderConfigResolver.kt
+│   └── ProviderSyncManager.kt
 ├── ui/
-│   ├── components/           # Shared Compose components
-│   ├── dialogs/              # Dialogs
-│   ├── icons/                # Local icon definitions
-│   └── theme/                # Material3 theme
+│   ├── components/            # Shared Compose components
+│   │   ├── PillButtonCard.kt  # Floating pill + long-press gesture
+│   │   ├── QuickToggles.kt    # Quick-toggle panel
+│   │   ├── FloatingWindowContent.kt # Window A/B/C/D Composables
+│   │   ├── FloatingAnswerCard.kt    # Answer card
+│   │   ├── RecordingResultCard.kt   # Recording result card
+│   │   ├── AnswerCard.kt      # Single answer card
+│   │   ├── CtaBar.kt          # CTA button (with model detection)
+│   │   └── ...                # Other components
+│   ├── pages/                 # Pages
+│   │   ├── HomePage.kt        # Home page
+│   │   └── SettingsPage.kt    # Settings page
+│   ├── dialogs/               # Dialogs
+│   ├── icons/                 # Local icon definitions
+│   └── theme/                 # Material3 theme
 └── utils/
-    ├── AppLog.kt             # Unified logging tool
-    ├── ClipboardUtil.kt      # Clipboard utility
-    ├── ImageCropUtil.kt      # Image cropping utility
-    └── LanguageUtil.kt       # Language switching utility
+    ├── AppLog.kt              # Unified logging tool
+    ├── ClipboardUtil.kt       # Clipboard utility
+    ├── ImageCropUtil.kt       # Image cropping utility
+    └── LanguageUtil.kt        # Language switching utility
 ```
 
 ### Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) or [变更日志](变更日志.md). Recent highlights:
-- **v1.7.0**: Three-window floating architecture (A/B/C independent windows) + stealth mode constants extraction + notification stealth protection + deprecated API cleanup
+- **v1.7.0**: Four-window floating architecture (A/B/C/D independent windows) + C/D lifecycle decoupling + configurable long-press duration + model config detection + pill badge removal + multi-window bug fixes
 - **v1.6.2**: Dark mode button theme responsiveness + multi-version API URL fix (v2/v3/v4 compatibility)
 ### License
 This project is released under the [GNU Affero General Public License v3.0](/LICENSE)

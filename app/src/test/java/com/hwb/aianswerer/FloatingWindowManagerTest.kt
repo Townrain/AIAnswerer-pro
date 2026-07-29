@@ -13,18 +13,16 @@ import kotlinx.coroutines.test.*
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
+import org.junit.runners.JUnit4
 
 /**
- * FloatingWindowManager tests for the 3-window architecture.
+ * FloatingWindowManager tests for the 4-window architecture (A=Pill, B=Toggles, C=Card, D=Detail).
  *
- * Tests all multi-window APIs: createLayoutParams, attachA/B/C, detachA/B/C,
- * updateLayoutA/B/C, setAllFlagSecure, setAllAlpha, applyToAllWindows,
+ * Tests all multi-window APIs: createLayoutParams, attachA/B/C/D, detachA/B/C/D,
+ * updateLayoutA/B/C/D, setAllFlagSecure, setAllAlpha, applyToAllWindows,
  * animateWindowX, and backward compat methods.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [30])
+@RunWith(JUnit4::class)
 class FloatingWindowManagerTest {
 
     private val mockWm = mockk<WindowManager>(relaxed = true)
@@ -71,6 +69,18 @@ class FloatingWindowManagerTest {
 
         assertEquals(expectedWidth, params.width)
         assertEquals(0, params.height)
+    }
+
+    @Test
+    fun `createLayoutParams Window D returns card width and extended height`() {
+        val density = 2f
+        val expectedWidth = (FWDims.cardWidthDp.value * density).toInt()
+        val expectedHeight = (200 * density).toInt() * 4
+
+        val params = wm.createLayoutParams(FloatingWindowManager.WindowId.D, 40, false)
+
+        assertEquals(expectedWidth, params.width)
+        assertEquals(expectedHeight, params.height)
     }
 
     @Test
@@ -187,24 +197,41 @@ class FloatingWindowManagerTest {
     }
 
     @Test
-    fun `all three windows can be attached independently`() {
+    fun `attachD stores view and params`() {
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+
+        wm.attachD(view, params)
+
+        assertSame(view, wm.dView)
+        assertSame(params, wm.dParams)
+        verify { mockWm.addView(view, params) }
+    }
+
+    @Test
+    fun `all four windows can be attached independently`() {
         val aView = mockk<View>(relaxed = true)
         val aParams = mockk<WindowManager.LayoutParams>(relaxed = true)
         val bView = mockk<View>(relaxed = true)
         val bParams = mockk<WindowManager.LayoutParams>(relaxed = true)
         val cView = mockk<View>(relaxed = true)
         val cParams = mockk<WindowManager.LayoutParams>(relaxed = true)
+        val dView = mockk<View>(relaxed = true)
+        val dParams = mockk<WindowManager.LayoutParams>(relaxed = true)
 
         wm.attachA(aView, aParams)
         wm.attachB(bView, bParams)
         wm.attachC(cView, cParams)
+        wm.attachD(dView, dParams)
 
         assertSame(aView, wm.aView)
         assertSame(bView, wm.bView)
         assertSame(cView, wm.cView)
+        assertSame(dView, wm.dView)
         verify { mockWm.addView(aView, aParams) }
         verify { mockWm.addView(bView, bParams) }
         verify { mockWm.addView(cView, cParams) }
+        verify { mockWm.addView(dView, dParams) }
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -258,17 +285,34 @@ class FloatingWindowManagerTest {
     }
 
     @Test
+    fun `detachD removes view and clears state`() {
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+        wm.attachD(view, params)
+
+        wm.detachD()
+
+        verify { mockWm.removeView(view) }
+        assertNull(wm.dView)
+        assertNull(wm.dParams)
+    }
+
+    @Test
     fun `detaching one window does not affect other windows`() {
         val aView = mockk<View>(relaxed = true)
         val bView = mockk<View>(relaxed = true)
+        val dView = mockk<View>(relaxed = true)
         wm.attachA(aView, mockk(relaxed = true))
         wm.attachB(bView, mockk(relaxed = true))
+        wm.attachD(dView, mockk(relaxed = true))
 
         wm.detachA()
 
         assertNull(wm.aView)
         assertNotNull(wm.bView)
+        assertNotNull(wm.dView)
         verify(exactly = 0) { mockWm.removeView(bView) }
+        verify(exactly = 0) { mockWm.removeView(dView) }
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -378,6 +422,22 @@ class FloatingWindowManagerTest {
         verify { mockWm.updateViewLayout(view, params) }
     }
 
+    @Test
+    fun `updateLayoutD updates width height position and alpha`() {
+        val view = mockk<View>(relaxed = true)
+        val params = WindowManager.LayoutParams(360, 0, 0, 0, 0)
+        wm.attachD(view, params)
+
+        wm.updateLayoutD(40, 400, 360, 800, 0.6f, 1000f, 2000f)
+
+        assertEquals(360, params.width)
+        assertEquals(800, params.height)
+        assertEquals(40, params.x)
+        assertEquals(400, params.y)
+        assertEquals(0.6f, params.alpha, 0.001f)
+        verify { mockWm.updateViewLayout(view, params) }
+    }
+
     // ═════════════════════════════════════════════════════════════════
     // setAllFlagSecure
     // ═════════════════════════════════════════════════════════════════
@@ -386,17 +446,17 @@ class FloatingWindowManagerTest {
     fun `setAllFlagSecure adds FLAG_SECURE to all active windows`() {
         val aView = mockk<View>(relaxed = true)
         val aParams = WindowManager.LayoutParams(100, 100, 0, 0, 0)
-        val cView = mockk<View>(relaxed = true)
-        val cParams = WindowManager.LayoutParams(300, 0, 0, 0, 0)
+        val dView = mockk<View>(relaxed = true)
+        val dParams = WindowManager.LayoutParams(360, 0, 0, 0, 0)
         wm.attachA(aView, aParams)
-        wm.attachC(cView, cParams)
+        wm.attachD(dView, dParams)
 
         wm.setAllFlagSecure(true)
 
         assertTrue((aParams.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0)
-        assertTrue((cParams.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0)
+        assertTrue((dParams.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0)
         verify { mockWm.updateViewLayout(aView, aParams) }
-        verify { mockWm.updateViewLayout(cView, cParams) }
+        verify { mockWm.updateViewLayout(dView, dParams) }
     }
 
     @Test
@@ -424,17 +484,17 @@ class FloatingWindowManagerTest {
     fun `setAllAlpha sets alpha on all active windows`() {
         val aView = mockk<View>(relaxed = true)
         val aParams = WindowManager.LayoutParams(100, 100, 0, 0, 0)
-        val bView = mockk<View>(relaxed = true)
-        val bParams = WindowManager.LayoutParams(0, 0, 0, 0, 0)
+        val dView = mockk<View>(relaxed = true)
+        val dParams = WindowManager.LayoutParams(360, 0, 0, 0, 0)
         wm.attachA(aView, aParams)
-        wm.attachB(bView, bParams)
+        wm.attachD(dView, dParams)
 
         wm.setAllAlpha(0.5f)
 
         assertEquals(0.5f, aParams.alpha, 0.001f)
-        assertEquals(0.5f, bParams.alpha, 0.001f)
+        assertEquals(0.5f, dParams.alpha, 0.001f)
         verify { mockWm.updateViewLayout(aView, aParams) }
-        verify { mockWm.updateViewLayout(bView, bParams) }
+        verify { mockWm.updateViewLayout(dView, dParams) }
     }
 
     @Test
@@ -633,6 +693,19 @@ class FloatingWindowManagerTest {
     }
 
     @Test
+    fun `backward compat detach with D view calls detachD`() {
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+        wm.attachD(view, params)
+
+        wm.detach(view)
+
+        verify { mockWm.removeView(view) }
+        assertNull(wm.dView)
+        assertNull(wm.dParams)
+    }
+
+    @Test
     fun `backward compat setAlpha updates alpha for matching A view`() {
         val view = mockk<View>(relaxed = true)
         val params = WindowManager.LayoutParams(100, 100, 0, 0, 0)
@@ -667,6 +740,18 @@ class FloatingWindowManagerTest {
 
         assertEquals(1f, aParams.alpha, 0.001f) // unchanged
         verify(exactly = 0) { mockWm.updateViewLayout(any(), any()) }
+    }
+
+    @Test
+    fun `backward compat setAlpha updates alpha for matching D view`() {
+        val view = mockk<View>(relaxed = true)
+        val params = WindowManager.LayoutParams(360, 0, 0, 0, 0)
+        wm.attachD(view, params)
+
+        wm.setAlpha(view, 0.4f)
+
+        assertEquals(0.4f, params.alpha, 0.001f)
+        verify { mockWm.updateViewLayout(view, params) }
     }
 
     @Test
