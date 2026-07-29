@@ -254,7 +254,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         NotificationHelper.createChannel(this)
         NotificationHelper.ensurePermission(this)
         val notification = NotificationHelper.buildNotification(this)
-        if (Build.VERSION.SDK_INT >= 35) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 Constants.NOTIFICATION_ID, notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or
@@ -411,7 +411,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             .collect { isStealth ->
                                 windowMgr.setAllFlagSecure(isStealth)
                                 windowMgr.setAllAlpha(if (isStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
-                                listOfNotNull(windowAView, windowBView, windowCView).forEach { view ->
+                                listOfNotNull(windowAView, windowBView, windowCView, windowDView).forEach { view ->
                                     view.importantForAccessibility = if (isStealth)
                                         View.IMPORTANT_FOR_ACCESSIBILITY_NO
                                     else View.IMPORTANT_FOR_ACCESSIBILITY_YES
