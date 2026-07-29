@@ -11,7 +11,7 @@ import java.util.Locale
  */
 object Constants {
     // 通知渠道配置
-    const val NOTIFICATION_CHANNEL_ID = "ai_answerer_service"
+    const val NOTIFICATION_CHANNEL_ID = "ai_answerer_service_v2"
     const val NOTIFICATION_ID = 1001
 
     // ── 悬浮窗隐身模式常量 ──

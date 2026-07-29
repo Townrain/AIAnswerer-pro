@@ -44,7 +44,7 @@ class ConstantsTest {
 
     @Test
     fun NOTIFICATION_CHANNEL_ID应等于预期值() {
-        assertEquals("ai_answerer_service", Constants.NOTIFICATION_CHANNEL_ID)
+        assertEquals("ai_answerer_service_v2", Constants.NOTIFICATION_CHANNEL_ID)
     }
 
     @Test

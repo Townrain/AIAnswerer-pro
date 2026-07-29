@@ -29,7 +29,10 @@ object NotificationHelper {
                 Constants.NOTIFICATION_CHANNEL_ID,
                 name,
                 NotificationManager.IMPORTANCE_DEFAULT
-            ).apply { description = name }
+            ).apply {
+                description = name
+                setSound(null, null)   // 禁用启动音效，前台服务只需可见不需要发声
+            }
             context.getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
         }
