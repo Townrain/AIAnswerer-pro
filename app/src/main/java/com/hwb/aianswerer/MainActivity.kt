@@ -1,5 +1,6 @@
 package com.hwb.aianswerer
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -10,6 +11,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -67,6 +69,15 @@ class MainActivity : BaseActivity() {
         } else {
             Toast.makeText(this, getString(R.string.toast_permission_capture_required), Toast.LENGTH_LONG).show()
         }
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        // Whether the user grants or denies, continue the start flow. If denied,
+        // NotificationHelper.ensurePermission already logs a warning and the foreground
+        // service may be killed by the system after a timeout — but we don't block.
+        proceedWithStartFlow()
     }
 
     private val overlayPermissionLauncher = registerForActivityResult(
@@ -139,6 +150,20 @@ class MainActivity : BaseActivity() {
             }
             return
         }
+        // Android 13+ requires POST_NOTIFICATIONS as a runtime permission. Request it
+        // before starting the foreground service, otherwise the persistent notification
+        // is silently suppressed and the service may be killed after a timeout.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        proceedWithStartFlow()
+    }
+
+    private fun proceedWithStartFlow() {
         if (!checkOverlayPermission()) { requestOverlayPermission(); return }
         requestScreenCapturePermission()
     }
