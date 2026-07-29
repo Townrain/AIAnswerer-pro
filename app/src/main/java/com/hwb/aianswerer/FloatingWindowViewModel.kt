@@ -194,8 +194,12 @@ class FloatingWindowViewModel : ViewModel() {
 
         override fun setFlagSecure(enabled: Boolean) { ctx?.setFlagSecure(enabled) }
         override fun setWindowAlpha(alpha: Float) { ctx?.setWindowAlpha(alpha) }
-        override fun updateWindowPosition() { /* noop — 3-window architecture */ }
-        override fun updateWindowHeight() { /* noop — each window-sized independently */ }
+        // 下两个回调被 CaptureHandler 中 12 处调用，但在 3-window 架构下已 noop：
+        // 窗口位置/尺寸由 service.dragWindowBy + ComposeView onMeasuredSize + snapshotFlow
+        // 响应式处理。留空实现避免破坏 CaptureHandlerCallbacks 接口；如果某场景下窗口
+        // 没被响应式调整读取，优先在 service 里补 snapshotFlow 监听，不要这里偷改几何。
+        override fun updateWindowPosition() { /* noop — 3-window architecture: 窗口位置由 service.dragWindowBy + animateWindowX 直接控制 */ }
+        override fun updateWindowHeight() { /* noop — 3-window architecture: 每窗口高度由 ComposeView onMeasuredSize 响应式上报 */ }
         override fun showError(message: String) { ctx?.showErrorToUser(message) }
         override fun showToast(message: String) { ctx?.showToast(message) }
         override fun setStatus(status: FloatingStatus) { floatingStatus.value = status }
