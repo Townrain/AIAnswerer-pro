@@ -57,10 +57,12 @@ fun HomePage(t: Th, onSettingsClick: () -> Unit, onStartClick: () -> Unit, isAns
     }
 
     // 检查是否已配置语言模型（最基础需求：有已启用且选了模型的厂商）
+    // 检查是否已配置语言模型 — 同时需要 API Key 和至少一个选中模型，
+    // 少一样都会让 CTA 按钮灰掉，避免“点击后才弹“请先配置模型”的两步赛男人体验
     val modelConfigured by remember(resumeVersion) {
         derivedStateOf {
             ProviderStorage.getEnabledProvidersFromUserConfigs()
-                .any { it.selectedModels.any { m -> m.isNotBlank() } }
+                .any { it.apiKey.isNotBlank() && it.selectedModels.any { m -> m.isNotBlank() } }
         }
     }
 
