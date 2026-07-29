@@ -24,7 +24,7 @@ import org.robolectric.annotation.Config
  * animateWindowX, and backward compat methods.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [30])
+@Config(sdk = [30], application = android.app.Application::class)
 class FloatingWindowManagerTest {
 
     private val mockWm = mockk<WindowManager>(relaxed = true)
