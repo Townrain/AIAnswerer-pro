@@ -67,6 +67,8 @@ interface CaptureHandlerCallbacks {
     fun getCurrentFetchJob(): Job?
     fun setCurrentFetchJob(job: Job?)
 
+    /** Clear all answer state for a fresh capture. */
+    fun clearAnswers()
     /** Whether image-collection mode is active. */
     fun isImageCollecting(): Boolean
 
@@ -302,6 +304,7 @@ class CaptureHandler(
         }
 
         callbacks.getCurrentFetchJob()?.cancel()
+        callbacks.clearAnswers()
         // Actually set it — use the service's own Job holder
         val job = serviceScope.launch {
             val wasStealth = callbacks.isStealthModeEnabled()

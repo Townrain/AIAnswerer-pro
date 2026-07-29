@@ -156,4 +156,14 @@ internal object UIConfig {
     fun saveLongPressDuration(ms: Int) {
         ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_LONG_PRESS_DURATION, ms.coerceIn(300, 3000))
     }
+
+    // ========== 调试日志 ==========
+
+    fun isDebugLogEnabled(): Boolean {
+        return ConfigStorage.requireMmkv().decodeBool(ConfigStorage.KEY_DEBUG_LOG, false)
+    }
+
+    fun saveDebugLogEnabled(enabled: Boolean) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_DEBUG_LOG, enabled)
+    }
 }

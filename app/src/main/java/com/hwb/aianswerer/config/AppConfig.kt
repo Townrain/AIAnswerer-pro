@@ -129,4 +129,8 @@ object AppConfig {
     fun getDynamicProviderModels(providerId: String): List<String> = ModelWhitelistConfig.getDynamicProviderModels(providerId)
     fun saveDynamicProviderConfigs(configs: List<com.hwb.aianswerer.utils.ModelWhitelistUpdater.ProviderConfig>) = ModelWhitelistConfig.saveDynamicProviderConfigs(configs)
     fun getDynamicProviderConfigs(): List<com.hwb.aianswerer.utils.ModelWhitelistUpdater.ProviderConfig> = ModelWhitelistConfig.getDynamicProviderConfigs()
-}
+
+    // ── Debug ──
+    fun isDebugLogEnabled(): Boolean = UIConfig.isDebugLogEnabled()
+    fun saveDebugLogEnabled(enabled: Boolean) = UIConfig.saveDebugLogEnabled(enabled)
+    }

@@ -214,6 +214,16 @@ class FloatingWindowViewModel : ViewModel() {
         }
         override fun getCurrentFetchJob(): Job? = currentFetchJob
         override fun setCurrentFetchJob(job: Job?) { currentFetchJob = job }
+        override fun clearAnswers() {
+            answerText.value = null
+            paginatedAnswers.value = emptyList()
+            paginatedCopyTexts.value = emptyList()
+            recordingAnswers.value = emptyList()
+            recordingCopyTexts.value = emptyList()
+            floatingStatus.value = FloatingStatus.Idle
+            showAnswer.value = false
+            hasContent = false
+        }
     }
 
     // ===== Business methods =====

@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.hwb.aianswerer.MyApplication
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.providers.WebSearchStorage
@@ -66,12 +67,14 @@ private sealed class ConnTest {
 // Settings Page
 // =============================================================================
 @Composable
-fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onModels: () -> Unit = {}, onAbout: () -> Unit = {}) {
+fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onModels: () -> Unit = {}, onAbout: () -> Unit = {}, onExportLogs: (suspend () -> Boolean)? = null) {
     var autoSubmit by remember { mutableStateOf(AppConfig.getAutoSubmit()) }
     var autoCopy by remember { mutableStateOf(AppConfig.getAutoCopy()) }
     var stealthMode by remember { mutableStateOf(AppConfig.isStealthModeEnabled()) }
     var parallelMode by remember { mutableStateOf(AppConfig.isParallelModeEnabled()) }
     var maxConcurrency by remember { mutableStateOf(AppConfig.getMaxConcurrency().toFloat()) }
+    var debugLog by remember { mutableStateOf(AppConfig.isDebugLogEnabled()) }
+    var isExporting by remember { mutableStateOf(false) }
     var llmTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
     var vlmTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
     var searchTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
@@ -221,6 +224,62 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
             // Custom theme import
             SectionTitle(t, "自定义主题")
             CustomThemeSection(t, toastMsg) { toastMsg = it }
+
+            // Debug tools
+            val ctx = LocalContext.current
+            SectionTitle(t, ctx.getString(com.hwb.aianswerer.R.string.debug_section_title))
+            Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
+                SettingSwitch(t,
+                    ctx.getString(com.hwb.aianswerer.R.string.debug_log_toggle),
+                    ctx.getString(com.hwb.aianswerer.R.string.debug_log_toggle_desc),
+                    debugLog
+                ) {
+                    debugLog = it
+                    AppConfig.saveDebugLogEnabled(it)
+                    com.hwb.aianswerer.utils.AppLog.refreshDebugState()
+                    if (it) {
+                        com.hwb.aianswerer.utils.AppLog.i("Debug", "Debug logging enabled by user")
+                    }
+                }
+                Sep(t)
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            ctx.getString(com.hwb.aianswerer.R.string.debug_export_logs),
+                            style = DW.BodyMedium.copy(color = t.ob)
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            ctx.getString(com.hwb.aianswerer.R.string.debug_export_logs_desc),
+                            style = DW.BodySmall.copy(color = t.osv)
+                        )
+                    }
+                    Box(
+                        Modifier.clip(RoundedCornerShape(ChipR))
+                            .background(if (isExporting) t.gb.copy(alpha = 0.4f) else t.p.copy(alpha = 0.12f))
+                            .clickable(enabled = !isExporting) {
+                                if (isExporting) return@clickable
+                                isExporting = true
+                                scope.launch {
+                                    val success = onExportLogs?.invoke() ?: false
+                                    isExporting = false
+                                    toastMsg = if (success) {
+                                        ctx.getString(com.hwb.aianswerer.R.string.debug_export_success)
+                                    } else {
+                                        ctx.getString(com.hwb.aianswerer.R.string.debug_no_logs)
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) {
+                        if (isExporting) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = t.p)
+                        } else {
+                            Text("导出", style = DW.LabelMedium.copy(color = t.p))
+                        }
+                    }
+                }
+            }
         }
         Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(t.bg1, t.bg2)))) {
             SettingsTopBar(t, onBack, onAbout)
@@ -433,11 +492,12 @@ private suspend fun testConnection(apiUrl: String, apiKey: String, path: String 
             val url = if (path.isNotEmpty()) {
                 val base = apiUrl.trimEnd('/')
                 // Strip endpoint paths to get the API base URL, handling any /vN version
-                val apiBase = if (base.contains("/v1/")) {
-                    base.substringBefore("/v1/") + "/v1"
-                } else if (base.matches(Regex(".*/v\\d+\\w*/.*"))) {
+                val apiBase = if (base.matches(Regex(".*/v\\d+\\w*/.*"))) {
                     val match = Regex("(.*/v\\d+\\w*)/.*").find(base)
                     match?.groupValues?.get(1) ?: base
+                } else if (base.matches(Regex(".*/v\\d+\\w*$"))) {
+                    // URL ends with version path like /v4 — use as-is
+                    base
                 } else {
                     base.substringBeforeLast("/")
                 }

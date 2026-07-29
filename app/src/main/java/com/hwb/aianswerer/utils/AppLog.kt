@@ -2,12 +2,18 @@ package com.hwb.aianswerer.utils
 
 import android.util.Log
 import com.hwb.aianswerer.BuildConfig
+import com.hwb.aianswerer.config.AppConfig
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.FileWriter
 import java.io.PrintWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * 全链路日志系统 — 同时写 logcat（仅 Debug）和文件（始终），方便排查疑难问题。
@@ -78,10 +84,12 @@ object AppLog {
 
     // ── 公开 API ──
 
-    /** 调试信息 */
+    /** 调试信息 — 仅当调试日志开关开启时才写文件 / logcat */
     fun d(tag: String, msg: String) {
-        write("DEBUG", tag, msg)
-        logcat(Log.DEBUG, "[$tag] $msg")
+        if (isDebugEnabled()) {
+            write("DEBUG", tag, msg)
+            logcat(Log.DEBUG, "[$tag] $msg")
+        }
     }
 
     /** 关键流程节点 */
@@ -119,6 +127,63 @@ object AppLog {
         val elapsed = System.currentTimeMillis() - startMs
         write("TRACE", tag, "← $fn (${elapsed}ms)")
         logcat(Log.DEBUG, "[$tag] ← $fn (${elapsed}ms)")
+    }
+
+    // ── 调试日志开关 ──
+
+    /** 获取当前调试日志状态。在频繁路径中避免每次都读 MMKV，此处做了缓存。 */
+    @Volatile
+    private var debugEnabledCache: Boolean? = null
+    private var lastDebugCheckTime: Long = 0L
+
+    private fun isDebugEnabled(): Boolean {
+        // 如果是从 IDE 编译的 Debug 包，始终开启详细日志
+        if (BuildConfig.DEBUG) return true
+        val now = System.currentTimeMillis()
+        if (debugEnabledCache == null || now - lastDebugCheckTime > 10_000L) {
+            debugEnabledCache = try { AppConfig.isDebugLogEnabled() } catch (_: Exception) { false }
+            lastDebugCheckTime = now
+        }
+        return debugEnabledCache == true
+    }
+
+    /** 强制刷新调试状态缓存（用户切换开关后调用） */
+    fun refreshDebugState() {
+        debugEnabledCache = null
+    }
+
+    // ── 日志导出 ──
+
+    /**
+     * 将所有日志文件打包为 ZIP 写入临时文件，返回该 ZIP 文件。
+     * 调用方负责通过 Intent 分享或清理临时文件。
+     */
+    fun exportLogsZip(): File? {
+        return try {
+            val files = getLogFiles()
+            if (files.isEmpty()) return null
+
+            // 先将当前日志缓冲区刷盘
+            logFile?.let { f ->
+                try { raw("═══ Export triggered ═══") } catch (_: Exception) {}
+            }
+
+            val zipFile = File(logDir, "aianswerer_logs_export.zip")
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
+                for (f in files.take(10)) {  // 最多导出最近 10 个文件
+                    if (!f.exists() || f.length() == 0L) continue
+                    zos.putNextEntry(ZipEntry(f.name))
+                    FileInputStream(f).use { input ->
+                        input.copyTo(zos, 4096)
+                    }
+                    zos.closeEntry()
+                }
+            }
+            zipFile
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "exportLogsZip failed", e)
+            null
+        }
     }
 
     // ── 兼容旧 API（无 tag 参数） ──

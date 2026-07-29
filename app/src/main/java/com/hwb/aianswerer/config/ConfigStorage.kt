@@ -55,6 +55,7 @@ internal object ConfigStorage {
     internal const val KEY_THEME_PRESET = "theme_preset"
     internal const val KEY_LONG_PRESS_DURATION = "long_press_duration"
     internal const val KEY_CUSTOM_THEMES = "custom_themes"
+    internal const val KEY_DEBUG_LOG = "debug_log"
 
     // 语言代码常量 — OCR 支持的语言（zh/en/ja/fr/de/es/pt/ko 本地 OCR，ru/ar 需 VLM）
     internal const val LANGUAGE_ZH = "zh"

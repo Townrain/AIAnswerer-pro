@@ -71,7 +71,6 @@ class JsonAnswerExtractor(
      */
     private fun tryParseAsAnswers(json: String): List<AIAnswer>? {
         return try {
-            // 先尝试数组
             val arrayType = com.google.gson.reflect.TypeToken.getParameterized(
                 java.util.List::class.java, AIAnswer::class.java
             ).type
@@ -79,7 +78,6 @@ class JsonAnswerExtractor(
             list.takeIf { it.isNotEmpty() && it.first().question.isNotBlank() }
         } catch (_: Exception) {
             try {
-                // 再尝试单对象
                 val single = gson.fromJson(json, AIAnswer::class.java)
                 listOf(single).takeIf { single.question.isNotBlank() }
             } catch (_: Exception) {
@@ -90,24 +88,15 @@ class JsonAnswerExtractor(
 
     /**
      * 从 AI 回复文本中提取 JSON 负载。
-     *
-     * LLM 返回格式多样（裸 JSON、Markdown 代码块、JSON 混在文字中等）。
-     * 按优先级处理：
-     *   1. 正则匹配 ```json {...} ``` 或 ``` {...} ``` 代码块
-     *   2. 括号配对算法：从第一个 { 或 [ 开始，逐字符跟踪字符串内转义
-     *      和嵌套深度，找到配对的闭合括号
-     *   3. 兜底：原文直接返回，由 Gson 尝试解析
      */
     fun extractJsonPayload(content: String): String {
         val s = content.trim()
 
-        // 优先匹配 Markdown 代码块 ```json {...}```
         val fenceRegex = Regex("(?s)```\\s*([a-zA-Z0-9_-]+)?\\s*(\\{.*?\\}|\\[.*?\\])\\s*```")
         fenceRegex.find(s)?.let { m ->
             return sanitizeJson(m.groupValues[2].trim())
         }
 
-        // 无代码块时：找到首个 '{' 或 '['，通过括号配对提取完整JSON
         val start = sequenceOf(s.indexOf('{'), s.indexOf('['))
             .filter { it >= 0 }
             .minOrNull() ?: return s
@@ -115,7 +104,6 @@ class JsonAnswerExtractor(
         val openChar = s[start]
         val closeChar = if (openChar == '{') '}' else ']'
 
-        // 括号配对状态机：处理嵌套和字符串内的括号
         var depth = 0
         var inString = false
         var escape = false
@@ -124,84 +112,50 @@ class JsonAnswerExtractor(
         for (i in start until s.length) {
             val c = s[i]
             if (inString) {
-                if (escape) {
-                    escape = false
-                } else {
-                    if (c == '\\') escape = true
-                    else if (c == '"') inString = false
-                }
+                if (escape) escape = false
+                else if (c == '\\') escape = true
+                else if (c == '"') inString = false
             } else {
                 if (c == '"') inString = true
                 else if (c == openChar) depth++
                 else if (c == closeChar) {
                     depth--
-                    if (depth == 0) {
-                        end = i
-                        break
-                    }
+                    if (depth == 0) { end = i; break }
                 }
             }
         }
         if (end != -1) {
             return sanitizeJson(s.substring(start, end + 1).trim())
         }
-
-        // 兜底：返回原文（可能已是纯JSON）
         return sanitizeJson(s)
     }
 
-    /**
-     * 清理 JSON 字符串中的非法字符
-     * LLM 返回的 JSON 可能在字符串值中包含换行符、中文标点等，导致解析失败
-     *
-     * 重要：中文标点只在 JSON 字符串外部替换，避免破坏字符串值内的中文内容
-     */
     private fun sanitizeJson(json: String): String {
         val result = StringBuilder()
         var inString = false
         var escape = false
-
         for (c in json) {
             when {
-                escape -> {
-                    result.append(c)
-                    escape = false
-                }
-                c == '\\' && inString -> {
-                    result.append(c)
-                    escape = true
-                }
-                c == '"' -> {
-                    result.append(c)
-                    inString = !inString
-                }
-                inString && (c == '\n' || c == '\r') -> {
-                    // 字符串内的换行符替换为 \\n
-                    result.append("\\n")
-                }
-                inString && c == '\t' -> {
-                    // 字符串内的制表符替换为 \\t
-                    result.append("\\t")
-                }
-                inString -> {
-                    // 字符串内的内容原样保留，不替换中文标点
-                    result.append(c)
-                }
+                escape -> { result.append(c); escape = false }
+                c == '\\' && inString -> { result.append(c); escape = true }
+                c == '"' -> { result.append(c); inString = !inString }
+                inString && (c == '\n' || c == '\r') -> result.append("\\n")
+                inString && c == '\t' -> result.append("\\t")
+                inString -> result.append(c)
                 else -> {
-                    // 字符串外的中文标点替换为 ASCII
                     when (c) {
-                        '\u201C', '\u201D' -> result.append('"')  // 中文双引号
-                        '\u2018', '\u2019' -> result.append('\'') // 中文单引号
-                        '\uFF0C' -> result.append(',')             // 全角逗号
-                        '\u3001' -> result.append(',')             // 顿号
-                        '\uFF1A' -> result.append(':')             // 全角冒号
-                        '\uFF1B' -> result.append(';')             // 全角分号
-                        '\u3002' -> result.append('.')             // 句号
-                        '\uFF08' -> result.append('(')             // 全角左括号
-                        '\uFF09' -> result.append(')')             // 全角右括号
-                        '\u300A' -> result.append('<')             // 左书名号
-                        '\u300B' -> result.append('>')             // 右书名号
-                        '\uFF01' -> result.append('!')             // 全角感叹号
+                        '\u201C', '\u201D' -> result.append('"')
+                        '\u2018', '\u2019' -> result.append('\'')
+                        '\uFF0C' -> result.append(',')
+                        '\u3001' -> result.append(',')
+                        '\uFF1A' -> result.append(':')
+                        '\uFF1B' -> result.append(';')
+                        '\u3002' -> result.append('.')
+                        '\uFF08' -> result.append('(')
+                        '\uFF09' -> result.append(')')
+                        '\u300A' -> result.append('<')
+                        '\u300B' -> result.append('>')
+                        '\uFF01' -> result.append('!')
                         else -> result.append(c)
                     }
                 }
@@ -211,60 +165,87 @@ class JsonAnswerExtractor(
     }
 
     /**
+     * 将 JavaScript 对象字面量格式转换为标准 JSON：
+     * - 键名加引号: {key: → {"key":
+     * - 字符串值加引号: :中文 → :"中文", [A. xx → ["A. xx"
+     */
+    private fun quoteJsonKeys(json: String): String {
+        var s = json
+
+        // 步骤1: 引用未加引号的键名 ({或, 后跟 word:)
+        s = Regex("""([\{,])\s*([a-zA-Z_]\w*)\s*:""").replace(s) { mr ->
+            "${mr.groupValues[1]}\"${mr.groupValues[2]}\":"
+        }
+
+        // 步骤2: 引用未加引号的字符串值（状态机）
+        val sb = StringBuilder()
+        var inStr = false
+        var esc = false
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            when {
+                esc -> { sb.append(c); esc = false; i++; continue }
+                c == '\\' && inStr -> { sb.append(c); esc = true; i++; continue }
+                c == '"' -> { sb.append(c); inStr = !inStr; i++; continue }
+                inStr -> { sb.append(c); i++; continue }
+                // :  [  , 后面可能跟未引号字符串值
+                c == ':' || c == '[' || c == ',' -> {
+                    sb.append(c); i++
+                    while (i < s.length && s[i].isWhitespace()) { sb.append(s[i]); i++ }
+                    if (i >= s.length) continue
+                    val nc = s[i]
+                    // 已引号 / { [ ] } / 数字 / - / true / false / null → 跳过
+                    if (nc == '"' || nc == '{' || nc == '[' || nc == ']' || nc == '}' ||
+                        nc.isDigit() || nc == '-') continue
+                    if (nc == 't' && s.regionMatches(i, "true", 0, 4, true)) continue
+                    if (nc == 'f' && s.regionMatches(i, "false", 0, 5, true)) continue
+                    if (nc == 'n' && s.regionMatches(i, "null", 0, 4, true)) continue
+                    // 未引号字符串值：提取到 , } ]
+                    val valStart = i
+                    while (i < s.length && s[i] != ',' && s[i] != '}' && s[i] != ']') i++
+                    val raw = s.substring(valStart, i).trim()
+                    if (raw.isNotEmpty()) sb.append('"').append(raw).append('"')
+                    continue
+                }
+                else -> { sb.append(c); i++; continue }
+            }
+        }
+        return sb.toString()
+    }
+
+    /**
      * 修复常见的 JSON 格式问题
-     * - 缺少花括号
-     * - 空值 (answer:)
-     * - 尾部逗号
-     * - 中文标点（仅替换字符串外的标点）
      */
     private fun fixMalformedJson(json: String): String {
         var s = json.trim()
 
-        // 如果不是以 { 或 [ 开头，添加 {
-        if (!s.startsWith("{") && !s.startsWith("[")) {
-            s = "{$s"
-        }
-        // 如果不是以 } 或 ] 结尾，添加 }
-        if (!s.endsWith("}") && !s.endsWith("]")) {
-            // 移除尾部逗号后添加 }
-            s = s.trimEnd().trimEnd(',') + "}"
-        }
+        // 步骤0：JavaScript 对象格式 → 标准 JSON
+        s = quoteJsonKeys(s)
 
-        // 仅替换字符串值外面的中文标点（不替换字符串内的内容）
+        if (!s.startsWith("{") && !s.startsWith("[")) s = "{$s"
+        if (!s.endsWith("}") && !s.endsWith("]")) s = s.trimEnd().trimEnd(',') + "}"
+
+        // 替换字符串外的中文标点
         val result = StringBuilder()
         var inString = false
         var escape = false
         var i = 0
-
         while (i < s.length) {
             val c = s[i]
-
             when {
-                escape -> {
-                    result.append(c)
-                    escape = false
-                }
-                c == '\\' && inString -> {
-                    result.append(c)
-                    escape = true
-                }
-                c == '"' -> {
-                    result.append(c)
-                    inString = !inString
-                }
-                inString -> {
-                    // 字符串内的内容原样保留，不替换中文标点
-                    result.append(c)
-                }
+                escape -> { result.append(c); escape = false }
+                c == '\\' && inString -> { result.append(c); escape = true }
+                c == '"' -> { result.append(c); inString = !inString }
+                inString -> result.append(c)
                 else -> {
-                    // 字符串外的中文标点替换为 ASCII
                     when (c) {
-                        '\u201C', '\u201D' -> result.append('"')  // 中文双引号
-                        '\uFF0C' -> result.append(',')             // 全角逗号
-                        '\u3001' -> result.append(',')             // 顿号
-                        '\uFF1A' -> result.append(':')             // 全角冒号
-                        '\uFF08' -> result.append('(')             // 全角左括号
-                        '\uFF09' -> result.append(')')             // 全角右括号
+                        '\u201C', '\u201D' -> result.append('"')
+                        '\uFF0C' -> result.append(',')
+                        '\u3001' -> result.append(',')
+                        '\uFF1A' -> result.append(':')
+                        '\uFF08' -> result.append('(')
+                        '\uFF09' -> result.append(')')
                         else -> result.append(c)
                     }
                 }
@@ -273,25 +254,23 @@ class JsonAnswerExtractor(
         }
         s = result.toString()
 
-        // 修复空值 answer: 或 answer: , 或 answer:"",
-        s = s.replace("\"answer\":,", "\"answer\":\"\"," )
-        s = s.replace("\"answer\": ,", "\"answer\":\"\"," )
-        s = s.replace("\"answer\":  ,", "\"answer\":\"\"," )
+        // 修复空值
+        s = s.replace("\"answer\":,", "\"answer\":\"\",")
+        s = s.replace("\"answer\": ,", "\"answer\":\"\",")
+        s = s.replace("\"answer\":  ,", "\"answer\":\"\",")
 
-        // 移除尾部逗号 (如 "options":[...] ,)
+        // 移除尾部逗号
         var changed = true
         while (changed) {
             val newS = s.replace(",}", "}").replace(",]", "]")
             changed = newS != s
             s = newS
         }
-
         return s
     }
 
     /**
      * 从原始文本中解析答案（JSON 解析失败时的降级方案）
-     * 不使用正则，改用字符串查找
      */
     private fun parseAnswerFromText(text: String): AIAnswer {
         val question = extractJsonValue(text, "question")
@@ -302,35 +281,17 @@ class JsonAnswerExtractor(
             ?: MyApplication.getString(R.string.error_parse_question_failed)
         val questionType = extractJsonValue(text, "questionType")
             ?: MyApplication.getString(R.string.question_type_essay)
-
-        // 提取 options 数组
         val options = extractJsonArray(text, "options")
-
-        return AIAnswer(
-            question = question,
-            questionType = questionType,
-            answer = answer,
-            options = options
-        )
+        return AIAnswer(question, questionType, answer, options)
     }
 
-    /**
-     * 当 answer 为空时，尝试从选项中推断答案
-     * 如果只有一个选项看起来像答案，就返回它
-     */
     private fun inferAnswerFromOptions(text: String): String? {
-        // 尝试找到 "answer": 后面的内容
         val answerIndex = text.indexOf("\"answer\"")
         if (answerIndex == -1) return null
-
         val colonIndex = text.indexOf(':', answerIndex)
         if (colonIndex == -1) return null
-
-        // 检查 answer 后面是否直接是逗号或结束
         var i = colonIndex + 1
         while (i < text.length && text[i].isWhitespace()) i++
-
-        // 如果是引号，提取引号内容
         if (i < text.length && text[i] == '"') {
             i++
             val start = i
@@ -338,60 +299,38 @@ class JsonAnswerExtractor(
             val value = text.substring(start, i)
             if (value.isNotBlank()) return value
         }
-
         return null
     }
 
-    /**
-     * 从 JSON 文本中提取指定 key 的字符串值
-     */
     private fun extractJsonValue(json: String, key: String): String? {
         val searchKey = "\"$key\""
         val keyIndex = json.indexOf(searchKey)
         if (keyIndex == -1) return null
-
-        // 找到 key 后面的冒号
         val colonIndex = json.indexOf(':', keyIndex + searchKey.length)
         if (colonIndex == -1) return null
-
-        // 跳过空白
         var i = colonIndex + 1
         while (i < json.length && json[i].isWhitespace()) i++
-
         if (i >= json.length) return null
-
-        // 如果是引号开头，提取引号内的内容
         if (json[i] == '"') {
-            i++ // 跳过开始引号
+            i++
             val start = i
             while (i < json.length && json[i] != '"') {
-                if (json[i] == '\\') i++ // 跳过转义字符
+                if (json[i] == '\\') i++
                 i++
             }
             return json.substring(start, i)
         }
-
-        // 如果不是引号，提取到逗号或结尾
         val start = i
-        while (i < json.length && json[i] != ',' && json[i] != '}' && json[i] != ']') {
-            i++
-        }
+        while (i < json.length && json[i] != ',' && json[i] != '}' && json[i] != ']') i++
         return json.substring(start, i).trim()
     }
 
-    /**
-     * 从 JSON 文本中提取指定 key 的数组值
-     */
     private fun extractJsonArray(json: String, key: String): List<String>? {
         val searchKey = "\"$key\""
         val keyIndex = json.indexOf(searchKey)
         if (keyIndex == -1) return null
-
-        // 找到 key 后面的 [
         val bracketIndex = json.indexOf('[', keyIndex + searchKey.length)
         if (bracketIndex == -1) return null
-
-        // 找到匹配的 ]（括号配对，支持嵌套）
         var depth = 0
         var endIndex = -1
         var inString = false
@@ -406,40 +345,28 @@ class JsonAnswerExtractor(
             else if (c == ']') { depth--; if (depth == 0) { endIndex = i; break } }
         }
         if (endIndex == -1) return null
-
-        // 提取数组内容
         val arrayContent = json.substring(bracketIndex + 1, endIndex)
-
-        // 解析数组元素（用引号分割）
         val items = mutableListOf<String>()
         var i = 0
         while (i < arrayContent.length) {
-            // 跳过空白和逗号
             while (i < arrayContent.length && (arrayContent[i].isWhitespace() || arrayContent[i] == ',')) i++
-
             if (i >= arrayContent.length) break
-
-            // 如果是引号开头，提取引号内的内容
             if (arrayContent[i] == '"') {
-                i++ // 跳过开始引号
+                i++
                 val start = i
                 while (i < arrayContent.length && arrayContent[i] != '"') {
-                    if (arrayContent[i] == '\\') i++ // 跳过转义字符
+                    if (arrayContent[i] == '\\') i++
                     i++
                 }
                 items.add(arrayContent.substring(start, i))
-                i++ // 跳过结束引号
+                i++
             } else {
-                // 非引号值
                 val start = i
                 while (i < arrayContent.length && arrayContent[i] != ',' && arrayContent[i] != ']') i++
                 val value = arrayContent.substring(start, i).trim()
-                if (value.isNotEmpty()) {
-                    items.add(value)
-                }
+                if (value.isNotEmpty()) items.add(value)
             }
         }
-
         return items.takeIf { it.isNotEmpty() }
     }
 }

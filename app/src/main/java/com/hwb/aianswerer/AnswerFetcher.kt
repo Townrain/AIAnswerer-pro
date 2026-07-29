@@ -109,6 +109,7 @@ class AnswerFetcher(
                     result
                         .onSuccess { answers -> callback(AnswerResult.Success(answers)) }
                         .onFailure { error ->
+                            AppLog.e("AnswerFetcher", "LLM request failed: ${error.message}", error)
                             callback(AnswerResult.Error(
                                 "AI分析失败: ${error.message ?: ""}"
                             ))
@@ -116,6 +117,7 @@ class AnswerFetcher(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    AppLog.e("AnswerFetcher", "fetchAnswer unexpected: ${e.message}", e)
                     callback(AnswerResult.Error("获取答案失败: ${e.message ?: ""}"))
                 }
             }
