@@ -153,42 +153,82 @@ object ThemeManager {
             return ImportResult.Error("JSON 格式错误：${e.message ?: "无法解析"}。请检查是否有 // 或 /* */ 注释未去除")
         }
 
-        // 3. 基础校验
+        // 3. 基础校验 — Gson 会跳过 Kotlin non-null 构造器，
+        // 因此 JSON 中缺失 light/dark 字段时这里会变成 null。
         if (def.id.isBlank()) return ImportResult.Error("主题 ID 不能为空")
         if (def.name.isBlank()) return ImportResult.Error("主题名称不能为空")
-        val allColors = listOf(def.light.bg1, def.light.bg2, def.dark.bg1, def.dark.bg2)
-        if (allColors.any { it == 0L }) return ImportResult.Error("颜色值不能为 0，请检查 JSON 颜色字段")
+        @Suppress("SENSELESS_COMPARISON")
+        if (def.light == null) return ImportResult.Error("缺少 light 颜色定义")
+        @Suppress("SENSELESS_COMPARISON")
+        if (def.dark == null) return ImportResult.Error("缺少 dark 颜色定义")
 
-        // 4. 检查 ID 冲突（内置主题）
-        if (def.id in ThemePresets.BUILT_IN) {
+        // 3.1 完整校验 24 个颜色字段：非零 + ARGB 范围 [1, 0xFFFFFFFF]
+        validateAllColors(def.light)?.let { return ImportResult.Error("亮色: $it") }
+        validateAllColors(def.dark)?.let { return ImportResult.Error("暗色: $it") }
+
+        // 4. 检查 ID 冲突（内置主题）— 自动加 custom_ 前缀避免覆盖内置主题
+        val (finalId, finalDef) = if (def.id in ThemePresets.BUILT_IN) {
             val newId = "custom_${def.id}"
-            val renamed = def.copy(id = newId, name = "${def.name} (自定义)")
-            customThemes[newId] = renamed
-            saveCustomThemes()
-            return ImportResult.Success(newId)
+            newId to def.copy(id = newId, name = "${def.name} (自定义)")
+        } else {
+            def.id to def
         }
 
         // 5. 检查 ID 冲突（已有自定义主题）
-        if (def.id in customThemes) {
-            return ImportResult.Error("主题 ID「${def.id}」已存在，请先删除旧主题或修改 ID")
+        if (finalId in customThemes) {
+            return ImportResult.Error("主题 ID「$finalId」已存在，请先删除旧主题或修改 ID")
         }
 
         // 6. 检查 Name 冲突（内置主题）
         val builtInNames = ThemePresets.BUILT_IN.values.map { it.first }
-        if (def.name in builtInNames) {
-            return ImportResult.Error("主题名称「${def.name}」与内置主题重名，请修改 name 字段")
+        if (finalDef.name in builtInNames) {
+            return ImportResult.Error("主题名称「${finalDef.name}」与内置主题重名，请修改 name 字段")
         }
 
         // 7. 检查 Name 冲突（已有自定义主题）
         val customNames = customThemes.values.map { it.name }
-        if (def.name in customNames) {
-            return ImportResult.Error("主题名称「${def.name}」已被其他自定义主题使用，请修改 name 字段")
+        if (finalDef.name in customNames) {
+            return ImportResult.Error("主题名称「${finalDef.name}」已被其他自定义主题使用，请修改 name 字段")
         }
 
-        // 8. 保存
-        customThemes[def.id] = def
-        saveCustomThemes()
-        return ImportResult.Success(def.id)
+        // 8. 先存后改 — 序列化 + 写盘成功后才 mutate 内存 map，避免半应用状态造成内存与持久化不一致
+        val updatedList = customThemes.values.toList() + finalDef
+        val type = object : TypeToken<List<CustomThemeDefinition>>() {}.type
+        val json = try { gson.toJson(updatedList, type) }
+            catch (e: Exception) { return ImportResult.Error("主题序列化失败：${e.message}") }
+        try {
+            AppConfig.saveCustomThemes(json)
+        } catch (e: Exception) {
+            return ImportResult.Error("主题持久化失败，请检查存储空间：${e.message}")
+        }
+        // 写盘成功，才应用内存变更
+        customThemes[finalId] = finalDef
+        return ImportResult.Success(finalId)
+    }
+
+    /**
+     * 校验 [SerializableThemeColors] 中全部 24 个颜色字段：
+     * - 不能为 0（会导致透明/不可见颜色）
+     * - 必须在 ARGB 范围 [1, 0xFFFFFFFF] 内
+     * @return 返回第一个不合法字段名 + 原因，全部合法则返回 null
+     */
+    private fun validateAllColors(c: SerializableThemeColors): String? {
+        val fields = listOf(
+            "bg1" to c.bg1, "bg2" to c.bg2, "bg3" to c.bg3, "bg4" to c.bg4, "bg5" to c.bg5,
+            "primary" to c.primary, "primaryEnd" to c.primaryEnd, "primaryDim" to c.primaryDim,
+            "primaryContainer" to c.primaryContainer, "onPrimaryContainer" to c.onPrimaryContainer,
+            "success" to c.success, "onBg" to c.onBg, "onBgVariant" to c.onBgVariant,
+            "glassTop" to c.glassTop, "glassBorder" to c.glassBorder,
+            "glassDarkPrimary" to c.glassDarkPrimary,
+            "headerTop" to c.headerTop, "headerDarkPrimary" to c.headerDarkPrimary,
+            "accent" to c.accent, "uiAccent" to c.uiAccent, "uiAccentLight" to c.uiAccentLight,
+            "trackOff" to c.trackOff, "error" to c.error, "white" to c.white,
+        )
+        for ((name, value) in fields) {
+            if (value == 0L) return "$name 不能为 0（会导致透明色）"
+            if (value < 0L || value > 0xFFFFFFFFL) return "$name 超出 ARGB 范围: $value"
+        }
+        return null
     }
 
     /**
@@ -262,9 +302,15 @@ object ThemeManager {
         if (json.isBlank()) return
         try {
             val type = object : TypeToken<List<CustomThemeDefinition>>() {}.type
-            val list: List<CustomThemeDefinition> = gson.fromJson(json, type)
+            val list: List<CustomThemeDefinition> = gson.fromJson(json, type) ?: emptyList()
             list.forEach { def ->
-                customThemes[def.id] = def
+                // 跳过老化主题记录（深层颜色字段为 0 或超 ARGB 范围）
+                if (def.light != null && def.dark != null &&
+                    validateAllColors(def.light) == null && validateAllColors(def.dark) == null) {
+                    customThemes[def.id] = def
+                } else {
+                    android.util.Log.w("ThemeManager", "跳过无效存储自定义主题: ${def.id}")
+                }
             }
         } catch (e: Exception) {
             android.util.Log.w("ThemeManager", "加载自定义主题失败: ${e.message}")
