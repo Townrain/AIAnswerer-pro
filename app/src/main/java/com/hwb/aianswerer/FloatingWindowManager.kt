@@ -227,6 +227,7 @@ class FloatingWindowManager(private val context: Context) {
                 aView -> aParams
                 bView -> bParams
                 cView -> cParams
+                dView -> dParams
                 else -> null
             }
             if (view != null && p != null) {
@@ -314,6 +315,7 @@ class FloatingWindowManager(private val context: Context) {
             aView -> aParams
             bView -> bParams
             cView -> cParams
+            dView -> dParams
             else -> null
         } ?: return
         p.alpha = alpha
@@ -329,6 +331,7 @@ class FloatingWindowManager(private val context: Context) {
             aView -> detachA()
             bView -> detachB()
             cView -> detachC()
+            dView -> detachD()
             else -> {}
         }
     }
