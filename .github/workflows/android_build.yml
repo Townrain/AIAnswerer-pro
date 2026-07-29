@@ -38,9 +38,6 @@ jobs:
         cache-read-only: ${{ github.ref != 'refs/heads/main' }}
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
-    - name: Run detekt
-      continue-on-error: true
-      run: ./gradlew detekt
     - name: Run Android lint
       continue-on-error: true
       run: ./gradlew lint
@@ -51,7 +48,6 @@ jobs:
         name: lint-reports
         path: |
           app/build/reports/lint-results-*.html
-          app/build/reports/detekt/
         retention-days: 14
 
   test:
@@ -81,13 +77,12 @@ jobs:
         retention-days: 14
     - name: Publish Test Report
       if: success() || failure()
-      continue-on-error: true
       uses: dorny/test-reporter@v1
       with:
         name: Unit Test Results
         path: app/build/test-results/**/TEST-*.xml
         reporter: java-junit
-        fail-on-error: false
+        fail-on-error: true
     - name: Generate Coverage Report
       continue-on-error: true
       run: ./gradlew koverXmlReportDebug
