@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -135,6 +136,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     /** Whether Window D (detail content) is currently expanded. */
     private var isDetailExpanded = mutableStateOf(false)
+    /** M16: 动画帧 B/C/D 同步节流时间戳 */
+    private var lastAnimSyncMs = 0L
 
     // ── LifecycleOwner / ViewModelStoreOwner / SavedStateRegistryOwner ──
 
@@ -157,6 +160,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     val answer = intent.getStringExtra(Constants.EXTRA_ANSWER_TEXT)
                     if (!answer.isNullOrBlank()) {
                         viewModel.answerText.value = answer
+                        // M11: 广播路径必须同步填充 paginatedAnswers，否则 D 窗空白（WindowDContent 只渲染 paginated/recording）
+                        viewModel.paginatedAnswers.value = listOf(1 to answer)
+                        viewModel.paginatedCopyTexts.value = listOf(1 to answer)
                         viewModel.showAnswer.value = true
                     }
                 }
@@ -296,11 +302,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 val resultCode = it.getIntExtra("resultCode", Activity.RESULT_CANCELED)
                 val data = it.getParcelableExtra<Intent>("data")
                 if (resultCode == Activity.RESULT_OK && data != null) {
-                    screenCaptureManager?.initMediaProjection(resultCode, data)
+                    // M1: 重入守卫——服务已运行时再次 start 会带相同 extra，跳过已就绪的 MediaProjection
+                    if (screenCaptureManager?.isReady != true) {
+                        screenCaptureManager?.initMediaProjection(resultCode, data)
+                    } else {
+                        AppLog.d("FWS", "onStartCommand: MediaProjection already ready, skip re-init")
+                    }
                 }
             }
-            if (it.hasExtra("viewModel.cropMode")) {
-                viewModel.cropMode = it.getStringExtra("viewModel.cropMode") ?: AppConfig.CROP_MODE_FULL
+            if (it.hasExtra("cropMode")) {
+                viewModel.cropMode = it.getStringExtra("cropMode") ?: AppConfig.CROP_MODE_FULL
             }
             viewModel.savedCropRect = null
             viewModel.savedCropRectEach = null
@@ -337,6 +348,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+            // M3: 显式组合策略——detach 时自动释放 composition，避免泄漏
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             if (isStealth) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
@@ -365,12 +378,17 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                                     AppLog.e("FWS", "ensureWindowB failed", e)
                                 }
                             } else {
-                                removeWindowB()
+                                // M5: removeView 移出 Compose 回调，避免 snapshot 系统重入死锁（代码自身注释警告过）
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    removeWindowB()
+                                }
                             }
                         },
                         onMove = { deltaX, deltaY -> dragWindowBy(deltaX, deltaY) },
                         onDragEnd = { leftSide ->
-                            val snapX = if (leftSide) buttonHalf else screenW - buttonHalf
+                            // M13: snapX 用窗口半宽（含 padding），与 dragWindowBy 的 halfSize 映射一致
+                            val halfSize = getAWindowSize() / 2f
+                            val snapX = if (leftSide) halfSize else screenW - halfSize
                             viewModel.floatOffsetX.value = snapX
                             val windowX = if (leftSide) 0f else (screenW - getAWindowSize()).coerceAtLeast(0f)
                             animateWindowX(windowX, animated = true)
@@ -384,21 +402,26 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     LaunchedEffect(Unit) {
                         snapshotFlow { viewModel.showAnswer.value to viewModel.statusMessage.value }
                             .collect { (show, msg) ->
-                                val hasContent = show || msg != null
-                                AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg hasContent=$hasContent cView=${windowMgr.cView != null} dView=${windowMgr.dView != null}")
-                                if (show) {
-                                    // Answer ready: show D, hide C
-                                    if (windowMgr.cView != null) removeWindowC()
-                                    if (windowMgr.dView == null) ensureWindowD()
-                                } else if (msg != null) {
-                                    // Status message: show C, hide D
-                                    if (windowMgr.dView != null) removeWindowD()
-                                    if (windowMgr.cView == null) ensureWindowC()
-                                } else {
-                                    // Clean up: nothing to show
-                                    AppLog.d("FWS", "snapshotFlow: cleaning up windows")
-                                    removeWindowD()
-                                    removeWindowC()
+                                // M4: 收集器内任何窗口操作异常都不允许杀死 LaunchedEffect（否则状态变化永久失去响应）
+                                try {
+                                    val hasContent = show || msg != null
+                                    AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg hasContent=$hasContent cView=${windowMgr.cView != null} dView=${windowMgr.dView != null}")
+                                    if (show) {
+                                        // Answer ready: show D, hide C
+                                        if (windowMgr.cView != null) removeWindowC()
+                                        if (windowMgr.dView == null) ensureWindowD()
+                                    } else if (msg != null) {
+                                        // Status message: show C, hide D
+                                        if (windowMgr.dView != null) removeWindowD()
+                                        if (windowMgr.cView == null) ensureWindowC()
+                                    } else {
+                                        // Clean up: nothing to show
+                                        AppLog.d("FWS", "snapshotFlow: cleaning up windows")
+                                        removeWindowD()
+                                        removeWindowC()
+                                    }
+                                } catch (e: Exception) {
+                                    AppLog.e("FWS", "snapshotFlow collect failed", e)
                                 }
                             }
                     }
@@ -429,7 +452,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             isStealth = isStealth
         )
 
-        windowMgr.attachA(aComposeView, aParams)
+        // S6: attachA 失败时不能崩溃服务——catch 并清理部分状态
+        try {
+            windowMgr.attachA(aComposeView, aParams)
+        } catch (e: Exception) {
+            AppLog.e("FWS", "attachA failed — floating window unavailable", e)
+            windowMgr.detachA()
+            return
+        }
         windowAView = aComposeView
         updateWindowAPosition()
     }
@@ -460,6 +490,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+            // M3
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             if (isStealth) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
@@ -510,13 +542,19 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         // B will appear on top of A — acceptable since they are side-by-side.
 
         AppLog.d("FWS", "ensureWindowB: calling attachB...")
+        var attachBOk = false
         try {
             windowMgr.attachB(bComposeView, bParams)
+            attachBOk = windowMgr.bView != null
             AppLog.d("FWS", "ensureWindowB: attachB done")
         } catch (e: Exception) {
             AppLog.e("FWS", "attachB failed", e)
         }
 
+        // P4: attach 失败时不要赋值 windowBView / 不要 syncB，避免对未附加 View 操作
+        if (!attachBOk) {
+            AppLog.e("FWS", "ensureWindowB: attachB failed, window not created"); return
+        }
         windowBView = bComposeView
         AppLog.d("FWS", "ensureWindowB: calling syncB...")
         syncB()
@@ -650,6 +688,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+            // M3
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             if (isStealth) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
@@ -691,13 +731,19 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "ensureWindowC: params size=${cParams.width}x${cParams.height}")
 
         AppLog.d("FWS", "ensureWindowC: calling attachC... cView before=${windowMgr.cView != null}")
+        var attachCOk = false
         try {
             windowMgr.attachC(cComposeView, cParams)
+            attachCOk = windowMgr.cView != null
             AppLog.d("FWS", "ensureWindowC: attachC done, cView after=${windowMgr.cView != null} cParams=${cParams.width}x${cParams.height} x=${cParams.x} y=${cParams.y}")
         } catch (e: Exception) {
             AppLog.e("FWS", "attachC failed", e)
         }
 
+        // P4: attach 失败时不要赋值 windowCView / 不要 syncC
+        if (!attachCOk) {
+            AppLog.e("FWS", "ensureWindowC: attachC failed, window not created"); return
+        }
         windowCView = cComposeView
         AppLog.d("FWS", "ensureWindowC: calling syncC... measuredCHeight=$measuredWindowCHeight")
         syncC()
@@ -728,6 +774,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             setViewTreeLifecycleOwner(this@FloatingWindowService)
             setViewTreeViewModelStoreOwner(this@FloatingWindowService)
             setViewTreeSavedStateRegistryOwner(this@FloatingWindowService)
+            // M3
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             if (settings.stealthMode.value) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
@@ -761,8 +809,15 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             isStealth = settings.stealthMode.value
         )
         AppLog.d("FWS", "ensureWindowD: dParams size=${dParams.width}x${dParams.height}")
-
-        windowMgr.attachD(dComposeView, dParams)
+        // S6: ensureWindowD 的 attachD 加异常保护——addView 失败时不崩溃（原代码无 try-catch）
+        try {
+            windowMgr.attachD(dComposeView, dParams)
+        } catch (e: Exception) {
+            AppLog.e("FWS", "attachD failed", e)
+            windowDView = null
+            measuredWindowDHeight = null
+            return
+        }
         windowDView = dComposeView
         measuredWindowDHeight = null // reset before first measure
         positionWindowD()
@@ -857,7 +912,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val isLeft = viewModel.floatOffsetX.value < screenW / 2f
 
         val x = if (isLeft) 0 else (screenW - aSize).toInt().coerceAtLeast(0)
-        val y = viewModel.floatOffsetY.value.toInt().coerceIn(0, screenH.toInt() - aSize)
+        val y = viewModel.floatOffsetY.value.toInt().coerceIn(0, maxOf(0, screenH.toInt() - aSize))
 
         viewModel.displayWindowX.floatValue = x.toFloat()
         windowMgr.updateLayoutA(
@@ -880,10 +935,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private fun syncB() {
         val aParams = windowMgr.aParams ?: return
         if (windowMgr.bView == null) return
-        val metrics = resources.displayMetrics
-        val screenW = metrics.widthPixels.toFloat()
-        val screenH = metrics.heightPixels.toFloat()
-        val density = metrics.density
+        // S9: 统一使用 realMetrics（与 syncC/positionWindowD/updateWindowAPosition 一致），
+        //     避免 displayMetrics（不含系统栏）与 A 窗口 realMetrics 坐标基准不一致导致 B 错位
+        val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val realMetrics = android.util.DisplayMetrics()
+        wm2.defaultDisplay.getRealMetrics(realMetrics)
+        val screenW = realMetrics.widthPixels.toFloat()
+        val screenH = realMetrics.heightPixels.toFloat()
+        val density = realMetrics.density
         val isLeft = viewModel.floatOffsetX.value < screenW / 2f
         val gapPx = (FWDims.quickPanelGap.value * density).toInt()
 
@@ -954,22 +1013,27 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     /** Handles drag gesture on Window A — updates offset and repositions all windows. */
     private fun dragWindowBy(deltaX: Float, deltaY: Float) {
+        // S8: 拖拽开始即取消吸附动画，避免动画 onFrame 与拖拽双写窗口坐标
+        viewModel.windowXAnimJob?.cancel()
+        viewModel.windowXAnimJob = null
         val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
         val realMetrics = android.util.DisplayMetrics()
         wm2.defaultDisplay.getRealMetrics(realMetrics)
         val screenW = realMetrics.widthPixels.toFloat()
         val screenH = realMetrics.heightPixels.toFloat()
         val aSize = getAWindowSize().toFloat()
-        val buttonHalf = (settings.floatButtonSizeDp.value * realMetrics.density) / 2f
+        // M13: 用窗口半宽 aSize/2（含 padding）而非 buttonHalf，统一 floatOffsetX 与窗口中心映射
+        val halfSize = aSize / 2f
 
         viewModel.floatOffsetX.value = (viewModel.floatOffsetX.value + deltaX)
-            .coerceIn(buttonHalf, screenW - buttonHalf)
+            .coerceIn(halfSize, screenW - halfSize)
         viewModel.floatOffsetY.value = (viewModel.floatOffsetY.value + deltaY)
-            .coerceIn(0f, screenH - aSize)
+            .coerceIn(0f, maxOf(0f, screenH - aSize))
 
         // During drag: position window at actual finger position (continuous, not snapped)
-        val dragX = (viewModel.floatOffsetX.value - buttonHalf).toInt()
+        val dragX = (viewModel.floatOffsetX.value - halfSize).toInt()
             .coerceIn(0, maxOf(0, screenW.toInt() - aSize.toInt()))
+
         val dragY = viewModel.floatOffsetY.value.toInt()
             .coerceIn(0, maxOf(0, screenH.toInt() - aSize.toInt()))
         viewModel.displayWindowX.floatValue = dragX.toFloat()
@@ -1031,9 +1095,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 screenW = metrics.widthPixels.toFloat(),
                 screenH = metrics.heightPixels.toFloat()
             )
-            syncB()
-            syncC()
-            positionWindowD()
+            // M16: 动画帧节流——B/C/D 跟随同步限频 20Hz（每 50ms 一次），减少 updateViewLayout 压力
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastAnimSyncMs >= 50L) {
+                lastAnimSyncMs = now
+                syncB()
+                syncC()
+                positionWindowD()
+            }
         }
     }
 
@@ -1059,6 +1128,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         viewModel.paginatedCopyTexts.value = emptyList()
         viewModel.floatingStatus.value = FloatingStatus.Idle
         viewModel.statusMessage.value = null
+        // 补齐录制/图片相关复位，避免关闭后状态残留（L1）
+        viewModel.recordingCopyTexts.value = emptyList()
+        viewModel.recordingCaptureCount.value = 0
+        viewModel.recordingSkippedCount.value = 0
+        viewModel.recordingFailedCount.value = 0
+        viewModel.recordingProcessedCount.value = 0
+        viewModel.isProcessingRecording.value = false
+        viewModel.hasContent = false
     }
 
     private fun closeStatus() {
@@ -1076,6 +1153,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         viewModel.paginatedCopyTexts.value = emptyList()
         viewModel.floatingStatus.value = FloatingStatus.Idle
         viewModel.statusMessage.value = null
+        // 补齐录制计数复位，避免关闭后残留（L1）
+        viewModel.recordingCopyTexts.value = emptyList()
+        viewModel.recordingCaptureCount.value = 0
+        viewModel.recordingSkippedCount.value = 0
+        viewModel.recordingFailedCount.value = 0
+        viewModel.recordingProcessedCount.value = 0
     }
 
     // ── Cleanup ─────────────────────────────────────────────────────────
@@ -1083,36 +1166,43 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     override fun onDestroy() {
         destroyed = true
         isRunning = false
-        recorder.cancel()
-        imageCollector.cancel()
-        viewModel.isRecording.value = false
-        viewModel.isProcessingRecording.value = false
-        viewModel.currentFetchJob?.cancel()
-        viewModel.currentFetchJob = null
-        serviceScope.cancel()
-        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
-        try { unregisterReceiver(answerReceiver) } catch (_: IllegalArgumentException) {}
+        // M2: 清理链整体包裹——任何一步异常都不允许中断后续清理
+        try {
+            recorder.cancel()
+            imageCollector.cancel()
+            viewModel.isRecording.value = false
+            viewModel.isProcessingRecording.value = false
+            viewModel.currentFetchJob?.cancel()
+            viewModel.currentFetchJob = null
+            serviceScope.cancel()
+            lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+            try { unregisterReceiver(answerReceiver) } catch (_: IllegalArgumentException) {}
 
-        // Remove all windows
-        windowMgr.detachD()
-        windowMgr.detachC()
-        windowMgr.detachB()
-        windowMgr.detachA()
+            // Remove all windows
+            windowMgr.detachD()
+            windowMgr.detachC()
+            windowMgr.detachB()
+            windowMgr.detachA()
 
-        // Dispose composition for each
-        windowDView?.disposeComposition()
-        windowCView?.disposeComposition()
-        windowBView?.disposeComposition()
-        windowAView?.disposeComposition()
+            // Dispose composition for each
+            windowDView?.disposeComposition()
+            windowCView?.disposeComposition()
+            windowBView?.disposeComposition()
+            windowAView?.disposeComposition()
 
-        windowDView = null
-        windowCView = null
-        windowBView = null
-        windowAView = null
+            windowDView = null
+            windowCView = null
+            windowBView = null
+            windowAView = null
 
-        screenCaptureManager?.releaseAll()
-        _viewModelStore.clear()
-        super.onDestroy()
+            screenCaptureManager?.releaseAll()
+        } catch (e: Exception) {
+            AppLog.e("FWS", "onDestroy cleanup failed", e)
+        } finally {
+            // 无论清理是否成功，ViewModel 与超类都必须释放
+            _viewModelStore.clear()
+            super.onDestroy()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

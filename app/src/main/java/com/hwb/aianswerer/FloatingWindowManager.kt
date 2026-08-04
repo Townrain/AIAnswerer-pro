@@ -94,52 +94,61 @@ class FloatingWindowManager(private val context: Context) {
     // ── Attach ───────────────────────────────────────────────────────
 
     fun attachA(view: View, params: WindowManager.LayoutParams) {
+        // 先 addView 成功后赋值，避免 addView 失败后字段残留导致状态不一致（S4）
+        windowManager.addView(view, params)
         aView = view
         aParams = params
-        windowManager.addView(view, params)
     }
 
     fun attachB(view: View, params: WindowManager.LayoutParams) {
+        windowManager.addView(view, params)
         bView = view
         bParams = params
-        windowManager.addView(view, params)
     }
 
     fun attachC(view: View, params: WindowManager.LayoutParams) {
+        windowManager.addView(view, params)
         cView = view
         cParams = params
-        windowManager.addView(view, params)
     }
 
     fun attachD(view: View, params: WindowManager.LayoutParams) {
+        windowManager.addView(view, params)
         dView = view
         dParams = params
-        windowManager.addView(view, params)
     }
 
     // ── Detach ──────────────────────────────────────────────────────
 
     fun detachA() {
         animJob?.cancel()
-        aView?.let { windowManager.removeView(it) }
+        aView?.let { view ->
+            try { windowManager.removeView(view) } catch (e: Exception) { AppLog.e("FWM", "detachA failed", e) }
+        }
         aView = null
         aParams = null
     }
 
     fun detachB() {
-        bView?.let { windowManager.removeView(it) }
+        bView?.let { view ->
+            try { windowManager.removeView(view) } catch (e: Exception) { AppLog.e("FWM", "detachB failed", e) }
+        }
         bView = null
         bParams = null
     }
 
     fun detachC() {
-        cView?.let { windowManager.removeView(it) }
+        cView?.let { view ->
+            try { windowManager.removeView(view) } catch (e: Exception) { AppLog.e("FWM", "detachC failed", e) }
+        }
         cView = null
         cParams = null
     }
 
     fun detachD() {
-        dView?.let { windowManager.removeView(it) }
+        dView?.let { view ->
+            try { windowManager.removeView(view) } catch (e: Exception) { AppLog.e("FWM", "detachD failed", e) }
+        }
         dView = null
         dParams = null
     }
