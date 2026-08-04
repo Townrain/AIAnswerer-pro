@@ -139,6 +139,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     /** M16: 动画帧 B/C/D 同步节流时间戳 */
     private var lastAnimSyncMs = 0L
 
+    // ── M14: 旋转适配 ──
+    /** 上一次已知屏幕尺寸（用于旋转后按比例映射偏移，保留相对位置） */
+    private var lastScreenSize = android.graphics.Point(0, 0)
+
     // ── LifecycleOwner / ViewModelStoreOwner / SavedStateRegistryOwner ──
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -277,6 +281,12 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         showFloatingWindow()
+
+        // M14: 记录初始屏幕尺寸，供旋转后按比例映射偏移
+        val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val initMetrics = android.util.DisplayMetrics()
+        wm2.defaultDisplay.getRealMetrics(initMetrics)
+        lastScreenSize.set(initMetrics.widthPixels, initMetrics.heightPixels)
 
         // ── Stealth mode observer (D3: dynamic FLAG_SECURE + notification) ─
         // Monitored from within Window A's composable via LaunchedEffect + snapshotFlow
@@ -1211,6 +1221,44 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             _viewModelStore.clear()
             super.onDestroy()
         }
+    }
+
+    /**
+     * M14: 横竖屏/配置变更适配。
+     * 旋转后屏幕尺寸变化，绝对像素偏移会失效：
+     *   - 将 floatOffsetX/Y 按旧屏幕尺寸的比例映射到新屏幕（保留相对位置）；
+     *   - 重新定位全部窗口（A/B/C/D）。
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (destroyed || !::windowMgr.isInitialized) return
+        val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+        val metrics = android.util.DisplayMetrics()
+        wm2.defaultDisplay.getRealMetrics(metrics)
+        val newW = metrics.widthPixels
+        val newH = metrics.heightPixels
+        val oldW = lastScreenSize.x
+        val oldH = lastScreenSize.y
+        if (oldW <= 0 || oldH <= 0 || (oldW == newW && oldH == newH)) {
+            lastScreenSize.set(newW, newH)
+            return
+        }
+
+        // 按比例映射偏移：floatOffsetX 为窗口中心 x（aSize/2 基准），floatOffsetY 为窗口顶部 y
+        val aSize = getAWindowSize().toFloat()
+        val halfSize = aSize / 2f
+        val ratioX = newW.toFloat() / oldW.toFloat()
+        val ratioY = newH.toFloat() / oldH.toFloat()
+        val newOffsetX = (viewModel.floatOffsetX.value * ratioX).coerceIn(halfSize, newW - halfSize)
+        val newOffsetY = (viewModel.floatOffsetY.value * ratioY).coerceIn(0f, maxOf(0f, newH - aSize))
+        viewModel.floatOffsetX.value = newOffsetX
+        viewModel.floatOffsetY.value = newOffsetY
+        lastScreenSize.set(newW, newH)
+
+        AppLog.d("FWS", "onConfigurationChanged: ${oldW}x$oldH -> ${newW}x$newH, offset=$newOffsetX,$newOffsetY")
+        // 全窗口重排：A 定位 + B/C/D 跟随
+        updateWindowAPosition()
+        windowMgr.setAllAlpha(if (settings.stealthMode.value) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
