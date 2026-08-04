@@ -63,6 +63,9 @@ interface CaptureHandlerCallbacks {
     /** Increment recording capture count & return current value. */
     fun incRecordingCaptureCount(): Int
 
+    /** Current recording capture count (for status message). */
+    fun getRecordingCaptureCount(): Int
+
     /** Return a reference to the current recording fetch job (for cancel). */
     fun getCurrentFetchJob(): Job?
     fun setCurrentFetchJob(job: Job?)
@@ -124,7 +127,7 @@ class CaptureHandler(
                 callbacks.showToast(msg)
                 return
             }
-            val captureIdx = callbacks.incRecordingCaptureCount()
+            callbacks.setCaptureInProgress(true)
             callbacks.setCaptureInProgress(true)
             callbacks.setShowAnswer(false)
             // Accessibility text mode: read screen directly when capture mode is
@@ -151,6 +154,8 @@ class CaptureHandler(
                     }
                     callbacks.setHasContent(true)
                     callbacks.updateWindowHeight()
+                    // M10: 成功读取后才计数（与 RecordingCoordinator 的 _captureCount 对齐）
+                    callbacks.incRecordingCaptureCount()
                     recorder.processText(screenText)
                 } else {
                     // Screenshot path: non-accessibility mode, or accessibility+VLM
@@ -181,6 +186,8 @@ class CaptureHandler(
                                 callbacks.setHasContent(true)
                                 callbacks.updateWindowHeight()
                                 callbacks.showToast("视觉模型截图失败，已使用屏幕文字")
+                                // M10: 成功读取后才计数
+                                callbacks.incRecordingCaptureCount()
                                 recorder.processText(screenText)
                             } else {
                                 callbacks.showError("截图失败")
@@ -189,6 +196,8 @@ class CaptureHandler(
                         } else {
                             callbacks.setHasContent(true)
                             callbacks.updateWindowHeight()
+                            // M10: 截图成功后才计数（原在捕获前 inc，截图失败会虚增）
+                            callbacks.incRecordingCaptureCount()
                             dispatchCropForRecording(bitmap)
                         }
                     } finally {
@@ -200,7 +209,7 @@ class CaptureHandler(
                 callbacks.setStatus(FloatingStatus.Idle)
                 delay(50)
                 callbacks.setStatusMessage(
-                    context.getString(R.string.recording_indicator, captureIdx)
+                    context.getString(R.string.recording_indicator, callbacks.getRecordingCaptureCount())
                 )
             }
             return

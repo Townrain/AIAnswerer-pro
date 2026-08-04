@@ -97,6 +97,7 @@ internal fun Bouncy(
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
     longPressDurationMs: Long = FWAnim.longPressDurationMs,
+    suppressPress: Boolean = false,
     modifier: Modifier = Modifier,
     progressContent: (@Composable BoxScope.(Float) -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
@@ -106,6 +107,8 @@ internal fun Bouncy(
     val scope = rememberCoroutineScope()
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
+    // M15: 拖动时抑制按压反馈——拖动已开始时按下不缩放，避免"想拖先被按"的干扰
+    val currentSuppressPress by rememberUpdatedState(suppressPress)
 
     Box(
         modifier
@@ -114,7 +117,9 @@ internal fun Bouncy(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
-                        scaleAnim.snapTo(FWAnim.bouncyScale)
+                        if (!currentSuppressPress) {
+                            scaleAnim.snapTo(FWAnim.bouncyScale)
+                        }
                         val progressJob = scope.launch {
                             delay(150)
                             progressAnim.animateTo(1f, tween((longPressDurationMs - 150).toInt().coerceAtLeast(1)))
@@ -343,6 +348,8 @@ internal fun PillButton(
         },
         onLongPress = onLongPress,
         longPressDurationMs = longPressDurationMs,
+        // M15: 拖动中抑制按压反馈
+        suppressPress = isDragging,
         modifier = dragMod,
         progressContent = { progress ->
             if (progress > 0f) {
