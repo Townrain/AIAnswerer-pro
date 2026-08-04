@@ -418,30 +418,37 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     // and answer content (D). When answer arrives, C is hidden and D
                     // appears directly below (or above) Window A.
                     LaunchedEffect(Unit) {
-                        snapshotFlow { viewModel.showAnswer.value to viewModel.statusMessage.value }
-                            .collect { (show, msg) ->
-                                // M4: 收集器内任何窗口操作异常都不允许杀死 LaunchedEffect（否则状态变化永久失去响应）
-                                try {
-                                    val hasContent = show || msg != null
-                                    AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg hasContent=$hasContent cView=${windowMgr.cView != null} dView=${windowMgr.dView != null}")
-                                    if (show) {
-                                        // Answer ready: show D, hide C
+                        // 观察答案/状态/折叠三态：展开态显示 D 窗，收起态显示 C 窗（紧凑摘要）
+                        snapshotFlow {
+                            Triple(viewModel.showAnswer.value, viewModel.statusMessage.value, isDetailExpanded.value)
+                        }.collect { (show, msg, expanded) ->
+                            // M4: 收集器内任何窗口操作异常都不允许杀死 LaunchedEffect（否则状态变化永久失去响应）
+                            try {
+                                val hasContent = show || msg != null
+                                AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg expanded=$expanded hasContent=$hasContent cView=${windowMgr.cView != null} dView=${windowMgr.dView != null}")
+                                if (show) {
+                                    // Answer ready: 展开态显示 D（完整答案），收起态显示 C（紧凑摘要）
+                                    if (expanded) {
                                         if (windowMgr.cView != null) removeWindowC()
                                         if (windowMgr.dView == null) ensureWindowD()
-                                    } else if (msg != null) {
-                                        // Status message: show C, hide D
+                                    } else {
                                         if (windowMgr.dView != null) removeWindowD()
                                         if (windowMgr.cView == null) ensureWindowC()
-                                    } else {
-                                        // Clean up: nothing to show
-                                        AppLog.d("FWS", "snapshotFlow: cleaning up windows")
-                                        removeWindowD()
-                                        removeWindowC()
                                     }
-                                } catch (e: Exception) {
-                                    AppLog.e("FWS", "snapshotFlow collect failed", e)
+                                } else if (msg != null) {
+                                    // Status message: show C, hide D
+                                    if (windowMgr.dView != null) removeWindowD()
+                                    if (windowMgr.cView == null) ensureWindowC()
+                                } else {
+                                    // Clean up: nothing to show
+                                    AppLog.d("FWS", "snapshotFlow: cleaning up windows")
+                                    removeWindowD()
+                                    removeWindowC()
                                 }
+                            } catch (e: Exception) {
+                                AppLog.e("FWS", "snapshotFlow collect failed", e)
                             }
+                        }
                     }
 
                     // Stealth mode toggle observer (D3) — reactively update FLAG_SECURE
@@ -732,8 +739,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onDismissRequest = { removeWindowC() },
                         isExpanded = isDetailExpanded.value,
                         onToggleExpanded = { expanded ->
+                            // 状态驱动：snapshotFlow 监听 isDetailExpanded，自动切换 C/D 窗
                             isDetailExpanded.value = expanded
-                            if (expanded) ensureWindowD() else collapseWindowD()
                         },
                         // 收起态答案摘要：优先 paginatedAnswers，其次 recordingAnswers，最后 answerText 兜底
                         summaryText = buildString {
@@ -864,8 +871,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     /**
-     * 折叠动画版收起：D 窗从下往上高度收缩（220ms）后移除，并恢复紧凑 C 窗。
-     * 用户主动收起（按钮/收起手势）走此路径；状态清理仍走 [removeWindowD]。
+     * 瞬间收起：立即移除 D 窗并恢复 C 窗（无动画）；同时切换折叠状态保持 snapshotFlow 一致。
      */
     private fun collapseWindowD() {
         if (windowMgr.dView == null) {
@@ -873,27 +879,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             return
         }
         isDetailExpanded.value = false
-        // 记录 D 窗当前布局（height + bottom y），供收缩动画使用
-        val dP = windowMgr.dParams
-        val fullHeight = dP?.height ?: 0
-        val bottomY = (dP?.y ?: 0) + fullHeight
-        if (fullHeight <= 0) {
-            removeWindowD()
-            if (windowMgr.cView == null && viewModel.showAnswer.value) ensureWindowC()
-            return
-        }
-        windowMgr.collapseWindowHeight(
-            scope = serviceScope,
-            view = windowMgr.dView,
-            fullHeight = fullHeight,
-            bottomY = bottomY,
-            durationMs = 220L
-        ) {
-            removeWindowD()
-            // 答案仍在 → 恢复 C 窗紧凑显示（D 窗存在时 C 被 snapshotFlow 移除）
-            if (windowMgr.cView == null && viewModel.showAnswer.value) {
-                ensureWindowC()
-            }
+        removeWindowD()
+        // 答案仍在 → 恢复 C 窗紧凑显示（D 窗存在时 C 被 snapshotFlow 移除）
+        if (windowMgr.cView == null && viewModel.showAnswer.value) {
+            ensureWindowC()
         }
     }
 
