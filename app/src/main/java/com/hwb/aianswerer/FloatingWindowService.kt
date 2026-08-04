@@ -1041,8 +1041,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "syncC: realScreen=${screenW.toInt()}x${screenH.toInt()} aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
 
         val cW = (FWDims.cardWidthDp.value * density).toInt()
-        // Compact card header is ~52dp; use 60dp as initial before measurement
-        val defaultH = (60 * density).toInt()
+        // 测量前窗口保持内容最大高度（cardMaxHeight），让 Compose 内容完整布局；
+        // 若用 60dp 作默认会立即收缩窗口 → 内容被压缩 → onGloballyPositioned 上报压缩值 → 死循环
+        val defaultH = (FWDims.cardMaxHeight.value * density).toInt()
         val cH = (measuredWindowCHeight ?: defaultH.toFloat()).toInt()
 
         val gapPx = (8 * density).toInt()
