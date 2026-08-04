@@ -246,7 +246,7 @@ class FloatingWindowServiceTest {
         val intent = Intent().apply {
             putExtra("resultCode", Activity.RESULT_OK)
             putExtra("data", dataIntent)
-            putExtra("viewModel.cropMode", AppConfig.CROP_MODE_FULL)
+            putExtra("cropMode", AppConfig.CROP_MODE_FULL)
         }
 
         val result = service.onStartCommand(intent, 0, 0)
