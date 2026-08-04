@@ -868,15 +868,20 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "positionWindowD: aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
 
         val dW = (FWDims.cardWidthDp.value * density).toInt()
-        val cH = measuredWindowCHeight ?: (60 * density).toFloat()
-        val dH = (cH * 4).toInt() // 400% of C height
         val gapPx = (8 * density).toInt()
+        val spaceBelow = screenH.toInt() - (aParams.y + aParams.height + gapPx)
+        val spaceAbove = aParams.y - gapPx
+        val maxH = maxOf(spaceBelow, spaceAbove, 1)
+        // H1 修复：D 窗口高度优先用内容实测高度（onMeasuredHeight 上报，最高 cardMaxHeight=560dp）；
+        //     未测量时用最大可用空间让 Compose 内容完整布局（若给 240dp 小窗，内容会被压缩且上报压缩值，永远无法扩展）
+        //     任何情况下不超过上下可用空间，防止窗口盖住 A
+        val dH = (measuredWindowDHeight ?: (FWDims.cardMaxHeight.value * density).toFloat())
+            .toInt().coerceIn(1, maxH)
 
         // Center D horizontally relative to A
         val dX = aParams.x + (aParams.width - dW) / 2
 
         // Place D below A if there's room, otherwise above A
-        val spaceBelow = screenH.toInt() - (aParams.y + aParams.height + gapPx)
         val dY = if (dH > 0 && spaceBelow >= dH) {
             aParams.y + aParams.height + gapPx
         } else {

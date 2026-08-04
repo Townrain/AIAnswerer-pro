@@ -66,9 +66,9 @@ class FloatingWindowManager(private val context: Context) {
             }
             WindowId.C -> (FWDims.cardWidthDp.value * density).toInt() to (60 * density).toInt()
             WindowId.D -> {
-                // Window D: same width as C, height = 400% of C's initial height (800dp)
-                val cInitialH = (200 * density).toInt()
-                (FWDims.cardWidthDp.value * density).toInt() to (cInitialH * 4)
+                // Window D: 宽度同 C，初始高度 = 内容最大高度（cardMaxHeight）
+                // 让 Compose 内容先完整布局，onMeasuredHeight 上报真实高度后由 positionWindowD 收缩
+                (FWDims.cardWidthDp.value * density).toInt() to (FWDims.cardMaxHeight.value * density).toInt()
             }
         }
 
