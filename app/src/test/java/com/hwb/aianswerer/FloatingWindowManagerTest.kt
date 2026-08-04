@@ -67,10 +67,11 @@ class FloatingWindowManagerTest {
     }
 
     @Test
-    fun `createLayoutParams Window C returns card width and initial height`() {
+    fun `createLayoutParams Window C returns card width and max content height`() {
         val density = 2f
         val expectedWidth = (FWDims.cardWidthDp.value * density).toInt()
-        val expectedHeight = (60 * density).toInt() // initial 60dp until measured
+        // 初始高度 = 内容最大高度（cardMaxHeight），让 Compose 先完整布局再收缩（否则 body 被 60dp 窗口裁剪）
+        val expectedHeight = (FWDims.cardMaxHeight.value * density).toInt()
 
         val params = wm.createLayoutParams(FloatingWindowManager.WindowId.C, 40, false)
 

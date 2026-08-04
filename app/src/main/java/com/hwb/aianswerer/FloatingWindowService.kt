@@ -720,6 +720,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             }
 
             setContent {
+                // DEBUG: 验证收起态摘要数据链路
+                AppLog.d("FWS", "C-content: showAnswer=${viewModel.showAnswer.value} hasCard=${hasCardContent()} paginated=${viewModel.paginatedAnswers.value.size} recording=${viewModel.recordingAnswers.value.size} answerText=${viewModel.answerText.value?.take(30)}")
                 AIAnswererTheme {
                     WindowCContent(
                         showAnswer = viewModel.showAnswer.value,

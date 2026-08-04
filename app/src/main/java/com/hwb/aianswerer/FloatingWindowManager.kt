@@ -64,7 +64,12 @@ class FloatingWindowManager(private val context: Context) {
                 val estH = ((FWDims.quickBtnSize.value + FWDims.quickPanelVPadding.value * 2) * density).toInt()
                 estW.coerceAtLeast(50) to estH.coerceAtLeast(40)
             }
-            WindowId.C -> (FWDims.cardWidthDp.value * density).toInt() to (60 * density).toInt()
+            WindowId.C -> {
+                // 窗口 C: 宽度固定，初始高度 = 内容最大高度（cardMaxHeight）
+                // 让 Compose 内容先完整布局，onMeasuredHeight 上报真实高度后由 syncC 收缩——
+                // 初始高度过小（如 60dp）会裁剪 body 答案摘要，onGloballyPositioned 只上报被裁剪高度，形成死循环
+                (FWDims.cardWidthDp.value * density).toInt() to (FWDims.cardMaxHeight.value * density).toInt()
+            }
             WindowId.D -> {
                 // Window D: 宽度同 C，初始高度 = 内容最大高度（cardMaxHeight）
                 // 让 Compose 内容先完整布局，onMeasuredHeight 上报真实高度后由 positionWindowD 收缩

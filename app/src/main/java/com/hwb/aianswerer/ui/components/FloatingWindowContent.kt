@@ -260,7 +260,7 @@ fun WindowCContent(
                 hasAnswer && showAnswer -> {
                     Card(
                         t = t,
-                        // 收起态也显示答案摘要（选择题短答案可直接阅读，长答案可滚动/展开）
+                        // 收起态也显示答案摘要（选择题短答案可直接阅读；长答案 Body 自带滚动，无需限高）
                         answerText = summaryText,
                         hasAnswer = true,
                         statusMessage = null,
@@ -270,9 +270,7 @@ fun WindowCContent(
                         onCloseStatus = onCloseStatus,
                         // 折叠功能：C 窗显示展开按钮（→ D 窗完整答案）
                         showExpandBtn = true,
-                        onExpand = { onToggleExpanded(!isExpanded) },
-                        // 收起态答案摘要限高 120dp，超出可滚动
-                        bodyMaxHeight = 120.dp
+                        onExpand = { onToggleExpanded(!isExpanded) }
                     )
                 }
                 // Status message
