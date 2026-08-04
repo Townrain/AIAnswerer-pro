@@ -66,6 +66,8 @@ class RecordingCoordinator(
     private val stateLock = Any()  // guards textHashes writes
     private val jobs = CopyOnWriteArrayList<Job>()
     private val activeJobCount = AtomicInteger(0)
+    // M9: 结果通知幂等标志（防兜底协程与正常路径重复 notifyResults）
+    private val resultsNotified = java.util.concurrent.atomic.AtomicBoolean(false)
     fun getActiveJobCount(): Int = activeJobCount.get()
     private var llmSemaphore: Semaphore? = null
     private var vlmSemaphore: Semaphore? = null
@@ -94,11 +96,24 @@ class RecordingCoordinator(
         AppLog.i("REC", "stopRecording captured=$captureCount processed=$processedCount answers=${answers.size}")
         if (captureCount == 0) return StopResult.NothingToShow
         if (jobs.isEmpty()) {
-            notifyResults()
+            ensureResultsNotified()
             return StopResult.Completed
         }
         isProcessing = true
+        // M9: 兜底——所有 job 去重/失败时 notifyResults 可能永不触发（isProcessing && jobs.isEmpty() 条件不满足），
+        //     启动兜底协程：jobs 清空后强制 notifyResults（幂等，防止与正常路径重复触发）
+        scope.launch {
+            jobs.forEach { it.join() }
+            ensureResultsNotified()
+        }
         return StopResult.Processing(captureCount, processedCount)
+    }
+
+    /** M9: 幂等通知——防止正常路径与兜底路径重复调用 notifyResults */
+    private fun ensureResultsNotified() {
+        if (resultsNotified.compareAndSet(false, true)) {
+            scope.launch(Dispatchers.Main) { notifyResults() }
+        }
     }
 
     sealed class StopResult {
@@ -233,7 +248,9 @@ class RecordingCoordinator(
             }
             .onFailure {
                 AppLog.w("REC", "VLM分析失败，降级为OCR")
-                callbacks.onError(callbacks.getString(R.string.status_vision_fallback))
+                withContext(Dispatchers.Main) {
+                    callbacks.onError(callbacks.getString(R.string.status_vision_fallback))
+                }
                 processWithOcr(bitmap, captureIndex)
             }
     }
@@ -311,7 +328,7 @@ class RecordingCoordinator(
             activeJobCount.decrementAndGet()
             AppLog.d("REC", "计数器-1(API完成): activeJobs=${activeJobCount.get()}")
             if (isProcessing && jobs.isEmpty()) {
-                scope.launch(Dispatchers.Main) { notifyResults() }
+                ensureResultsNotified()
             }
         }
     }
@@ -354,7 +371,7 @@ class RecordingCoordinator(
         val total = captureCount
         val answersSoFar = answers.size
         if (done >= total && jobs.isEmpty()) {
-            notifyResults()
+            ensureResultsNotified()
         } else {
             callbacks.onProgressUpdate(answersSoFar, totalQuestions)
         }
@@ -374,6 +391,7 @@ class RecordingCoordinator(
         _skippedCount.set(0)
         _failedCount.set(0)
         _totalQuestions.set(0)
+        resultsNotified.set(false) // M9: 复位幂等标志，避免下次录制不通知
     }
 
     companion object {

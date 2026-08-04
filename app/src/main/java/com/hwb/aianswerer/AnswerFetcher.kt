@@ -202,7 +202,11 @@ class AnswerFetcher(
                                     "答题中 ($completed/$totalQuestions)")
                             }
                         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                            callbacks.onError("超时")
+                            // M12: 超时也计入失败，否则部分超时时不提示"部分题目获取失败"
+                            failedCount.incrementAndGet()
+                            withContext(Dispatchers.Main) {
+                                callbacks.onError("超时")
+                            }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {

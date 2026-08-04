@@ -52,6 +52,15 @@ class FloatingWindowViewModel : ViewModel() {
     private val vmScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     var answerFetcher: AnswerFetcher? = null
 
+    // ===== Generation counter (S3/M8) =====
+    // 每次发起新捕获/新录制时递增；旧异步结果回调时校验代次，不匹配则丢弃
+    @Volatile private var captureGeneration = 0
+    @Volatile private var recordingGeneration = 0
+
+    private fun nextGeneration(): Int = ++captureGeneration
+    private fun isCurrentGeneration(gen: Int): Boolean = gen == captureGeneration
+
+
     fun initialize(context: ServiceContext) { ctx = context }
 
     // ===== Compose state =====
@@ -216,9 +225,12 @@ class FloatingWindowViewModel : ViewModel() {
             recordingCaptureCount.value++
             return recordingCaptureCount.value
         }
+        override fun getRecordingCaptureCount(): Int = recordingCaptureCount.value
         override fun getCurrentFetchJob(): Job? = currentFetchJob
         override fun setCurrentFetchJob(job: Job?) { currentFetchJob = job }
         override fun clearAnswers() {
+            // S3: 新捕获开始即递增代次，让仍在途的旧 fetch/录制回调立即失效
+            nextGeneration()
             answerText.value = null
             paginatedAnswers.value = emptyList()
             paginatedCopyTexts.value = emptyList()
@@ -226,6 +238,7 @@ class FloatingWindowViewModel : ViewModel() {
             recordingCopyTexts.value = emptyList()
             floatingStatus.value = FloatingStatus.Idle
             showAnswer.value = false
+            statusMessage.value = null
             hasContent = false
         }
     }
@@ -235,7 +248,13 @@ class FloatingWindowViewModel : ViewModel() {
     fun onTextRecognized(text: String, visionResult: VisionFilterResult?, answerFetcher: AnswerFetcher?) {
         if (answerFetcher == null) return
         val autoCopy = AppConfig.getAutoCopy()
+        // S3: 每次识别捕获当前代次；回调时若代次已过期（期间用户发起新捕获）则丢弃旧结果
+        val gen = nextGeneration()
         answerFetcher.fetchAnswer(text, visionResult) { result ->
+            if (!isCurrentGeneration(gen)) {
+                AppLog.d("VM", "drop stale answer result (gen=$gen, current=$captureGeneration)")
+                return@fetchAnswer
+            }
             when (result) {
                 is AnswerResult.Success -> vmScope.launch { handleAnswerSuccess(result.answers, autoCopy) }
                 is AnswerResult.Error -> ctx?.showErrorToUser(result.message)
@@ -278,13 +297,17 @@ class FloatingWindowViewModel : ViewModel() {
         showAnswer.value = true
         floatingStatus.value = FloatingStatus.Success
         statusMessage.value = if (autoCopy) "答案已复制" else "答案已生成"
+        val msgAfterAnswer = statusMessage.value
         delay(2000)
-        statusMessage.value = null
+        // 防呆：仅当消息未被后续流程覆盖时才清除，避免旧协程抹掉新状态
+        if (statusMessage.value == msgAfterAnswer) statusMessage.value = null
     }
 
     fun startRecording(recorder: RecordingCoordinator) {
         currentFetchJob?.cancel()
         currentFetchJob = null
+        // M8: 录制开始 = 新代次，使此前的普通 fetch 结果失效；录制结果回调校验此代次
+        recordingGeneration = nextGeneration()
         recorder.start()
         isRecording.value = true
         recordingCaptureCount.value = 0
@@ -351,6 +374,11 @@ class FloatingWindowViewModel : ViewModel() {
         copyTexts: List<Pair<Int, String>>,
         total: Int, skipped: Int, failed: Int
     ) {
+        // M8: 若期间用户已发起新捕获/新录制（代次已变），丢弃旧录制结果，避免后置弹出
+        if (!isCurrentGeneration(recordingGeneration)) {
+            AppLog.d("VM", "drop stale recording result (recGen=$recordingGeneration, current=$captureGeneration)")
+            return
+        }
         if (answers.isEmpty()) {
             ctx?.showErrorToUser(ctx?.getString(R.string.recording_no_valid_answers) ?: "")
             isProcessingRecording.value = false
