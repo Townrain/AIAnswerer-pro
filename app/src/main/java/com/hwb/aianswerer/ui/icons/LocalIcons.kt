@@ -279,6 +279,10 @@ object LocalIcons {
      * 圆润三角箭头（向下，圆角饱满）
      * 用于: 使用说明卡片的展开/收起指示
      */
+    /**
+     * 展开更多图标（向下箭头）
+     * 用于: 使用说明卡片的展开/收起指示
+     */
     val ExpandMore: ImageVector by lazy {
         ImageVector.Builder(
             name = "ExpandMore",
@@ -294,6 +298,30 @@ object LocalIcons {
                 lineTo(17.2f, 9.0f)
                 curveTo(18.8f, 9.0f, 19.2f, 10.5f, 18.2f, 11.8f)
                 curveTo(17.4f, 12.8f, 13.2f, 17.0f, 12f, 18.5f)
+                close()
+            }
+        }.build()
+    }
+
+    /**
+     * 收起图标（向上箭头）— 与 ExpandMore 镜像
+     * 用于: 悬浮窗 D 窗收起按钮
+     */
+    val ExpandLess: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "ExpandLess",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(12f, 5.5f)
+                curveTo(13.2f, 7.0f, 17.4f, 11.2f, 18.2f, 12.2f)
+                curveTo(19.2f, 13.5f, 18.8f, 15.0f, 17.2f, 15.0f)
+                lineTo(6.8f, 15.0f)
+                curveTo(5.2f, 15.0f, 4.8f, 13.5f, 5.8f, 12.2f)
+                curveTo(6.6f, 11.2f, 10.8f, 7.0f, 12f, 5.5f)
                 close()
             }
         }.build()

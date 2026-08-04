@@ -70,7 +70,9 @@ internal fun Card(
     status: FloatingStatus,
     onCopy: () -> Unit,
     onCloseAnswer: () -> Unit,
-    onCloseStatus: () -> Unit
+    onCloseStatus: () -> Unit,
+    showExpandBtn: Boolean = false,
+    onExpand: () -> Unit = {}
 ) {
     val shape = RoundedCornerShape(FWDims.cardCornerRadius)
     val isBusy = status in listOf(FloatingStatus.Capturing, FloatingStatus.Recognizing,
@@ -112,6 +114,16 @@ internal fun Card(
                     }
                 }
                 Row {
+                    if (hasAnswer && showExpandBtn) {
+                        // 折叠功能：展开查看完整答案（C 窗 → D 窗）
+                        Bouncy(onClick = onExpand) {
+                            Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(t.ac.copy(alpha = 0.06f)),
+                                contentAlignment = Alignment.Center) {
+                                Icon(LocalIcons.ExpandMore, "展开", tint = t.osv, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
                     if (hasAnswer) CopyBtn(t, onCopy)
                     CloseBtn(t, if (hasAnswer) onCloseAnswer else onCloseStatus, isBusy = isBusy)
                 }

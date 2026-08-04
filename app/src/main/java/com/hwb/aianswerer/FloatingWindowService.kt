@@ -815,7 +815,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             measuredWindowDHeight = h
                             positionWindowD()
                         },
-                        cardAlpha = settings.floatCardAlpha.value
+                        cardAlpha = settings.floatCardAlpha.value,
+                        // 折叠功能：收起 D 窗，恢复紧凑 C 窗
+                        onCollapse = {
+                            isDetailExpanded.value = false
+                            removeWindowD()
+                            // 答案仍在 → 恢复 C 窗紧凑显示（D 窗存在时 C 被 snapshotFlow 移除）
+                            if (windowMgr.cView == null && viewModel.showAnswer.value) {
+                                ensureWindowC()
+                            }
+                        }
                     )
                 }
             }

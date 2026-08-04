@@ -264,7 +264,10 @@ fun WindowCContent(
                         status = floatingStatus,
                         onCopy = {},
                         onCloseAnswer = onCloseAnswer,
-                        onCloseStatus = onCloseStatus
+                        onCloseStatus = onCloseStatus,
+                        // 折叠功能：C 窗显示展开按钮（→ D 窗完整答案）
+                        showExpandBtn = true,
+                        onExpand = { onToggleExpanded(!isExpanded) }
                     )
                 }
                 // Status message
@@ -305,7 +308,9 @@ fun WindowDContent(
     onCopyRecordingAnswer: (String) -> Unit,
     onCloseAnswer: () -> Unit,
     onMeasuredHeight: (Float) -> Unit,
-    cardAlpha: Float = 1.0f
+    cardAlpha: Float = 1.0f,
+    // 折叠功能：收起回到紧凑 C 窗
+    onCollapse: (() -> Unit)? = null
 ) {
     val t = sandboxTheme()
     val scrollState = rememberScrollState()
@@ -334,7 +339,8 @@ fun WindowDContent(
                 onCopyAnswer = onCopyRecordingAnswer,
                 isProcessing = false,
                 processedCount = displayAnswers.size,
-                totalCount = displayAnswers.size
+                totalCount = displayAnswers.size,
+                onCollapse = onCollapse
             )
         }
     }

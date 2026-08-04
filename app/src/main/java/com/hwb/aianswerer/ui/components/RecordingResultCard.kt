@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hwb.aianswerer.R
+import com.hwb.aianswerer.ui.icons.LocalIcons
 import com.hwb.aianswerer.ui.theme.DW
 
 // ===== extracted from FloatingWindowContent.kt =====
@@ -82,7 +84,9 @@ internal fun RecordingResultCard(
     onCopyAnswer: (String) -> Unit,
     isProcessing: Boolean = false,
     processedCount: Int = 0,
-    totalCount: Int = 0
+    totalCount: Int = 0,
+    // 折叠功能：D 窗提供收起回调时，header 显示收起按钮（D 窗 → C 窗）
+    onCollapse: (() -> Unit)? = null
 ) {
     com.hwb.aianswerer.utils.AppLog.d("RRC", "RecordingResultCard: answers.size=${answers.size}")
     val cardR = FWDims.cardCornerRadius
@@ -119,6 +123,16 @@ internal fun RecordingResultCard(
                     modifier = Modifier.weight(1f)
                 )
                 Row {
+                    if (onCollapse != null) {
+                        // 折叠功能：收起回到紧凑 C 窗
+                        Bouncy(onClick = onCollapse) {
+                            Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(t.ac.copy(alpha = 0.06f)),
+                                contentAlignment = Alignment.Center) {
+                                Icon(LocalIcons.ExpandLess, "收起", tint = t.osv, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
                     CopyBtn(t, onCopy = {
                         onCopyAnswer(answers.joinToString("\n") { "${it.first}. ${extractShortAnswer(it.second)}" })
                     })
