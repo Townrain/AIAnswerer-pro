@@ -733,8 +733,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         isExpanded = isDetailExpanded.value,
                         onToggleExpanded = { expanded ->
                             isDetailExpanded.value = expanded
-                            if (expanded) ensureWindowD() else removeWindowD()
-                        }
+                            if (expanded) ensureWindowD() else collapseWindowD()
+                        },
+                        // 收起态答案摘要（选择题短答案可直接阅读）
+                        answerText = viewModel.answerText.value
                     )
                 }
             }
@@ -816,15 +818,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             positionWindowD()
                         },
                         cardAlpha = settings.floatCardAlpha.value,
-                        // 折叠功能：收起 D 窗，恢复紧凑 C 窗
-                        onCollapse = {
-                            isDetailExpanded.value = false
-                            removeWindowD()
-                            // 答案仍在 → 恢复 C 窗紧凑显示（D 窗存在时 C 被 snapshotFlow 移除）
-                            if (windowMgr.cView == null && viewModel.showAnswer.value) {
-                                ensureWindowC()
-                            }
-                        }
+                        // 折叠功能：收起 D 窗（渐出动画），恢复紧凑 C 窗
+                        onCollapse = { collapseWindowD() }
                     )
                 }
             }
@@ -858,6 +853,31 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         windowDView = null
         measuredWindowDHeight = null
         isDetailExpanded.value = false
+    }
+
+    /**
+     * 折叠动画版收起：D 窗 alpha 渐出（200ms）后移除，并恢复紧凑 C 窗。
+     * 用户主动收起（按钮/收起手势）走此路径；状态清理仍走 [removeWindowD]。
+     */
+    private fun collapseWindowD() {
+        if (windowMgr.dView == null) {
+            isDetailExpanded.value = false
+            return
+        }
+        isDetailExpanded.value = false
+        windowMgr.animateWindowAlpha(
+            scope = serviceScope,
+            view = windowMgr.dView,
+            from = 1f,
+            to = 0f,
+            durationMs = 200L
+        ) {
+            removeWindowD()
+            // 答案仍在 → 恢复 C 窗紧凑显示（D 窗存在时 C 被 snapshotFlow 移除）
+            if (windowMgr.cView == null && viewModel.showAnswer.value) {
+                ensureWindowC()
+            }
+        }
     }
 
     /**

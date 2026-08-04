@@ -225,7 +225,9 @@ fun WindowCContent(
     onMeasuredHeight: (Float) -> Unit,
     onDismissRequest: () -> Unit,
     isExpanded: Boolean,
-    onToggleExpanded: (Boolean) -> Unit
+    onToggleExpanded: (Boolean) -> Unit,
+    // 收起态答案摘要文本（C 窗紧凑显示）
+    answerText: String? = null
 ) {
     val t = sandboxTheme()
     val showCard = showAnswer || statusMessage != null
@@ -258,7 +260,8 @@ fun WindowCContent(
                 hasAnswer && showAnswer -> {
                     Card(
                         t = t,
-                        answerText = null,
+                        // 收起态也显示答案摘要（选择题短答案可直接阅读，长答案可滚动/展开）
+                        answerText = answerText,
                         hasAnswer = true,
                         statusMessage = null,
                         status = floatingStatus,
@@ -267,7 +270,9 @@ fun WindowCContent(
                         onCloseStatus = onCloseStatus,
                         // 折叠功能：C 窗显示展开按钮（→ D 窗完整答案）
                         showExpandBtn = true,
-                        onExpand = { onToggleExpanded(!isExpanded) }
+                        onExpand = { onToggleExpanded(!isExpanded) },
+                        // 收起态答案摘要限高 120dp，超出可滚动
+                        bodyMaxHeight = 120.dp
                     )
                 }
                 // Status message

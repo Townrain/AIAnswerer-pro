@@ -313,6 +313,28 @@ class FloatingWindowManager(private val context: Context) {
         return job
     }
 
+    /** 渐入/渐出单个窗口的透明度（用于折叠动画）。完成后调用 [onDone]。 */
+    fun animateWindowAlpha(
+        scope: CoroutineScope,
+        view: View?,
+        from: Float,
+        to: Float,
+        durationMs: Long = 200L,
+        onDone: () -> Unit = {}
+    ): Job {
+        val job = scope.launch {
+            val start = System.currentTimeMillis()
+            while (isActive) {
+                val elapsed = System.currentTimeMillis() - start
+                val fraction = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
+                setAlpha(view, from + (to - from) * fraction)
+                if (fraction >= 1f) break
+                delay(16)
+            }
+            onDone()
+        }
+        return job
+    }
     // ── Backward compat delegates ───────────────────────────────────
 
     fun attach(view: View, params: WindowManager.LayoutParams) {

@@ -72,7 +72,9 @@ internal fun Card(
     onCloseAnswer: () -> Unit,
     onCloseStatus: () -> Unit,
     showExpandBtn: Boolean = false,
-    onExpand: () -> Unit = {}
+    onExpand: () -> Unit = {},
+    // 收起态（C 窗）答案摘要的最大高度，超出可滚动；null 表示不限制（D 窗/单卡）
+    bodyMaxHeight: androidx.compose.ui.unit.Dp? = null
 ) {
     val shape = RoundedCornerShape(FWDims.cardCornerRadius)
     val isBusy = status in listOf(FloatingStatus.Capturing, FloatingStatus.Recognizing,
@@ -130,7 +132,13 @@ internal fun Card(
             }
             // Body
             AnimatedVisibility(visible = hasAnswer, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
-                answerText?.let { Body(t, it) }
+                answerText?.let {
+                    if (bodyMaxHeight != null) {
+                        Box(Modifier.heightIn(max = bodyMaxHeight)) { Body(t, it) }
+                    } else {
+                        Body(t, it)
+                    }
+                }
             }
         }
     }
