@@ -226,8 +226,8 @@ fun WindowCContent(
     onDismissRequest: () -> Unit,
     isExpanded: Boolean,
     onToggleExpanded: (Boolean) -> Unit,
-    // 收起态答案摘要文本（C 窗紧凑显示）
-    answerText: String? = null
+    // 折叠功能：收起态答案摘要（从 paginatedAnswers/recordingAnswers 拼接，选择题短答案可直接阅读）
+    summaryText: String? = null
 ) {
     val t = sandboxTheme()
     val showCard = showAnswer || statusMessage != null
@@ -261,7 +261,7 @@ fun WindowCContent(
                     Card(
                         t = t,
                         // 收起态也显示答案摘要（选择题短答案可直接阅读，长答案可滚动/展开）
-                        answerText = answerText,
+                        answerText = summaryText,
                         hasAnswer = true,
                         statusMessage = null,
                         status = floatingStatus,

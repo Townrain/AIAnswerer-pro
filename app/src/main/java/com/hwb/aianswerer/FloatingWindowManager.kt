@@ -335,6 +335,46 @@ class FloatingWindowManager(private val context: Context) {
         }
         return job
     }
+
+    /**
+     * 从下到上收起动画：窗口高度从 [fullHeight] 收缩到 0，同时保持底部位置（y 下移）。
+     * 用于 D 窗折叠回 C 窗——视觉上是内容从下往上收起。完成后调用 [onDone]。
+     */
+    fun collapseWindowHeight(
+        scope: CoroutineScope,
+        view: View?,
+        fullHeight: Int,
+        bottomY: Int,
+        durationMs: Long = 220L,
+        onDone: () -> Unit = {}
+    ): Job {
+        val job = scope.launch {
+            val start = System.currentTimeMillis()
+            while (isActive) {
+                val elapsed = System.currentTimeMillis() - start
+                val fraction = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
+                val eased = 1f - (1f - fraction) * (1f - fraction)
+                val h = (fullHeight * (1f - eased)).toInt().coerceAtLeast(0)
+                // y 下移保持底部位置不变：顶部向下移动，视觉为从下往上收起
+                val y = bottomY - h
+                val p = when (view) {
+                    dView -> dParams
+                    cView -> cParams
+                    else -> null
+                }
+                if (p != null) {
+                    p.height = h
+                    p.y = y
+                    try { windowManager.updateViewLayout(view!!, p) }
+                    catch (e: Exception) { AppLog.e("FWM", "collapseWindowHeight failed", e) }
+                }
+                if (fraction >= 1f) break
+                delay(16)
+            }
+            onDone()
+        }
+        return job
+    }
     // ── Backward compat delegates ───────────────────────────────────
 
     fun attach(view: View, params: WindowManager.LayoutParams) {

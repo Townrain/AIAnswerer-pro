@@ -735,8 +735,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             isDetailExpanded.value = expanded
                             if (expanded) ensureWindowD() else collapseWindowD()
                         },
-                        // 收起态答案摘要（选择题短答案可直接阅读）
-                        answerText = viewModel.answerText.value
+                        // 收起态答案摘要：优先 paginatedAnswers，其次 recordingAnswers，最后 answerText 兜底
+                        summaryText = buildString {
+                            val paginated = viewModel.paginatedAnswers.value
+                            val recording = viewModel.recordingAnswers.value
+                            when {
+                                paginated.isNotEmpty() -> paginated.forEach { (_, t) -> append(t).append("\n\n") }
+                                recording.isNotEmpty() -> recording.forEach { (_, t) -> append(t).append("\n\n") }
+                                else -> append(viewModel.answerText.value ?: "")
+                            }
+                        }.trim().ifEmpty { null }
                     )
                 }
             }
@@ -856,7 +864,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     }
 
     /**
-     * 折叠动画版收起：D 窗 alpha 渐出（200ms）后移除，并恢复紧凑 C 窗。
+     * 折叠动画版收起：D 窗从下往上高度收缩（220ms）后移除，并恢复紧凑 C 窗。
      * 用户主动收起（按钮/收起手势）走此路径；状态清理仍走 [removeWindowD]。
      */
     private fun collapseWindowD() {
@@ -865,12 +873,21 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             return
         }
         isDetailExpanded.value = false
-        windowMgr.animateWindowAlpha(
+        // 记录 D 窗当前布局（height + bottom y），供收缩动画使用
+        val dP = windowMgr.dParams
+        val fullHeight = dP?.height ?: 0
+        val bottomY = (dP?.y ?: 0) + fullHeight
+        if (fullHeight <= 0) {
+            removeWindowD()
+            if (windowMgr.cView == null && viewModel.showAnswer.value) ensureWindowC()
+            return
+        }
+        windowMgr.collapseWindowHeight(
             scope = serviceScope,
             view = windowMgr.dView,
-            from = 1f,
-            to = 0f,
-            durationMs = 200L
+            fullHeight = fullHeight,
+            bottomY = bottomY,
+            durationMs = 220L
         ) {
             removeWindowD()
             // 答案仍在 → 恢复 C 窗紧凑显示（D 窗存在时 C 被 snapshotFlow 移除）
