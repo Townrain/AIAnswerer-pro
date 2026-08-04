@@ -75,7 +75,7 @@ com.hwb.aianswerer/
 ├── FloatingWindowManager.kt   # Window management (A/B/C/D independent windows)
 ├── FloatingWindowViewModel.kt # Floating window state management
 ├── SettingsService.kt         # Centralized settings reader
-├── InteractiveTouchLayout.kt  # Touch-through container
+├── CaptureHandler.kt          # Screenshot → crop → recognition pipeline
 ├── CaptureHandler.kt          # Screenshot → crop → recognition pipeline
 ├── CapturePipeline.kt         # Core recognition pipeline (OCR→VLM→LLM)
 ├── RecordingCoordinator.kt    # Recording mode coordinator

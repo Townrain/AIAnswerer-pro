@@ -78,7 +78,7 @@ com.hwb.aianswerer/
 ├── FloatingWindowManager.kt   # 窗口管理（A/B/C/D 独立窗口）
 ├── FloatingWindowViewModel.kt # 悬浮窗状态管理
 ├── SettingsService.kt         # 集中式设置读取
-├── InteractiveTouchLayout.kt  # 触摸穿透容器
+├── CaptureHandler.kt          # 截图→裁剪→识别管线
 ├── CaptureHandler.kt          # 截图→裁剪→识别管线
 ├── CapturePipeline.kt         # 核心识别管线（OCR→VLM→LLM）
 ├── RecordingCoordinator.kt    # 录制模式协调器

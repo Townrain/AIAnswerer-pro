@@ -195,7 +195,13 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         }
                     }
                 }
-                Constants.ACTION_REFRESH_SETTINGS -> viewModel.refreshSettingsFromApp()
+                Constants.ACTION_REFRESH_SETTINGS -> {
+                    // L2: 真正重读持久化设置到 Compose 状态（原 refreshSettingsFromApp 为 noop）
+                    settings.refresh()
+                    // 外观设置需重新应用到窗口（大小/透明度等）
+                    updateWindowAPosition()
+                    viewModel.refreshSettingsFromApp()
+                }
             }
         }
     }
@@ -288,6 +294,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(answerReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
+            // API 26-32: 接收方无法指定 NOT_EXPORTED，但所有发送方均已 setPackage(packageName)
+            // （ConfirmTextActivity/ImageCropActivity/MainActivity），外部应用无法注入，安全性由发送方保证
             registerReceiver(answerReceiver, filter)
         }
     }
