@@ -744,14 +744,16 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             // 状态驱动：snapshotFlow 监听 isDetailExpanded，自动切换 C/D 窗
                             isDetailExpanded.value = expanded
                         },
-                        // 收起态答案摘要：优先 paginatedAnswers，其次 recordingAnswers，最后 answerText 兜底
+                        // 收起态答案摘要：用 copyTexts（只含答案，如“第 1 题：B. 任天堂”），
+                        // 不含题目/选项/解析——满足“答案在答案字样右侧紧凑显示”
                         summaryText = buildString {
-                            val paginated = viewModel.paginatedAnswers.value
-                            val recording = viewModel.recordingAnswers.value
-                            when {
-                                paginated.isNotEmpty() -> paginated.forEach { (_, t) -> append(t).append("\n\n") }
-                                recording.isNotEmpty() -> recording.forEach { (_, t) -> append(t).append("\n\n") }
-                                else -> append(viewModel.answerText.value ?: "")
+                            val copies = viewModel.paginatedCopyTexts.value.ifEmpty {
+                                viewModel.recordingCopyTexts.value
+                            }
+                            if (copies.isNotEmpty()) {
+                                copies.forEach { (_, t) -> append(t).append("\n") }
+                            } else {
+                                append(viewModel.answerText.value ?: "")
                             }
                         }.trim().ifEmpty { null }
                     )
@@ -1041,9 +1043,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "syncC: realScreen=${screenW.toInt()}x${screenH.toInt()} aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
 
         val cW = (FWDims.cardWidthDp.value * density).toInt()
-        // 测量前窗口保持内容最大高度（cardMaxHeight），让 Compose 内容完整布局；
-        // 若用 60dp 作默认会立即收缩窗口 → 内容被压缩 → onGloballyPositioned 上报压缩值 → 死循环
-        val defaultH = (FWDims.cardMaxHeight.value * density).toInt()
+        // 测量前窗口保持紧凑摘要高度（cardCompactMaxHeight），内容在此上限内 wrap；
+        // onGloballyPositioned 上报真实高度后收缩（不再用 60dp 导致死循环，也不用 560dp 大窗闪烁）
+        val defaultH = (FWDims.cardCompactMaxHeight.value * density).toInt()
         val cH = (measuredWindowCHeight ?: defaultH.toFloat()).toInt()
 
         val gapPx = (8 * density).toInt()

@@ -51,6 +51,8 @@ internal object FWDims {
     val cardWidthDp = 360.dp  // 三窗口下 Window C 固定宽度
     val cardCornerRadius = 20.dp
     val cardMaxHeight = 560.dp
+    // 收起态（C 窗）紧凑摘要高度：header(~52dp) + 答案摘要区，超出滚动
+    val cardCompactMaxHeight = 180.dp
     val cardSectionSpacing = 10.dp
     val cardItemSpacing = 6.dp
     val cardPaddingH = 14.dp

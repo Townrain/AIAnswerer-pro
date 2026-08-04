@@ -235,6 +235,9 @@ fun WindowCContent(
     Box(
         Modifier
             .width(FWDims.cardWidthDp)
+            // C 窗紧凑高度：内容在此上限内 wrap，onGloballyPositioned 上报 min(内容, 上限)
+            // 打破 WindowManager 精确高度约束导致的死循环（窗口 560dp → 内容上报 560dp → 永不收缩）
+            .heightIn(max = FWDims.cardCompactMaxHeight)
             .graphicsLayer { alpha = cardAlpha }
             .onGloballyPositioned { coords ->
                 onMeasuredHeight(coords.size.height.toFloat())
@@ -260,7 +263,7 @@ fun WindowCContent(
                 hasAnswer && showAnswer -> {
                     Card(
                         t = t,
-                        // 收起态也显示答案摘要（选择题短答案可直接阅读；长答案 Body 自带滚动，无需限高）
+                        // 收起态只显示简洁答案摘要（copyTexts），限高滚动
                         answerText = summaryText,
                         hasAnswer = true,
                         statusMessage = null,
@@ -270,7 +273,9 @@ fun WindowCContent(
                         onCloseStatus = onCloseStatus,
                         // 折叠功能：C 窗显示展开按钮（→ D 窗完整答案）
                         showExpandBtn = true,
-                        onExpand = { onToggleExpanded(!isExpanded) }
+                        onExpand = { onToggleExpanded(!isExpanded) },
+                        // 摘要限高 120dp，超出滚动
+                        bodyMaxHeight = 120.dp
                     )
                 }
                 // Status message
