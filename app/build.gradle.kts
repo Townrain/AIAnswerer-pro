@@ -39,6 +39,12 @@ android {
             unitTests {
                 isReturnDefaultValues = true
                 isIncludeAndroidResources = true
+                // Robolectric 测试 JVM：显式堆大小防止 OOM（GC 风暴吃满 CPU），
+                // 限制并行 fork 数避免多 JVM 同时初始化打满 CPU
+                all { test ->
+                    test.maxHeapSize = "2g"
+                    test.maxParallelForks = 2
+                }
             }
         }
 
