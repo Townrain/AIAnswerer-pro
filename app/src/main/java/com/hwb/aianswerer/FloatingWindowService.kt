@@ -61,6 +61,38 @@ import kotlinx.coroutines.delay
 
 import kotlinx.coroutines.launch
 
+// ===== 收起态答案摘要（纯函数，可单测） ===== 
+
+/** 收起态摘要答案字符上限：选择题短答案（如 ABCD）直接显示，填空/问答题长答案截断。 */
+const val ANSWER_SUMMARY_MAX_CHARS = 7
+
+/** 答案超过上限时的省略后缀（为填空题/问答题准备）。 */
+const val ANSWER_SUMMARY_ELLIPSIS = "......"
+
+/** copyText 的"第 X 题："前缀（如 "第 1 题：B. 任天堂" → "B. 任天堂"）。 */
+private val COPY_TEXT_PREFIX = Regex("""^第\s*\d+\s*题\s*[:：]\s*""")
+
+/**
+ * 构建收起态（C 窗）答案摘要：prefix + 第 1 题纯答案。
+ * 答案 ≤ [maxChars] 字符全显；超过则截断并追加 [ellipsis]。
+ * 无任何答案时返回 null。
+ */
+fun buildCollapsedAnswerSummary(
+    copyTexts: List<Pair<Int, String>>,
+    fallbackAnswer: String?,
+    prefix: String,
+    maxChars: Int = ANSWER_SUMMARY_MAX_CHARS,
+    ellipsis: String = ANSWER_SUMMARY_ELLIPSIS
+): String? {
+    val raw = copyTexts.firstOrNull()?.second?.let {
+        it.replaceFirst(COPY_TEXT_PREFIX, "")
+    } ?: fallbackAnswer?.takeIf { it.isNotBlank() } ?: return null
+    val trimmed = raw.trim().replace("\n", " ").trim()
+    if (trimmed.isEmpty()) return null
+    val body = if (trimmed.length > maxChars) trimmed.take(maxChars) + ellipsis else trimmed
+    return "$prefix$body"
+}
+
 /**
  * Floating window service — the runtime core of answer mode.
  *
@@ -138,6 +170,15 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private var isDetailExpanded = mutableStateOf(false)
     /** M16: 动画帧 B/C/D 同步节流时间戳 */
     private var lastAnimSyncMs = 0L
+    /**
+     * C/D 窗展开/收起过渡动画 Job。动画进行期间 snapshotFlow 跳过窗口增删,
+     * 由动画回调统一收尾,避免动画帧与窗口操作竞争。
+     */
+    private var windowTransitionJob: Job? = null
+    /** D 窗 attach 后等待首次测量,测量后播放从紧凑高度伸展到内容高度的展开动画。 */
+    private var pendingExpandAnim = false
+    /** 收起过渡完成、C 窗以透明状态创建,等待测量收缩后淡入(一次性)。 */
+    private var pendingCFadeIn = false
 
     // ── M14: 旋转适配 ──
     /** 上一次已知屏幕尺寸（用于旋转后按比例映射偏移，保留相对位置） */
@@ -422,29 +463,15 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         snapshotFlow {
                             Triple(viewModel.showAnswer.value, viewModel.statusMessage.value, isDetailExpanded.value)
                         }.collect { (show, msg, expanded) ->
-                            // M4: 收集器内任何窗口操作异常都不允许杀死 LaunchedEffect（否则状态变化永久失去响应）
+                            // 折叠过渡动画进行中:窗口增删由动画回调统一收尾,
+                            // 此处跳过避免与动画帧竞争(收起先收缩再替换 C 窗)
+                            if (windowTransitionJob?.isActive == true) {
+                                AppLog.d("FWS", "snapshotFlow: transition anim active, skip window ops")
+                                return@collect
+                            }
+                            // M4: 收集器内任何窗口操作异常都不允许杀死 LaunchedEffect(否则状态变化永久失去响应)
                             try {
-                                val hasContent = show || msg != null
-                                AppLog.d("FWS", "snapshotFlow: showAnswer=$show statusMessage=$msg expanded=$expanded hasContent=$hasContent cView=${windowMgr.cView != null} dView=${windowMgr.dView != null}")
-                                if (show) {
-                                    // Answer ready: 展开态显示 D（完整答案），收起态显示 C（紧凑摘要）
-                                    if (expanded) {
-                                        if (windowMgr.cView != null) removeWindowC()
-                                        if (windowMgr.dView == null) ensureWindowD()
-                                    } else {
-                                        if (windowMgr.dView != null) removeWindowD()
-                                        if (windowMgr.cView == null) ensureWindowC()
-                                    }
-                                } else if (msg != null) {
-                                    // Status message: show C, hide D
-                                    if (windowMgr.dView != null) removeWindowD()
-                                    if (windowMgr.cView == null) ensureWindowC()
-                                } else {
-                                    // Clean up: nothing to show
-                                    AppLog.d("FWS", "snapshotFlow: cleaning up windows")
-                                    removeWindowD()
-                                    removeWindowC()
-                                }
+                                syncWindows(show, msg, expanded)
                             } catch (e: Exception) {
                                 AppLog.e("FWS", "snapshotFlow collect failed", e)
                             }
@@ -487,6 +514,34 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
         windowAView = aComposeView
         updateWindowAPosition()
+    }
+
+    /**
+     * C/D 窗生命周期同步(快照收集器与过渡动画回调共用):
+     * 展开态只留 D(完整答案),收起态只留 C(紧凑摘要),无内容则全部移除。
+     */
+    private fun syncWindows(show: Boolean, msg: String?, expanded: Boolean) {
+        val hasContent = show || msg != null
+        AppLog.d("FWS", "syncWindows: showAnswer=$show statusMessage=$msg expanded=$expanded hasContent=$hasContent cView=${windowMgr.cView != null} dView=${windowMgr.dView != null}")
+        if (show) {
+            // Answer ready: 展开态显示 D(完整答案),收起态显示 C(紧凑摘要)
+            if (expanded) {
+                if (windowMgr.cView != null) removeWindowC()
+                if (windowMgr.dView == null) ensureWindowD()
+            } else {
+                if (windowMgr.dView != null) removeWindowD()
+                if (windowMgr.cView == null) ensureWindowC()
+            }
+        } else if (msg != null) {
+            // Status message: show C, hide D
+            if (windowMgr.dView != null) removeWindowD()
+            if (windowMgr.cView == null) ensureWindowC()
+        } else {
+            // Clean up: nothing to show
+            AppLog.d("FWS", "syncWindows: cleaning up windows")
+            removeWindowD()
+            removeWindowC()
+        }
     }
 
     // ── Window B (Quick Toggles) ────────────────────────────────────────
@@ -706,6 +761,18 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val buttonSizePx = settings.floatButtonSizeDp.value * density
         val isStealth = settings.stealthMode.value
         AppLog.d("FWS", "ensureWindowC: density=$density isStealth=$isStealth")
+        // 窗口初始高度按内容模式设定，避免窗口大于内容产生透明触摸区（阻挡底层按键）：
+        // 答案摘要模式：单行标题，用上次实测或紧凑值（72dp）；
+        // 状态消息模式：1-2 行消息，用 96dp——不再用 180dp 上限（真机上 Compose 测量
+        // 会把 Box 撑满到上限上报假值，导致窗口永不收缩）。
+        val answerMode = viewModel.showAnswer.value
+        if (answerMode) {
+            if (measuredWindowCHeight == null) {
+                measuredWindowCHeight = (FWDims.cardCompactInitHeight.value * density).toFloat()
+            }
+        } else {
+            measuredWindowCHeight = (FWDims.cardStatusInitHeight.value * density).toFloat()
+        }
 
         val cComposeView = ComposeView(this).apply {
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
@@ -733,8 +800,30 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onCloseAnswer = { closeAnswer() },
                         onCloseStatus = { closeStatus() },
                         onMeasuredHeight = { h ->
-                            measuredWindowCHeight = h
+                            // 诊断日志:确认 C 窗测量回调是否触发及上报值(修好后可移除)
+                            AppLog.d("FWS", "WindowC measuredHeight=$h (was=${measuredWindowCHeight})")
+                            // 防御:上报值达到上限(180dp)时视为测量异常假值(内容被父约束撑满),
+                            // 不采纳,保持模式初始高度(72/96dp)——否则窗口永不收缩且透明区拦截触摸
+                            val upper = (FWDims.cardCompactMaxHeight.value * density).toFloat()
+                            if (h < upper - 1f) {
+                                measuredWindowCHeight = h
+                            }
                             syncC()
+                            // 收起过渡:透明创建的 C 窗在测量收缩到实际高度后淡入,
+                            // 先压回透明再渐入,避免 syncC 重置 alpha 造成的一帧闪白
+                            if (pendingCFadeIn) {
+                                pendingCFadeIn = false
+                                val target = if (settings.stealthMode.value)
+                                    Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA
+                                windowMgr.setAlpha(windowMgr.cView, 0f)
+                                windowMgr.animateWindowAlpha(
+                                    scope = serviceScope,
+                                    view = windowMgr.cView,
+                                    from = 0f,
+                                    to = target,
+                                    durationMs = 90L
+                                )
+                            }
                         },
                         onDismissRequest = { removeWindowC() },
                         isExpanded = isDetailExpanded.value,
@@ -742,18 +831,15 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             // 状态驱动：snapshotFlow 监听 isDetailExpanded，自动切换 C/D 窗
                             isDetailExpanded.value = expanded
                         },
-                        // 收起态答案摘要：用 copyTexts（只含答案，如“第 1 题：B. 任天堂”），
-                        // 不含题目/选项/解析——满足“答案在答案字样右侧紧凑显示”
-                        summaryText = buildString {
-                            val copies = viewModel.paginatedCopyTexts.value.ifEmpty {
+                        // 收起态答案摘要："答案:" + 第 1 题纯答案，≤7 字符全显，>7 截断加省略号
+                        // （选择题短答案如 ABCD 可直接阅读；填空/问答题为长答案预留省略）
+                        summaryText = buildCollapsedAnswerSummary(
+                            copyTexts = viewModel.paginatedCopyTexts.value.ifEmpty {
                                 viewModel.recordingCopyTexts.value
-                            }
-                            if (copies.isNotEmpty()) {
-                                copies.forEach { (_, t) -> append(t).append("\n") }
-                            } else {
-                                append(viewModel.answerText.value ?: "")
-                            }
-                        }.trim().ifEmpty { null }
+                            },
+                            fallbackAnswer = viewModel.answerText.value,
+                            prefix = getString(R.string.float_answer_title) + ":"
+                        )
                     )
                 }
             }
@@ -793,7 +879,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         windowMgr.detachC()
         windowCView?.disposeComposition()
         windowCView = null
-        measuredWindowCHeight = null
+        // 保留上次实测高度：收起/展开过渡与重新创建时窗口初始高度直接贴合内容，
+        // 避免窗口大于内容产生透明触摸区（模式切换时由 ensureWindowC 重新设定）
+        pendingCFadeIn = false
     }
 
     // ── Window D (Answer Detail) ─────────────────────────────────────────
@@ -832,7 +920,11 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         onMeasuredHeight = { h ->
                             AppLog.d("FWS", "WindowD measuredHeight=$h")
                             measuredWindowDHeight = h
-                            positionWindowD()
+                            // 过渡动画进行中:窗口尺寸/透明度由动画帧接管,
+                            // 跳过重新定位——否则窗口缩小触发重测→重置全高→再缩小,形成闪烁反馈回路
+                            if (windowTransitionJob?.isActive != true) {
+                                positionWindowD()
+                            }
                         },
                         cardAlpha = settings.floatCardAlpha.value,
                         // 折叠功能：收起 D 窗（渐出动画），恢复紧凑 C 窗
@@ -859,6 +951,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
         windowDView = dComposeView
         measuredWindowDHeight = null // reset before first measure
+        // 展开过渡:首次测量后从紧凑高度(与 C 窗一致)伸展到内容高度并淡入
+        pendingExpandAnim = true
         positionWindowD()
         AppLog.d("FWS", "ensureWindowD: COMPLETE")
     }
@@ -869,11 +963,14 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         windowDView?.disposeComposition()
         windowDView = null
         measuredWindowDHeight = null
+        pendingExpandAnim = false
         isDetailExpanded.value = false
     }
 
     /**
-     * 瞬间收起：立即移除 D 窗并恢复 C 窗（无动画）；同时切换折叠状态保持 snapshotFlow 一致。
+     * 收起 D 窗:先播高度收缩动画(顶部/底部固定,收缩到紧凑摘要高度)并同步淡出,
+     * 动画结束后移除 D 窗、恢复紧凑 C 窗——两者位置/尺寸对齐,实现丝滑衔接。
+     * 动画被中断(如拖拽、状态变化)时由 onDone 立即完成窗口替换,降级为瞬间切换。
      */
     private fun collapseWindowD() {
         if (windowMgr.dView == null) {
@@ -881,10 +978,42 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             return
         }
         isDetailExpanded.value = false
-        removeWindowD()
-        // 答案仍在 → 恢复 C 窗紧凑显示（D 窗存在时 C 被 snapshotFlow 移除）
-        if (windowMgr.cView == null && viewModel.showAnswer.value) {
-            ensureWindowC()
+        val dView = windowMgr.dView ?: return
+        val dParams = windowMgr.dParams ?: return
+        val fromH = dParams.height
+        val fromY = dParams.y
+        // 目标高度 = C 窗上次实测高度(收起态窗口形状),未知时用紧凑初始值
+        val density = resources.displayMetrics.density
+        val toH = (measuredWindowCHeight ?: (FWDims.cardCompactInitHeight.value * density).toFloat())
+            .toInt().coerceAtLeast(1)
+        // D 在 A 下方:顶部固定、底部上移(从下往上收起);D 在 A 上方:底部固定
+        val keepTop = windowMgr.aParams?.let { fromY > it.y } ?: true
+        val anchorY = if (keepTop) fromY else fromY + fromH
+        windowTransitionJob?.cancel()
+        windowTransitionJob = windowMgr.animateWindowHeight(
+            scope = serviceScope,
+            view = dView,
+            fromH = fromH,
+            toH = toH,
+            keepTop = keepTop,
+            anchorY = anchorY,
+            fromAlpha = dParams.alpha,
+            toAlpha = 0f,
+            durationMs = 160L
+        ) {
+            // 服务销毁中(scope.cancel 触发):跳过窗口操作,避免销毁后创建窗口
+            if (destroyed) return@animateWindowHeight
+            windowTransitionJob = null
+            if (viewModel.showAnswer.value || viewModel.statusMessage.value != null) {
+                // 收起完成:移除 D 后以透明状态创建 C 窗,
+                // 等 C 窗测量收缩到实际高度后再淡入,避免"出现→收缩"跳变闪烁
+                pendingCFadeIn = true
+                removeWindowD()
+                if (windowMgr.cView == null) ensureWindowC()
+                windowMgr.setAlpha(windowMgr.cView, 0f)
+            } else {
+                syncWindows(viewModel.showAnswer.value, viewModel.statusMessage.value, isDetailExpanded.value)
+            }
         }
     }
 
@@ -926,11 +1055,51 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         }
 
         AppLog.d("FWS", "positionWindowD: dX=$dX dY=$dY dSize=${dW}x${dH} below=${spaceBelow >= dH}")
+
+        // 展开过渡动画:首次测量后从紧凑高度(与 C 窗一致)伸展到内容高度并淡入
+        if (pendingExpandAnim && measuredWindowDHeight != null) {
+            pendingExpandAnim = false
+            val startH = (measuredWindowCHeight ?: (FWDims.cardCompactInitHeight.value * density).toFloat())
+                .toInt().coerceIn(1, dH)
+            // D 在 A 下方:顶部固定、向下伸展;在上方:底部固定、向上伸展
+            val keepTop = dY > aParams.y
+            val anchorY = if (keepTop) dY else dY + dH
+            windowMgr.updateLayoutD(
+                windowX = dX.coerceIn(0, maxOf(0, screenW.toInt() - dW)),
+                windowY = (if (keepTop) anchorY else anchorY - startH)
+                    .coerceIn(0, maxOf(0, screenH.toInt() - startH)),
+                width = dW,
+                height = startH,
+                alpha = 0f,
+                screenW = screenW,
+                screenH = screenH
+            )
+            windowTransitionJob?.cancel()
+            windowTransitionJob = windowMgr.animateWindowHeight(
+                scope = serviceScope,
+                view = windowMgr.dView,
+                fromH = startH,
+                toH = dH,
+                keepTop = keepTop,
+                anchorY = anchorY,
+                fromAlpha = 0f,
+                toAlpha = if (settings.stealthMode.value) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA,
+                durationMs = 160L
+            ) {
+                // 服务销毁中(scope.cancel 触发):跳过窗口操作,避免销毁后创建窗口
+                if (destroyed) return@animateWindowHeight
+                windowTransitionJob = null
+                syncWindows(viewModel.showAnswer.value, viewModel.statusMessage.value, isDetailExpanded.value)
+            }
+            return
+        }
+
         windowMgr.updateLayoutD(
             windowX = dX.coerceIn(0, maxOf(0, screenW.toInt() - dW)),
             windowY = dY.coerceIn(0, maxOf(0, screenH.toInt() - dH)),
             width = dW,
-            height = dH,
+            // 窗口高度保持 WRAP_CONTENT：由系统按内容自动包裹，避免固定高度产生透明触摸区
+            height = WindowManager.LayoutParams.WRAP_CONTENT,
             alpha = Constants.VISIBLE_ALPHA,
             screenW = screenW,
             screenH = screenH
@@ -1041,9 +1210,9 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "syncC: realScreen=${screenW.toInt()}x${screenH.toInt()} aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
 
         val cW = (FWDims.cardWidthDp.value * density).toInt()
-        // 测量前窗口保持紧凑摘要高度（cardCompactMaxHeight），内容在此上限内 wrap；
-        // onGloballyPositioned 上报真实高度后收缩（不再用 60dp 导致死循环，也不用 560dp 大窗闪烁）
-        val defaultH = (FWDims.cardCompactMaxHeight.value * density).toInt()
+        // 测量前窗口保持紧凑高度：ensureWindowC 已按内容模式设定初始高度
+        // （答案单行=紧凑值，状态消息=上限），onGloballyPositioned 上报真实高度后收缩
+        val defaultH = (FWDims.cardCompactInitHeight.value * density).toInt()
         val cH = (measuredWindowCHeight ?: defaultH.toFloat()).toInt()
 
         val gapPx = (8 * density).toInt()
@@ -1065,7 +1234,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             windowX = clampedX,
             windowY = clampedY,
             width = cW,
-            height = cH,
+            // 窗口高度保持 WRAP_CONTENT：由系统按内容自动包裹，避免固定高度产生透明触摸区
+            height = WindowManager.LayoutParams.WRAP_CONTENT,
             alpha = Constants.VISIBLE_ALPHA,
             screenW = screenW,
             screenH = screenH
@@ -1077,6 +1247,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         // S8: 拖拽开始即取消吸附动画，避免动画 onFrame 与拖拽双写窗口坐标
         viewModel.windowXAnimJob?.cancel()
         viewModel.windowXAnimJob = null
+        // 折叠过渡动画同样在拖拽时终止：取消后 onDone 立即完成窗口替换（降级为瞬间切换）
+        windowTransitionJob?.cancel()
         val wm2 = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
         val realMetrics = android.util.DisplayMetrics()
         wm2.defaultDisplay.getRealMetrics(realMetrics)

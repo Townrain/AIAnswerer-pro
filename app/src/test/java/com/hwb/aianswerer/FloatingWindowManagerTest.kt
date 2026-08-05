@@ -67,29 +67,27 @@ class FloatingWindowManagerTest {
     }
 
     @Test
-    fun `createLayoutParams Window C returns card width and compact height`() {
+    fun `createLayoutParams Window C returns card width and wrap content height`() {
         val density = 2f
         val expectedWidth = (FWDims.cardWidthDp.value * density).toInt()
-        // 初始高度 = 紧凑摘要高度（cardCompactMaxHeight），内容 wrap 后上报真实高度收缩
-        val expectedHeight = (FWDims.cardCompactMaxHeight.value * density).toInt()
 
         val params = wm.createLayoutParams(FloatingWindowManager.WindowId.C, 40, false)
 
+        // 高度 WRAP_CONTENT：窗口自动包裹内容，避免固定高度导致测量假值与透明触摸区
         assertEquals(expectedWidth, params.width)
-        assertEquals(expectedHeight, params.height)
+        assertEquals(WindowManager.LayoutParams.WRAP_CONTENT, params.height)
     }
 
     @Test
-    fun `createLayoutParams Window D returns card width and max content height`() {
+    fun `createLayoutParams Window D returns card width and wrap content height`() {
         val density = 2f
         val expectedWidth = (FWDims.cardWidthDp.value * density).toInt()
-        // H1 修复后：初始高度 = 内容最大高度（cardMaxHeight），让 Compose 先完整布局再收缩
-        val expectedHeight = (FWDims.cardMaxHeight.value * density).toInt()
 
         val params = wm.createLayoutParams(FloatingWindowManager.WindowId.D, 40, false)
 
+        // 高度 WRAP_CONTENT：窗口自动包裹答案内容，避免固定高度导致测量假值与透明触摸区
         assertEquals(expectedWidth, params.width)
-        assertEquals(expectedHeight, params.height)
+        assertEquals(WindowManager.LayoutParams.WRAP_CONTENT, params.height)
     }
 
     @Test
@@ -633,6 +631,159 @@ class FloatingWindowManagerTest {
         assertTrue("first job should be cancelled", job1.isCancelled)
         assertTrue("second animation should have frames", positions2.isNotEmpty())
         assertEquals(200f, positions2.last(), 1f)
+        scope.cancel()
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // animateWindowHeight（展开/收起过渡）
+    // ═════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `animateWindowHeight returns an active Job`() {
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher())
+
+        val job = wm.animateWindowHeight(scope, null, 100, 200, keepTop = true, anchorY = 50) {}
+
+        assertNotNull(job)
+        assertTrue(job.isActive)
+        job.cancel()
+        scope.cancel()
+    }
+
+    @Test
+    fun `animateWindowHeight settles at target height and calls onDone`() = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
+        var done = false
+
+        val job = wm.animateWindowHeight(scope, null, 100, 200, keepTop = true, anchorY = 50) { done = true }
+        scheduler.advanceUntilIdle()
+        job.join()
+
+        assertTrue("onDone should be called on completion", done)
+        scope.cancel()
+    }
+
+    @Test
+    fun `animateWindowHeight overshoots past target mid-animation then settles back`() = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+        wm.attachD(view, params)
+        val heights = mutableListOf<Int>()
+        val captured = slot<WindowManager.LayoutParams>()
+        every { mockWm.updateViewLayout(any(), capture(captured)) } answers { heights.add(captured.captured.height) }
+
+        // 动画用 System.currentTimeMillis() 计时，需真实时间流逝（advanceUntilIdle）才能走完全部帧；
+        // back ease-out (s=0.5): 大行程 1000→2000 下 overshoot 约 8px，可观测
+        val job = wm.animateWindowHeight(scope, view, 1000, 2000, keepTop = true, anchorY = 50, durationMs = 200)
+        scheduler.advanceUntilIdle()
+        job.join()
+        assertTrue("height should overshoot above target mid-animation", heights.any { it > 2000 })
+        assertEquals("final height must settle exactly at target", 2000, heights.last())
+        scope.cancel()
+    }
+
+    @Test
+    fun `animateWindowHeight keepTop keeps y pinned at anchor`() = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+        wm.attachD(view, params)
+        val ys = mutableListOf<Int>()
+        val captured = slot<WindowManager.LayoutParams>()
+        every { mockWm.updateViewLayout(any(), capture(captured)) } answers { ys.add(captured.captured.y) }
+
+        val job = wm.animateWindowHeight(scope, view, 300, 100, keepTop = true, anchorY = 500, durationMs = 1000)
+        scheduler.advanceUntilIdle()
+        job.join()
+
+        assertTrue("top-anchored animation must keep y == anchorY", ys.isNotEmpty() && ys.all { it == 500 })
+        scope.cancel()
+    }
+
+    @Test
+    fun `animateWindowHeight keepBottom keeps bottom edge fixed`() = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+        wm.attachD(view, params)
+        val bottoms = mutableListOf<Int>()
+        val captured = slot<WindowManager.LayoutParams>()
+        every { mockWm.updateViewLayout(any(), capture(captured)) } answers {
+            bottoms.add(captured.captured.y + captured.captured.height)
+        }
+
+        // keepTop=false: y = anchorY - h，底部 y+h 恒等于 anchorY
+        val job = wm.animateWindowHeight(scope, view, 300, 100, keepTop = false, anchorY = 600, durationMs = 1000)
+        scheduler.advanceUntilIdle()
+        job.join()
+
+        assertTrue("bottom edge must stay at anchorY", bottoms.isNotEmpty() && bottoms.all { it == 600 })
+        scope.cancel()
+    }
+
+    @Test
+    fun `animateWindowHeight fades alpha from fromAlpha to toAlpha`() = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+        wm.attachD(view, params)
+        val alphas = mutableListOf<Float>()
+        val captured = slot<WindowManager.LayoutParams>()
+        every { mockWm.updateViewLayout(any(), capture(captured)) } answers { alphas.add(captured.captured.alpha) }
+
+        val job = wm.animateWindowHeight(
+            scope, view, 100, 50, keepTop = true, anchorY = 10,
+            fromAlpha = 1f, toAlpha = 0f, durationMs = 1000
+        )
+        scheduler.advanceUntilIdle()
+        job.join()
+
+        assertTrue("alpha should interpolate", alphas.isNotEmpty())
+        assertEquals("final alpha reaches target", 0f, alphas.last(), 0.001f)
+        scope.cancel()
+    }
+
+    @Test
+    fun `animateWindowHeight calls onDone when cancelled (transition teardown semantics)`() = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
+        var done = false
+
+        // 长动画：中途取消，验证 onDone 仍被调用（调用方依赖它完成窗口增删收尾）
+        val job = wm.animateWindowHeight(scope, null, 100, 200, keepTop = true, anchorY = 0, durationMs = 100_000) {
+            done = true
+        }
+        scheduler.advanceTimeBy(100)
+        job.cancel()
+        scheduler.advanceUntilIdle()
+
+        assertTrue("onDone must run on cancellation for window teardown", done)
+        scope.cancel()
+    }
+
+    @Test
+    fun `animateWindowHeight never reports negative height`() = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
+        val view = mockk<View>(relaxed = true)
+        val params = mockk<WindowManager.LayoutParams>(relaxed = true)
+        wm.attachD(view, params)
+        val heights = mutableListOf<Int>()
+        val captured = slot<WindowManager.LayoutParams>()
+        every { mockWm.updateViewLayout(any(), capture(captured)) } answers { heights.add(captured.captured.height) }
+
+        // 收缩到 0：overshoot 若把高度推过 0，也必须被 coerceAtLeast(0) 截断
+        val job = wm.animateWindowHeight(scope, view, 100, 0, keepTop = true, anchorY = 0, durationMs = 1000)
+        scheduler.advanceUntilIdle()
+        job.join()
+
+        assertTrue("height must never be negative", heights.all { it >= 0 })
         scope.cancel()
     }
 

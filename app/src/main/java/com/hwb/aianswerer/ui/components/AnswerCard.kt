@@ -74,7 +74,9 @@ internal fun Card(
     showExpandBtn: Boolean = false,
     onExpand: () -> Unit = {},
     // 收起态（C 窗）答案摘要的最大高度，超出可滚动；null 表示不限制（D 窗/单卡）
-    bodyMaxHeight: androidx.compose.ui.unit.Dp? = null
+    bodyMaxHeight: androidx.compose.ui.unit.Dp? = null,
+    // 标题文本覆盖：默认"答案"；收起态传"答案:摘要"单行提示
+    titleText: String? = null
 ) {
     val shape = RoundedCornerShape(FWDims.cardCornerRadius)
     val isBusy = status in listOf(FloatingStatus.Capturing, FloatingStatus.Recognizing,
@@ -112,7 +114,7 @@ internal fun Card(
                             Text(msg, style = DW.LabelMedium.copy(color = t.osv))
                         }
                     } else if (hasAnswer) {
-                        Text(stringResource(R.string.float_answer_title), style = DW.BodyMedium.copy(fontWeight = FontWeight.SemiBold, color = t.ob))
+                        Text(titleText ?: stringResource(R.string.float_answer_title), style = DW.BodyMedium.copy(fontWeight = FontWeight.SemiBold, color = t.ob))
                     }
                 }
                 Row {

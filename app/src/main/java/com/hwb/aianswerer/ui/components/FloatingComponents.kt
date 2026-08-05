@@ -53,6 +53,10 @@ internal object FWDims {
     val cardMaxHeight = 560.dp
     // 收起态（C 窗）紧凑摘要高度：header(~52dp) + 答案摘要区，超出滚动
     val cardCompactMaxHeight = 180.dp
+    // 答案摘要模式（单行标题）窗口初始高度：贴合内容避免窗口大于内容产生透明触摸区
+    val cardCompactInitHeight = 72.dp
+    // 状态消息模式（1-2 行消息）窗口初始高度：不依赖 Compose 测量（真机上报被撑满到上限的假值）
+    val cardStatusInitHeight = 96.dp
     val cardSectionSpacing = 10.dp
     val cardItemSpacing = 6.dp
     val cardPaddingH = 14.dp

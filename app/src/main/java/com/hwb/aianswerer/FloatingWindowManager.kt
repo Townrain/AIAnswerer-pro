@@ -65,14 +65,14 @@ class FloatingWindowManager(private val context: Context) {
                 estW.coerceAtLeast(50) to estH.coerceAtLeast(40)
             }
             WindowId.C -> {
-                // 窗口 C: 宽度固定，初始高度 = 紧凑摘要高度（cardCompactMaxHeight）
-                // 内容在此上限内 wrap 并上报真实高度后收缩
-                (FWDims.cardWidthDp.value * density).toInt() to (FWDims.cardCompactMaxHeight.value * density).toInt()
+                // 窗口 C: 宽度固定，高度 WRAP_CONTENT —— 窗口自动包裹内容
+                // （固定高度会导致 Compose 根被 EXACTLY 约束撑满，onGloballyPositioned 上报窗口高度
+                //  而非内容高度，窗口永不收缩、透明区拦截触摸）
+                (FWDims.cardWidthDp.value * density).toInt() to WindowManager.LayoutParams.WRAP_CONTENT
             }
             WindowId.D -> {
-                // Window D: 宽度同 C，初始高度 = 内容最大高度（cardMaxHeight）
-                // 让 Compose 内容先完整布局，onMeasuredHeight 上报真实高度后由 positionWindowD 收缩
-                (FWDims.cardWidthDp.value * density).toInt() to (FWDims.cardMaxHeight.value * density).toInt()
+                // Window D: 宽度同 C，高度 WRAP_CONTENT（同上，自动包裹答案内容）
+                (FWDims.cardWidthDp.value * density).toInt() to WindowManager.LayoutParams.WRAP_CONTENT
             }
         }
 
@@ -304,13 +304,17 @@ class FloatingWindowManager(private val context: Context) {
         val job = scope.launch {
             val duration = 250L
             val start = System.currentTimeMillis()
-            while (isActive) {
-                val elapsed = System.currentTimeMillis() - start
-                val fraction = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
-                val eased = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
-                onFrame(from + (to - from) * eased)
-                if (fraction >= 1f) break
-                delay(16)
+            try {
+                while (isActive) {
+                    val elapsed = System.currentTimeMillis() - start
+                    val fraction = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
+                    val eased = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
+                    onFrame(from + (to - from) * eased)
+                    if (fraction >= 1f) break
+                    delay(16)
+                }
+            } finally {
+                onFrame(to)
             }
         }
         animJob = job
@@ -328,54 +332,75 @@ class FloatingWindowManager(private val context: Context) {
     ): Job {
         val job = scope.launch {
             val start = System.currentTimeMillis()
-            while (isActive) {
-                val elapsed = System.currentTimeMillis() - start
-                val fraction = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
-                setAlpha(view, from + (to - from) * fraction)
-                if (fraction >= 1f) break
-                delay(16)
+            try {
+                while (isActive) {
+                    val elapsed = System.currentTimeMillis() - start
+                    val fraction = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
+                    setAlpha(view, from + (to - from) * fraction)
+                    if (fraction >= 1f) break
+                    delay(16)
+                }
+            } finally {
+                onDone()
             }
-            onDone()
         }
         return job
     }
 
     /**
-     * 从下到上收起动画：窗口高度从 [fullHeight] 收缩到 0，同时保持底部位置（y 下移）。
-     * 用于 D 窗折叠回 C 窗——视觉上是内容从下往上收起。完成后调用 [onDone]。
+     * 窗口高度过渡动画:顶部或底部固定,高度从 [fromH] 渐变到 [toH],
+     * 可同步渐变透明度。用于 D 窗展开/收起过渡——
+     * 收起 = 收缩到紧凑高度 + 淡出,展开 = 从紧凑高度伸展 + 淡入。
+     * 无论正常完成还是被取消都会调用 [onDone],由调用方在 onDone 中完成窗口增删收尾。
      */
-    fun collapseWindowHeight(
+    fun animateWindowHeight(
         scope: CoroutineScope,
         view: View?,
-        fullHeight: Int,
-        bottomY: Int,
-        durationMs: Long = 220L,
+        fromH: Int,
+        toH: Int,
+        keepTop: Boolean,
+        anchorY: Int,
+        fromAlpha: Float? = null,
+        toAlpha: Float? = null,
+        durationMs: Long = 160L,
         onDone: () -> Unit = {}
     ): Job {
         val job = scope.launch {
             val start = System.currentTimeMillis()
-            while (isActive) {
-                val elapsed = System.currentTimeMillis() - start
-                val fraction = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
-                val eased = 1f - (1f - fraction) * (1f - fraction)
-                val h = (fullHeight * (1f - eased)).toInt().coerceAtLeast(0)
-                // y 下移保持底部位置不变：顶部向下移动，视觉为从下往上收起
-                val y = bottomY - h
-                val p = when (view) {
-                    dView -> dParams
-                    cView -> cParams
-                    else -> null
+            try {
+                while (isActive) {
+                    val elapsed = System.currentTimeMillis() - start
+                    val fraction = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
+                    // 轻微弹性：back ease-out overshoot 约 3%（用户反馈过强的 10% 已调低），
+                    // 避免窗口冲过头造成“抖出”观感
+                    val s = 0.5f
+                    val t1 = fraction - 1f
+                    val eased = t1 * t1 * ((s + 1f) * t1 + s) + 1f
+                    val h = (fromH + (toH - fromH) * eased).toInt().coerceAtLeast(0)
+                    // keepTop: 顶部固定、底部随高度移动(从下往上收起/展开)
+                    // 否则:底部固定(anchorY = 底部 y)、顶部随高度移动
+                    val y = if (keepTop) anchorY else anchorY - h
+                    val p = when (view) {
+                        dView -> dParams
+                        cView -> cParams
+                        else -> null
+                    }
+                    if (p != null) {
+                        p.height = h
+                        p.y = y
+                        if (fromAlpha != null && toAlpha != null) {
+                            p.alpha = fromAlpha + (toAlpha - fromAlpha) * fraction
+                        }
+                        try { windowManager.updateViewLayout(view!!, p) }
+                        catch (e: Exception) { AppLog.e("FWM", "animateWindowHeight failed", e) }
+                    }
+                    if (fraction >= 1f) break
+                    // 20ms 帧间隔(约 50fps)：降低动画期间 Compose 重排与 updateViewLayout 的叠加压力
+                    delay(20)
                 }
-                if (p != null) {
-                    p.height = h
-                    p.y = y
-                    try { windowManager.updateViewLayout(view!!, p) }
-                    catch (e: Exception) { AppLog.e("FWM", "collapseWindowHeight failed", e) }
-                }
-                if (fraction >= 1f) break
-                delay(16)
+            } finally {
+                onDone()
             }
-            onDone()
         }
         return job
     }

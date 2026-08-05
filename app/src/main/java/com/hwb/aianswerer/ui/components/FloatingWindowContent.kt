@@ -226,18 +226,20 @@ fun WindowCContent(
     onDismissRequest: () -> Unit,
     isExpanded: Boolean,
     onToggleExpanded: (Boolean) -> Unit,
-    // 折叠功能：收起态答案摘要（从 paginatedAnswers/recordingAnswers 拼接，选择题短答案可直接阅读）
+    // 折叠功能：收起态标题文本 = "答案:" + 第 1 题纯答案摘要（≤7 字符，超长省略号截断）
     summaryText: String? = null
 ) {
     val t = sandboxTheme()
     val showCard = showAnswer || statusMessage != null
+    // 与 D 窗同构：滚动容器按内容自然高度测量（不受父约束/窗口高度影响），
+    // 避免 Box 被窗口高度撑满到上限导致窗口无法收缩（透明区拦截触摸）
+    val scrollState = rememberScrollState()
 
     Box(
         Modifier
             .width(FWDims.cardWidthDp)
-            // C 窗紧凑高度：内容在此上限内 wrap，onGloballyPositioned 上报 min(内容, 上限)
-            // 打破 WindowManager 精确高度约束导致的死循环（窗口 560dp → 内容上报 560dp → 永不收缩）
             .heightIn(max = FWDims.cardCompactMaxHeight)
+            .verticalScroll(scrollState)
             .graphicsLayer { alpha = cardAlpha }
             .onGloballyPositioned { coords ->
                 onMeasuredHeight(coords.size.height.toFloat())
@@ -259,12 +261,12 @@ fun WindowCContent(
                         onCloseStatus = onCloseStatus
                     )
                 }
-                // Answer-ready notification
+                // Answer-ready notification：仅一行"答案:摘要"标题，不显示正文
                 hasAnswer && showAnswer -> {
                     Card(
                         t = t,
-                        // 收起态只显示简洁答案摘要（copyTexts），限高滚动
-                        answerText = summaryText,
+                        answerText = null,
+                        titleText = summaryText,
                         hasAnswer = true,
                         statusMessage = null,
                         status = floatingStatus,
@@ -273,9 +275,7 @@ fun WindowCContent(
                         onCloseStatus = onCloseStatus,
                         // 折叠功能：C 窗显示展开按钮（→ D 窗完整答案）
                         showExpandBtn = true,
-                        onExpand = { onToggleExpanded(!isExpanded) },
-                        // 摘要限高 120dp，超出滚动
-                        bodyMaxHeight = 120.dp
+                        onExpand = { onToggleExpanded(!isExpanded) }
                     )
                 }
                 // Status message
