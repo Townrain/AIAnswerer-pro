@@ -13,6 +13,7 @@ object WebSearchClientFactory {
         "local-google"  -> LocalGoogleSearchProvider(config)
         "local-bing"    -> LocalBingSearchProvider(config)
         "local-baidu"   -> LocalBaiduSearchProvider(config)
+        "exa-mcp"       -> ExaMCPSearchProvider(config)
         else            -> TavilySearchProvider(config) // fallback
     }
 }

@@ -3,6 +3,9 @@ package com.hwb.aianswerer.api.search
 
 import com.hwb.aianswerer.providers.LocalWebSearchConfig
 import com.hwb.aianswerer.providers.WebSearchWebsites
+import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -41,6 +44,11 @@ class WebSearchInfraTest {
     fun `WebSearchClientFactory - exa返回ExaSearchProvider`() {
         val provider = WebSearchClientFactory.create(createConfig("exa"))
         assertTrue(provider is ExaSearchProvider)
+    }
+    @Test
+    fun `WebSearchClientFactory - exa-mcp返回ExaMCPSearchProvider`() {
+        val provider = WebSearchClientFactory.create(createConfig("exa-mcp"))
+        assertTrue(provider is ExaMCPSearchProvider)
     }
 
     @Test
@@ -88,10 +96,72 @@ class WebSearchInfraTest {
     @Suppress("SENSELESS_COMPARISON")
     @Test
     fun `WebSearchClientFactory - 返回的provider都是BaseWebSearchProvider子类`() {
-        listOf("tavily", "zhipu", "bocha", "exa", "querit", "searxng", "local-google", "local-bing", "local-baidu").forEach { id ->
+        listOf("tavily", "zhipu", "bocha", "exa", "exa-mcp", "querit", "searxng", "local-google", "local-bing", "local-baidu").forEach { id ->
             val provider = WebSearchClientFactory.create(createConfig(id))
             assertTrue("$id 不是 BaseWebSearchProvider 的子类", provider is BaseWebSearchProvider)
         }
+    }
+
+    // ═══ ExaMCPSearchProvider 真实 MCP 协议 ═══
+
+    @Test
+    fun `ExaMCPSearchProvider - JSON 响应执行 initialize 握手并解析工具调用结果`() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse().setResponseCode(200).setHeader("Mcp-Session-Id", "sess-123")
+                .setBody("""{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"exa"}}}""")
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"results\":[{\"title\":\"T1\",\"url\":\"https://a.com\",\"text\":\"s1\"},{\"title\":\"T2\",\"url\":\"https://b.com\",\"text\":\"s2\"}]}"}]}}""")
+        )
+        server.start()
+        val provider = ExaMCPSearchProvider(createConfig("exa-mcp", apiHost = server.url("/").toString().trimEnd('/')))
+        val results = provider.search("光合作用", 2)
+        server.shutdown()
+
+        assertEquals(2, results.size)
+        assertEquals("T1", results[0].title)
+        assertEquals("https://b.com", results[1].url)
+
+        val req1 = server.takeRequest()
+        val req2 = server.takeRequest()
+        val req1Body = req1.body.readUtf8()
+        val req2Body = req2.body.readUtf8()
+        assertTrue(req1Body.contains("\"method\":\"initialize\""))
+        assertEquals("sess-123", req2.getHeader("Mcp-Session-Id"))
+        assertTrue(req2Body.contains("\"name\":\"web_search\""))
+        assertTrue(req2Body.contains("光合作用"))
+    }
+
+    @Test
+    fun `ExaMCPSearchProvider - SSE 流响应同样解析`() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "text/event-stream")
+                .setBody("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"results\\\":[{\\\"title\\\":\\\"SSE1\\\",\\\"url\\\":\\\"https://s.com\\\",\\\"text\\\":\\\"x\\\"}]}\"}]}}\n\n")
+        )
+        server.start()
+        val provider = ExaMCPSearchProvider(createConfig("exa-mcp", apiHost = server.url("/").toString().trimEnd('/')))
+        val results = provider.search("测试", 1)
+        server.shutdown()
+
+        assertEquals(1, results.size)
+        assertEquals("SSE1", results[0].title)
+    }
+
+    @Test
+    fun `ExaMCPSearchProvider - MCP 错误返回空列表不崩溃`() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"bad args\"}}"))
+        server.start()
+        val provider = ExaMCPSearchProvider(createConfig("exa-mcp", apiHost = server.url("/").toString().trimEnd('/')))
+        val results = provider.search("x", 1)
+        server.shutdown()
+
+        assertTrue(results.isEmpty())
     }
 
     // ═══ LocalSearchProvider 子类验证 ═══

@@ -125,6 +125,142 @@ class SearXNGSProvider(config: LocalWebSearchConfig) : BaseWebSearchProvider(con
     }
 }
 
+class ExaMCPSearchProvider(config: LocalWebSearchConfig) : BaseWebSearchProvider(config) {
+    override suspend fun search(query: String, maxResults: Int): List<WebSearchResult> {
+        try {
+            // MCP 会话握手：initialize 获取 Mcp-Session-Id（无状态服务器返回 null 亦可继续）
+            val sessionId = mcpInitialize()
+            val params = com.google.gson.JsonObject().apply {
+                addProperty("name", "web_search")
+                add("arguments", com.google.gson.JsonObject().apply {
+                    addProperty("query", query)
+                    addProperty("numResults", maxResults)
+                })
+            }
+            val json = mcpRequest("tools/call", params, sessionId) ?: return emptyList()
+            val result = json.getAsJsonObject("result") ?: run {
+                AppLog.w("ExaMCP", "tools/call missing result: $json")
+                return emptyList()
+            }
+            if (result.get("isError")?.asBoolean == true) {
+                AppLog.w("ExaMCP", "tools/call isError: $result")
+                return emptyList()
+            }
+            val content = result.getAsJsonArray("content") ?: return emptyList()
+            return content.flatMap { elem ->
+                val obj = elem.asJsonObject
+                when (obj.get("type")?.asString) {
+                    "text" -> parseTextResults(obj.get("text")?.asString ?: "")
+                    else -> emptyList()
+                }
+            }.take(maxResults)
+        } catch (e: Exception) {
+            AppLog.e("ExaMCP", "search failed", e)
+            return emptyList()
+        }
+    }
+
+    /** MCP initialize 握手，返回服务器下发的会话 ID（无状态服务器返回 null 亦可继续） */
+    private suspend fun mcpInitialize(): String? {
+        val params = com.google.gson.JsonObject().apply {
+            addProperty("protocolVersion", MCP_PROTOCOL_VERSION)
+            add("capabilities", com.google.gson.JsonObject())
+            add("clientInfo", com.google.gson.JsonObject().apply {
+                addProperty("name", "AIAnswerer")
+                addProperty("version", "1.0")
+            })
+        }
+        val resp = mcpRawRequest("initialize", params, null) ?: return null
+        val err = resp.body.get("error")?.asJsonObject
+        if (err != null) {
+            AppLog.w("ExaMCP", "initialize error: ${err.get("message")?.asString ?: err}")
+            return null
+        }
+        AppLog.d("ExaMCP", "initialize ok: ${resp.body.getAsJsonObject("result")}, session=${resp.sessionId ?: "(stateless)"}")
+        return resp.sessionId
+    }
+
+    /** MCP JSON-RPC 请求（JSON / SSE 响应均可），返回响应体 */
+    private suspend fun mcpRequest(method: String, params: com.google.gson.JsonObject?, sessionId: String?): com.google.gson.JsonObject? =
+        mcpRawRequest(method, params, sessionId)?.body
+
+    private data class McpRawResponse(val body: com.google.gson.JsonObject, val sessionId: String?)
+
+    /** 发送 MCP JSON-RPC POST；支持 application/json 与 text/event-stream 两种传输 */
+    private suspend fun mcpRawRequest(method: String, params: com.google.gson.JsonObject?, sessionId: String?): McpRawResponse? =
+        withContext(Dispatchers.IO) {
+            try {
+                val rpc = com.google.gson.JsonObject().apply {
+                    addProperty("jsonrpc", "2.0")
+                    addProperty("id", System.nanoTime())
+                    addProperty("method", method)
+                    if (params != null) add("params", params)
+                }
+                val builder = Request.Builder()
+                    .url(apiHost)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json, text/event-stream")
+                    .addHeader("MCP-Protocol-Version", MCP_PROTOCOL_VERSION)
+                    .post(rpc.toString().toRequestBody(jsonMediaType))
+                if (!apiKey.isBlank()) builder.addHeader("Authorization", "Bearer $apiKey")
+                if (!sessionId.isNullOrBlank()) builder.addHeader("Mcp-Session-Id", sessionId)
+                val resp = client.newCall(builder.build()).execute()
+                resp.use { r ->
+                    if (!r.isSuccessful) { AppLog.w("ExaMCP: HTTP ${r.code}"); return@withContext null }
+                    val newSession = r.header("Mcp-Session-Id")
+                    val body = r.body?.string() ?: return@withContext null
+                    val json = parseMcpBody(body) ?: run {
+                        AppLog.w("ExaMCP: unparseable body (${body.take(200)})")
+                        return@withContext null
+                    }
+                    McpRawResponse(json, newSession)
+                }
+            } catch (e: Exception) {
+                AppLog.e("ExaMCP: POST failed", e)
+                null
+            }
+        }
+
+    /** 解析 MCP 响应：纯 JSON 或 SSE 流（取最后一条带 id 的 JSON-RPC 响应，忽略无 id 的通知） */
+    private fun parseMcpBody(body: String): com.google.gson.JsonObject? {
+        val trimmed = body.trimStart()
+        return if (trimmed.startsWith("{")) {
+            try { gson.fromJson(trimmed, com.google.gson.JsonObject::class.java) } catch (_: Exception) { null }
+        } else {
+            trimmed.lineSequence()
+                .map { it.trim() }
+                .filter { it.startsWith("data:") }
+                .map { it.removePrefix("data:").trim() }
+                .filter { it.startsWith("{") }
+                .mapNotNull { runCatching { gson.fromJson(it, com.google.gson.JsonObject::class.java) }.getOrNull() }
+                .filter { it.has("id") }
+                .lastOrNull()
+        }
+    }
+
+    private fun parseTextResults(text: String): List<WebSearchResult> {
+        return try {
+            val obj = gson.fromJson(text, com.google.gson.JsonObject::class.java)
+            val arr = obj.getAsJsonArray("results") ?: return emptyList()
+            arr.map { r ->
+                val o = r.asJsonObject
+                WebSearchResult(
+                    o.get("title")?.asString.orEmpty(),
+                    o.get("url")?.asString.orEmpty(),
+                    o.get("text")?.asString ?: o.get("snippet")?.asString.orEmpty()
+                )
+            }
+        } catch (_: Exception) {
+            if (text.isNotBlank()) listOf(WebSearchResult("ExaMCP", "", text.take(500)))
+            else emptyList()
+        }
+    }
+
+    companion object {
+        private const val MCP_PROTOCOL_VERSION = "2025-03-26"
+    }
+}
+
 abstract class LocalSearchProvider(private val cfg: LocalWebSearchConfig) : BaseWebSearchProvider(cfg) {
     protected abstract fun parseResults(html: String, maxResults: Int): List<WebSearchResult>
     override suspend fun search(query: String, maxResults: Int): List<WebSearchResult> {
