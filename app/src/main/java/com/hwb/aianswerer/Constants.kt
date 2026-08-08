@@ -1,9 +1,14 @@
 package com.hwb.aianswerer
 
+import com.hwb.aianswerer.api.search.WebSearchToolExecutor
 import com.hwb.aianswerer.config.AppConfig
+import com.hwb.aianswerer.models.FunctionSpec
+import com.hwb.aianswerer.models.ToolSpec
 import com.hwb.aianswerer.utils.AppLog
 import android.content.res.Configuration
 import android.content.res.Resources
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import java.util.Locale
 
 /**
@@ -53,6 +58,31 @@ object Constants {
 
     private fun promptStr(resId: Int): String = getPromptResources().getString(resId)
     private fun promptStr(resId: Int, vararg formatArgs: Any): String = getPromptResources().getString(resId, *formatArgs)
+
+    /**
+     * 构建 web_search 工具定义（function calling 模式使用）。
+     * 描述文案跟随 AI 提示词语言（getPromptResources）。
+     */
+    fun buildWebSearchToolSpec(): ToolSpec {
+        val parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("query", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", promptStr(R.string.tool_web_search_query_description))
+                })
+            })
+            add("required", JsonArray().apply { add("query") })
+            addProperty("additionalProperties", false)
+        }
+        return ToolSpec(
+            function = FunctionSpec(
+                name = WebSearchToolExecutor.TOOL_NAME,
+                description = promptStr(R.string.tool_web_search_description),
+                parameters = parameters
+            )
+        )
+    }
     // Intent Actions
     const val ACTION_SHOW_ANSWER = "com.hwb.aianswerer.SHOW_ANSWER"
     const val ACTION_REQUEST_ANSWER = "com.hwb.aianswerer.REQUEST_ANSWER"

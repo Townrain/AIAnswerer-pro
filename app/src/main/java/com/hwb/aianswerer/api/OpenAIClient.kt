@@ -1,14 +1,18 @@
 package com.hwb.aianswerer.api
 
+import com.google.gson.JsonObject
 import com.google.gson.JsonSyntaxException
 import com.hwb.aianswerer.Constants
 import com.hwb.aianswerer.MyApplication
 import com.hwb.aianswerer.R
+import com.hwb.aianswerer.api.search.WebSearchToolExecutor
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.AIAnswer
 import com.hwb.aianswerer.models.ChatMessage
 import com.hwb.aianswerer.models.ChatRequest
 import com.hwb.aianswerer.models.ChatResponse
+import com.hwb.aianswerer.models.ToolCall
+import com.hwb.aianswerer.models.ToolCallFunction
 import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.JsonUtil
 import kotlinx.coroutines.CancellationException
@@ -96,7 +100,7 @@ class OpenAIClient {
 
             // 构建请求，使用动态系统提示词（可被调用方覆盖）
             val systemPrompt = systemPrompt ?: Constants.buildSystemPrompt(questionTypes, searchContext)
-            val messages = listOf(
+            val messages = mutableListOf(
                 ChatMessage(role = "system", content = systemPrompt),
                 ChatMessage(
                     role = "user",
@@ -107,34 +111,91 @@ class OpenAIClient {
                 )
             )
 
-            val chatRequest = ChatRequest(
-                model = modelName,
-                messages = messages,
-                temperature = AppConfig.getLlmTemperature(),
-                maxTokens = 4096,
-                reasoningEffort = AppConfig.getReasoningEffort(),
-                stream = true
-            )
+            // function calling 工具模式：携带 web_search 工具定义，由模型自主决定是否搜索
+            val tools = if (WebSearchToolExecutor.isToolModeActive()) {
+                AppLog.d("API", "analyzeQuestion: tool mode active, attaching web_search tool")
+                listOf(Constants.buildWebSearchToolSpec())
+            } else {
+                null
+            }
 
-            val requestJson = gson.toJson(chatRequest)
-                // 移除以 null 值序列化的字段，避免 API 误解（如 reasoning_effort:null 被当作启用推理）
-                .replace(Regex(""",\\s*\"[^\"]+\":\\s*null"""), "")
-            val requestBody = requestJson
-                .toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url(apiUrl)
-                .addHeader("Authorization", "Bearer $apiKey")
-                .addHeader("Content-Type", "application/json")
-                .post(requestBody)
-                .build()
+            // 多轮工具循环：模型请求工具 → 执行搜索 → role:tool 回填 → 重发，直到模型直接给出答案
+            var answerContent = ""
+            var rounds = 0
+            while (true) {
+                rounds++
+                val chatRequest = ChatRequest(
+                    model = modelName,
+                    messages = messages,
+                    temperature = AppConfig.getLlmTemperature(),
+                    maxTokens = 4096,
+                    reasoningEffort = AppConfig.getReasoningEffort(),
+                    stream = true,
+                    tools = tools,
+                    // 显式 tool_choice:auto，提示部分保守模型主动调用工具（null 时该字段不序列化）
+                    toolChoice = if (tools != null) "auto" else null
+                )
 
-            // 流式请求，60s Kotlin 层超时兜底
-            val answerContent = withTimeout(WITH_TIMEOUT_MS) {
-                client.newCall(request).awaitStreamContent()
+                val requestJson = gson.toJson(chatRequest)
+                    // 移除以 null 值序列化的字段，避免 API 误解（如 reasoning_effort:null 被当作启用推理）
+                    .replace(Regex(""",\\s*\"[^\"]+\":\\s*null"""), "")
+                val requestBody = requestJson
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url(apiUrl)
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
+                    .build()
+
+                // 流式请求，60s Kotlin 层超时兜底（每轮独立超时）
+                val streamResult = withTimeout(WITH_TIMEOUT_MS) {
+                    client.newCall(request).awaitStreamContent()
+                }
+
+                // 模型请求调用工具：回传 assistant 消息 + 执行搜索 + tool 消息回填，进入下一轮
+                if (streamResult.toolCalls.isNotEmpty() && rounds <= MAX_TOOL_ROUNDS && tools != null) {
+                    AppLog.i("API", "tool_calls received (round=$rounds): ${streamResult.toolCalls.size} calls")
+                    messages.add(
+                        ChatMessage(
+                            role = "assistant",
+                            content = streamResult.content.ifBlank { null },
+                            toolCalls = streamResult.toolCalls.map {
+                                ToolCall(
+                                    id = it.id,
+                                    function = ToolCallFunction(name = it.name, arguments = it.arguments)
+                                )
+                            }
+                        )
+                    )
+                    for (tc in streamResult.toolCalls) {
+                        // LLM 输出不可信：query 做长度/控制字符防护后进入搜索请求
+                        val query = sanitizeToolQuery(parseToolQuery(tc.arguments) ?: recognizedText)
+                        AppLog.d("API", "executing tool ${tc.name}(queryLen=${query.length})")
+                        val searchResult = WebSearchToolExecutor.execute(query, 2)
+                        messages.add(
+                            ChatMessage(
+                                role = "tool",
+                                content = searchResult.ifBlank { "（无搜索结果）" },
+                                toolCallId = tc.id
+                            )
+                        )
+                    }
+                    continue
+                }
+
+                // 工具循环封顶：模型仍在请求工具但已超出轮数上限，强制以当前 content 作为答案
+                if (streamResult.toolCalls.isNotEmpty() && rounds > MAX_TOOL_ROUNDS) {
+                    AppLog.w("API", "tool loop capped after $MAX_TOOL_ROUNDS rounds, forcing answer from remaining content (len=${streamResult.content.length})")
+                }
+
+                answerContent = streamResult.content
+                break
             }
 
             AppLog.d("API", "AI原始响应长度: ${answerContent.length}")
-            AppLog.i("API", "AI原始完整响应: $answerContent")
+            // 完整响应含题目与答案内容，降级为 debug 级别（受调试日志开关控制），避免无条件写入日志文件
+            AppLog.d("API", "AI原始完整响应: $answerContent")
             // 解析AI返回的JSON答案
             // 策略：先直接解析原文（AI通常返回干净JSON），失败再提取+修复
             val result = Result.success(answerExtractor.parseJsonAnswers(answerContent))
@@ -417,6 +478,9 @@ class OpenAIClient {
         const val WRITE_TIMEOUT_SEC = 15L
         const val TEST_TIMEOUT_MS = 30_000L
 
+        // function calling 工具循环：最多执行 2 轮工具调用（加首轮共最多 3 次请求），防止死循环
+        const val MAX_TOOL_ROUNDS = 2
+
         // 使用全局共享的Gson实例
         private val gson = JsonUtil.gson
 
@@ -495,9 +559,36 @@ private data class ChatStreamChunk(
     )
     data class StreamDelta(
         val content: String?,
-        val reasoning_content: String? = null
+        val reasoning_content: String? = null,
+        val tool_calls: List<StreamToolCallDelta>? = null
+    )
+    data class StreamToolCallDelta(
+        val index: Int,
+        val id: String? = null,
+        val function: StreamToolCallFunctionDelta? = null
+    )
+    data class StreamToolCallFunctionDelta(
+        val name: String? = null,
+        val arguments: String? = null
     )
 }
+
+/**
+ * 流式读取结果：累积的文本内容 + 模型请求的工具调用列表。
+ */
+private data class StreamResult(
+    val content: String,
+    val toolCalls: List<ParsedToolCall>
+)
+
+/**
+ * 已解析的工具调用（跨 chunk 按 index 累积合并后的完整形态）。
+ */
+private data class ParsedToolCall(
+    val id: String,
+    val name: String,
+    val arguments: String
+)
 
 /**
  * 流式读取 SSE 响应，累积所有 delta.content 与 delta.reasoning_content 后返回完整文本。
@@ -506,7 +597,7 @@ private data class ChatStreamChunk(
  * 与 awaitCancellable 不同，本函数在返回前完成整个 SSE 流的读取，
  * 因此 withTimeout 能正确覆盖从建连到最后一个 token 的全过程。
  */
-private suspend fun Call.awaitStreamContent(): String =
+private suspend fun Call.awaitStreamContent(): StreamResult =
     suspendCancellableCoroutine { cont ->
         cont.invokeOnCancellation {
             AppLog.w("API", "stream cancelled by timeout")
@@ -538,6 +629,8 @@ private suspend fun Call.awaitStreamContent(): String =
                         val reader = body.charStream().buffered()
                         val answerBuilder = StringBuilder()
                         val reasonBuilder = StringBuilder()
+                        // 流式 tool_calls 按 index 累积：id/name 首现写入，arguments 增量拼接
+                        val toolCallAccumulators = LinkedHashMap<Int, StreamToolCallAccumulator>()
                         var chunkCount = 0
                         var contentChunks = 0
                         var reasonChunks = 0
@@ -551,6 +644,14 @@ private suspend fun Call.awaitStreamContent(): String =
                                     chunk.choices?.firstOrNull()?.delta?.let { delta ->
                                         delta.content?.let { answerBuilder.append(it); contentChunks++ }
                                         delta.reasoning_content?.let { reasonBuilder.append(it); reasonChunks++ }
+                                        delta.tool_calls?.forEach { tc ->
+                                            val acc = toolCallAccumulators.getOrPut(tc.index) { StreamToolCallAccumulator() }
+                                            if (acc.id == null && !tc.id.isNullOrBlank()) acc.id = tc.id
+                                            val name = tc.function?.name
+                                            if (acc.name == null && !name.isNullOrBlank()) acc.name = name
+                                            val args = tc.function?.arguments
+                                            if (!args.isNullOrBlank()) acc.arguments.append(args)
+                                        }
                                     }
                                     chunkCount++
                                 } catch (_: Exception) {
@@ -559,8 +660,9 @@ private suspend fun Call.awaitStreamContent(): String =
                             }
                         }
                         // 优先用 answer（content），为空时检查 reasoning_content 是否含 JSON
+                        // 注意：存在 tool_calls 时不回退 reasoning_content——OpenAI 协议要求带 tool_calls 的 assistant 消息 content 必须为 null
                         var content = answerBuilder.toString()
-                        if (content.isBlank() && reasonBuilder.isNotEmpty()) {
+                        if (content.isBlank() && reasonBuilder.isNotEmpty() && toolCallAccumulators.isEmpty()) {
                             val reason = reasonBuilder.toString()
                             // 仅当 reasoning_content 包含 JSON 结构时才回退，避免使用纯思考文本
                             if (reason.contains('{') || reason.contains('[')) {
@@ -570,12 +672,16 @@ private suspend fun Call.awaitStreamContent(): String =
                                 AppLog.w("API", "content empty, reasoning_content is non-JSON text (${reason.length} chars) — skipping fallback")
                             }
                         }
-                        if (content.isBlank()) {
+                        // 组装完整工具调用（仅保留 id/name/arguments 齐全的）
+                        val toolCalls = toolCallAccumulators.values
+                            .filter { !it.id.isNullOrBlank() && !it.name.isNullOrBlank() && it.arguments.isNotEmpty() }
+                            .map { ParsedToolCall(id = it.id!!, name = it.name!!, arguments = it.arguments.toString()) }
+                        if (content.isBlank() && toolCalls.isEmpty()) {
                             AppLog.w("API", "stream returned empty content (parsed $contentChunks content + $reasonChunks reasoning from $chunkCount total chunks)")
                             cont.resumeWithException(IOException("stream returned empty content"))
                         } else {
-                            AppLog.d("API", "stream completed: ${content.length} chars (content=$contentChunks chunks, reasoning=$reasonChunks chunks, total=$chunkCount)")
-                            cont.resume(content)
+                            AppLog.d("API", "stream completed: ${content.length} chars (content=$contentChunks chunks, reasoning=$reasonChunks chunks, tools=${toolCalls.size}, total=$chunkCount)")
+                            cont.resume(StreamResult(content = content, toolCalls = toolCalls))
                         }
                     }
                 } catch (e: Exception) {
@@ -587,6 +693,34 @@ private suspend fun Call.awaitStreamContent(): String =
         })
         AppLog.d("API", "stream enqueue sent")
     }
+
+/**
+ * 流式 tool_calls 增量累积器（按 index 一一对应）。
+ */
+private class StreamToolCallAccumulator(
+    var id: String? = null,
+    var name: String? = null,
+    val arguments: StringBuilder = StringBuilder()
+)
+
+/**
+ * 解析工具调用的 arguments（JSON 字符串），提取 query 参数。
+ * 解析失败返回 null，调用方降级使用题目原文。
+ */
+private fun parseToolQuery(arguments: String): String? {
+    return try {
+        val obj = JsonUtil.gson.fromJson(arguments, JsonObject::class.java)
+        obj.get("query")?.takeIf { it.isJsonPrimitive }?.asString
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/**
+ * 工具查询参数防护：剔除控制字符并限制长度（LLM 输出不可信，防止超长/异常字符注入搜索请求）。
+ */
+private fun sanitizeToolQuery(query: String): String =
+    query.replace(Regex("[\\x00-\\x1f\\x7f]"), "").take(256)
 
 /**
  * 将 OkHttp 异步 Call 转换为可取消的挂起函数（非流式）。
