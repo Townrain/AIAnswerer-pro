@@ -9,9 +9,13 @@ All notable changes to AIAnswerer will be documented in this file.
 - New "Search Mode" selector in web search settings: Tool Calling / Pre-Search Injection (Tool Calling by default; switch back to the legacy mode for models without tool support)
 - Automatic fallback: tool mode degrades to pre-search injection when the model is known not to support function calling
 - WebSearchToolExecutor: unified search executor shared by pre-search and tool modes, reusing all 10 search providers (Tavily/Zhipu/Bocha/Exa etc.)
+- Floating window: collapsible answer cards — expand/collapse toggle with elastic collapse animation and compact answer-summary view when collapsed
+- Floating window C/D: WRAP_CONTENT adaptive height
+- M14 landscape/portrait rotation support
+- Settings page real-time refresh support
 
 ### Changed
-- OpenAIClient: SSE parsing now handles `delta.tool_calls` (accumulated by index); answering requests run up to 3 rounds (2 tool rounds + final answer), each with an independent 60s timeout
+- OpenAIClient: SSE parsing now handles `delta.tool_calls` (accumulated by index); in tool mode, answering requests run up to 3 rounds (2 tool rounds + final answer), each with an independent 60s timeout
 - ChatMessage supports `tool_calls`/`tool_call_id` with nullable content; ChatRequest adds `tools`/`tool_choice` parameters
 - Tool call arguments sanitized (256-char limit, control characters stripped); invalid arguments fall back to the original recognized text
 - Full AI response logging downgraded to debug level to avoid unconditional log-file writes
@@ -19,6 +23,14 @@ All notable changes to AIAnswerer will be documented in this file.
 ### Fixed
 - Warning log added when the tool loop hits its round cap, eliminating silent degradation
 - reasoning_content is no longer promoted to content when tool_calls are present (compliant with the OpenAI requirement of content=null alongside tool_calls)
+- Tool mode no longer performs duplicate pre-search injection (scheduling layer skips pre-search when tool mode is active)
+- Floating window lifecycle crash chain and coordinate fixes
+- Floating window recording count and drag gesture fixes
+- Floating window state thread-safety and generation mechanism
+- C window answer cropping (initial height, pre-measurement default, bottom crop, collapsed answer-summary invisible — multiple fixes)
+- Front service notification sound removed
+- POST_NOTIFICATIONS permission compatibility
+- Unit test JVM explicit heap sizing and parallel limit (fixes full-suite OOM and CPU overload)
 
 ## [1.7.0] - 2026-07-27
 

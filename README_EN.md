@@ -90,7 +90,11 @@ com.hwb.aianswerer/
 ├── Constants.kt               # Constants · prompt assembly · i18n routing hub
 ├── api/
 │   ├── OpenAIClient.kt        # OpenAI compatible API client
-│   ├── WebSearchProviders.kt  # Multi-provider web search
+│   ├── search/                 # Web search module
+│   │   ├── WebSearchProviders.kt # Multi-provider web search
+│   │   ├── WebSearchClientFactory.kt # Provider factory
+│   │   ├── WebSearchProvider.kt # Search provider base class
+│   │   └── WebSearchToolExecutor.kt # LLM tool-calling search executor
 │   └── vision/                # Vision model module
 │       ├── VisionProvider.kt
 │       ├── VisionProviderFactory.kt
@@ -102,7 +106,7 @@ com.hwb.aianswerer/
 │   ├── UIConfig.kt            # UI configuration
 │   ├── VisionConfig.kt        # Vision model configuration
 │   └── ConfigStorage.kt       # MMKV storage key definitions
-├── models/                    # Data models
+├── models/                    # Data models (ChatMessage, ToolSpec, ToolCall, ModelCapabilityChecker etc.)
 ├── providers/                 # Model provider management
 │   ├── ProviderStorage.kt
 │   ├── ProviderConfigResolver.kt
@@ -119,7 +123,8 @@ com.hwb.aianswerer/
 │   │   └── ...                # Other components
 │   ├── pages/                 # Pages
 │   │   ├── HomePage.kt        # Home page
-│   │   └── SettingsPage.kt    # Settings page
+│   │   ├── SettingsPage.kt    # Settings page
+│   │   └── WebSearchPage.kt   # Web search settings
 │   ├── dialogs/               # Dialogs
 │   ├── icons/                 # Local icon definitions
 │   └── theme/                 # Material3 theme
@@ -133,6 +138,7 @@ com.hwb.aianswerer/
 ### Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) or [变更日志](变更日志.md). Recent highlights:
+- **Unreleased**: LLM Tool Calling web search mode + two-mode selector + floating window collapsible cards & WRAP_CONTENT adaptive height
 - **v1.7.0**: Four-window floating architecture (A/B/C/D independent windows) + C/D lifecycle decoupling + configurable long-press duration + model config detection + pill badge removal + multi-window bug fixes
 - **v1.6.2**: Dark mode button theme responsiveness + multi-version API URL fix (v2/v3/v4 compatibility)
 ### License

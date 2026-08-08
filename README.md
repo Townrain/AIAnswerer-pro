@@ -93,7 +93,11 @@ com.hwb.aianswerer/
 ├── Constants.kt               # 常量 · 提示词组装 · 多语言路由中枢
 ├── api/
 │   ├── OpenAIClient.kt        # OpenAI 兼容 API 客户端
-│   ├── WebSearchProviders.kt  # 多供应商联网搜索
+│   ├── search/                 # 联网搜索模块
+│   │   ├── WebSearchProviders.kt # 多供应商联网搜索
+│   │   ├── WebSearchClientFactory.kt # 供应商工厂
+│   │   ├── WebSearchProvider.kt # 搜索 Provider 基类
+│   │   └── WebSearchToolExecutor.kt # LLM 工具调用搜索执行器
 │   └── vision/                # 视觉模型模块
 │       ├── VisionProvider.kt
 │       ├── VisionProviderFactory.kt
@@ -105,7 +109,7 @@ com.hwb.aianswerer/
 │   ├── UIConfig.kt            # UI 配置
 │   ├── VisionConfig.kt        # 视觉模型配置
 │   └── ConfigStorage.kt       # MMKV 存储键定义
-├── models/                    # 数据模型
+├── models/                    # 数据模型（ChatMessage、ToolSpec、ToolCall、ModelCapabilityChecker 等）
 ├── providers/                 # 模型厂商管理
 │   ├── ProviderStorage.kt
 │   ├── ProviderConfigResolver.kt
@@ -122,7 +126,8 @@ com.hwb.aianswerer/
 │   │   └── ...                # 其他组件
 │   ├── pages/                 # 页面
 │   │   ├── HomePage.kt        # 主页
-│   │   └── SettingsPage.kt    # 设置页
+│   │   ├── SettingsPage.kt    # 设置页
+│   │   └── WebSearchPage.kt   # 联网搜索设置
 │   ├── dialogs/               # 对话框
 │   ├── icons/                 # 本地图标定义
 │   └── theme/                 # Material3 主题
@@ -136,6 +141,7 @@ com.hwb.aianswerer/
 ### 更新说明
 
 详见 [变更日志](变更日志.md) 或 [CHANGELOG](CHANGELOG.md)。近期重要更新：
+- **最新（未发布）**: 联网搜索 LLM 工具调用模式 + 搜索模式二选一 + 悬浮窗折叠交互与 C/D 窗 WRAP_CONTENT 自适应
 - **v1.7.0**: 四窗口悬浮窗架构（A/B/C/D 独立窗口）+ C/D 生命周期分离 + 长按时长自定义 + 模型配置检测 + 悬浮窗徽标移除 + 多窗口缺陷修复
 - **v1.6.2**: 多厂商测试连接修复 + 悬浮按钮拖拽卡死修复 + 暗色主题响应 + API URL 多版本兼容 + LLM maxTokens 512→4096 + 图标去重 & 主题合规 & 动画可测试性重构 + 答案卡片独立组件
 
