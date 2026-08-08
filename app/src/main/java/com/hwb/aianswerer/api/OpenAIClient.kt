@@ -17,6 +17,8 @@ import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.JsonUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -112,10 +114,12 @@ class OpenAIClient {
             )
 
             // function calling 工具模式：携带 web_search 工具定义，由模型自主决定是否搜索
-            val tools = if (WebSearchToolExecutor.isToolModeActive()) {
-                AppLog.d("API", "analyzeQuestion: tool mode active, attaching web_search tool")
-                listOf(Constants.buildWebSearchToolSpec())
+            var tools = if (WebSearchToolExecutor.isToolModeActive()) {
+                val spec = Constants.buildWebSearchToolSpec()
+                AppLog.d("TOOL", "analyzeQuestion: tool mode active, attaching tool '${spec.function.name}' with messages=${messages.size}")
+                listOf(spec)
             } else {
+                AppLog.d("TOOL", "analyzeQuestion: tool mode inactive, using pre-search injection path")
                 null
             }
 
@@ -124,6 +128,7 @@ class OpenAIClient {
             var rounds = 0
             while (true) {
                 rounds++
+                AppLog.d("TOOL", "round $rounds: sending chat request (messages=${messages.size}, tools=${tools != null})")
                 val chatRequest = ChatRequest(
                     model = modelName,
                     messages = messages,
@@ -156,6 +161,9 @@ class OpenAIClient {
                 // 模型请求调用工具：回传 assistant 消息 + 执行搜索 + tool 消息回填，进入下一轮
                 if (streamResult.toolCalls.isNotEmpty() && rounds <= MAX_TOOL_ROUNDS && tools != null) {
                     AppLog.i("API", "tool_calls received (round=$rounds): ${streamResult.toolCalls.size} calls")
+                    streamResult.toolCalls.forEach {
+                        AppLog.d("TOOL", "round $rounds: model requested tool call id=${it.id}, name=${it.name}, argsLen=${it.arguments.length}")
+                    }
                     messages.add(
                         ChatMessage(
                             role = "assistant",
@@ -170,9 +178,11 @@ class OpenAIClient {
                     )
                     for (tc in streamResult.toolCalls) {
                         // LLM 输出不可信：query 做长度/控制字符防护后进入搜索请求
-                        val query = sanitizeToolQuery(parseToolQuery(tc.arguments) ?: recognizedText)
-                        AppLog.d("API", "executing tool ${tc.name}(queryLen=${query.length})")
+                        val parsed = parseToolQuery(tc.arguments)
+                        val query = sanitizeToolQuery(parsed ?: recognizedText)
+                        AppLog.d("TOOL", "round $rounds: executing ${tc.name}: argsParsed=${parsed != null}, fallbackToQuestion=${parsed == null}, queryLen=${query.length}")
                         val searchResult = WebSearchToolExecutor.execute(query, 2)
+                        AppLog.d("TOOL", "round $rounds: tool result: chars=${searchResult.length}, blank=${searchResult.isBlank()}")
                         messages.add(
                             ChatMessage(
                                 role = "tool",
@@ -184,14 +194,20 @@ class OpenAIClient {
                     continue
                 }
 
-                // 工具循环封顶：模型仍在请求工具但已超出轮数上限，强制以当前 content 作为答案
+                // 工具循环封顶：模型仍在请求工具但已超出轮数上限
                 if (streamResult.toolCalls.isNotEmpty() && rounds > MAX_TOOL_ROUNDS) {
                     AppLog.w("API", "tool loop capped after $MAX_TOOL_ROUNDS rounds, forcing answer from remaining content (len=${streamResult.content.length})")
+                    // 防呆：封顶且 content 为空（推理模型仍在输出 reasoning、未给出答案）时，
+                    // 去掉 tools 再发最后一轮，强制模型直接作答，避免返回空答案
+                    if (streamResult.content.isBlank() && tools != null) {
+                        AppLog.w("API", "tool loop capped with empty content, retrying without tools to force final answer"); tools = null; continue
+                    }
                 }
 
                 answerContent = streamResult.content
                 break
             }
+            AppLog.d("TOOL", "tool loop finished: rounds=$rounds, answerLen=${answerContent.length}")
 
             AppLog.d("API", "AI原始响应长度: ${answerContent.length}")
             // 完整响应含题目与答案内容，降级为 debug 级别（受调试日志开关控制），避免无条件写入日志文件
@@ -415,10 +431,11 @@ class OpenAIClient {
     suspend fun testConcurrency(
         apiUrl: String = AppConfig.getApiUrl(),
         apiKey: String = AppConfig.getApiKey(),
-        modelName: String = AppConfig.getModelName()
+        modelName: String = AppConfig.getModelName(),
+        concurrency: Int = 1
     ): Result<Long> = withContext(Dispatchers.IO) {
         val _start = System.currentTimeMillis()
-        AppLog.enter("API", "testConcurrency")
+        AppLog.enter("API", "testConcurrency concurrency=$concurrency")
         try {
             if (!AppConfig.isApiConfigValid(apiUrl, apiKey, modelName)) {
                 return@withContext Result.failure(
@@ -427,38 +444,48 @@ class OpenAIClient {
             }
 
             val startTime = System.currentTimeMillis()
-
             val messages = listOf(
                 ChatMessage(role = "user", content = "hello")
             )
-            val chatRequest = ChatRequest(
-                model = modelName,
-                messages = messages,
-                temperature = 0.3
-            )
-            val requestBody = gson.toJson(chatRequest)
-                .toRequestBody("application/json; charset=utf-8".toMediaType())
-
-            val request = Request.Builder()
-                .url(apiUrl)
-                .addHeader("Authorization", "Bearer $apiKey")
-                .addHeader("Content-Type", "application/json")
-                .post(requestBody)
-                .build()
-
-            val response = withTimeout(TEST_TIMEOUT_MS) {
-                client.newCall(request).awaitCancellable()
-            }
-            response.use { resp ->
-                val elapsed = System.currentTimeMillis() - startTime
-
-                if (resp.isSuccessful) {
-                    AppLog.leave("API", "testConcurrency", _start)
-                    Result.success(elapsed)
-                } else {
-                    AppLog.leave("API", "testConcurrency", _start)
-                    Result.failure(Exception("HTTP ${resp.code}"))
+            // 并发测试：同时发出 N 个请求，验证服务商真实并发能力（限流/超时会在这里暴露）
+            val n = concurrency.coerceIn(1, 20)
+            val results = (1..n).map {
+                async {
+                    try {
+                        val chatRequest = ChatRequest(
+                            model = modelName,
+                            messages = messages,
+                            temperature = 0.3
+                        )
+                        val requestBody = gson.toJson(chatRequest)
+                            .toRequestBody("application/json; charset=utf-8".toMediaType())
+                        val request = Request.Builder()
+                            .url(apiUrl)
+                            .addHeader("Authorization", "Bearer $apiKey")
+                            .addHeader("Content-Type", "application/json")
+                            .post(requestBody)
+                            .build()
+                        withTimeout(TEST_TIMEOUT_MS) {
+                            client.newCall(request).awaitCancellable().use { it.code }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        -1
+                    }
                 }
+            }.awaitAll()
+
+            val ok = results.count { it == 200 }
+            val elapsed = System.currentTimeMillis() - startTime
+            AppLog.i("API", "testConcurrency: $ok/$n ok, elapsed=${elapsed}ms")
+            AppLog.leave("API", "testConcurrency", _start)
+            return@withContext if (ok == n) {
+                Result.success(elapsed)
+            } else {
+                Result.failure(
+                    Exception("并发测试 $ok/$n 成功（配置并发数 $n），请降低最大并发数或检查 API 限流")
+                )
             }
         } catch (e: CancellationException) {
             throw e

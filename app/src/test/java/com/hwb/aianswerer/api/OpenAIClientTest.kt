@@ -670,14 +670,38 @@ data: [DONE]
     }
 
     @Test
-    fun `analyzeQuestion - tool loop caps at MAX_TOOL_ROUNDS`() = runBlocking {
+    fun `analyzeQuestion - tool loop caps with empty content retries without tools`() = runBlocking {
         toolModeOn()
         val toolChunk = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_x\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"q\\\"}\"}}]}}]}")
         repeat(3) { server.enqueue(MockResponse().setResponseCode(200).setBody(toolChunk)) }
+        // 封顶重试轮（tools=null）：模型直接给出答案
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("B")))
 
         val result = client.analyzeQuestion("test", systemPrompt = "test")
 
-        // round 3 stops looping (rounds=3 > MAX_TOOL_ROUNDS=2); empty content degrades to a fallback answer
+        // round 3 封顶时 content 为空 → 去工具重发一轮强制作答，共 4 次请求
+        assertTrue(result.isSuccess)
+        assertEquals(4, server.requestCount)
+        coVerify(exactly = 2) { WebSearchToolExecutor.execute(any(), any()) }
+        // 重试轮请求体不应再携带 tools
+        server.takeRequest() // round1
+        server.takeRequest() // round2
+        server.takeRequest() // round3
+        val retryBody = server.takeRequest().body.readUtf8()
+        assertFalse(retryBody.contains("\"tools\""))
+    }
+
+    @Test
+    fun `analyzeQuestion - tool loop capped with non-empty content returns content directly`() = runBlocking {
+        toolModeOn()
+        val toolChunk = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_x\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"q\\\"}\"}}]}}]}")
+        repeat(2) { server.enqueue(MockResponse().setResponseCode(200).setBody(toolChunk)) }
+        // round 3 封顶但 content 非空 → 直接作为答案，不重试（tool_chunk 不带 [DONE]，content 正常累积）
+        val capped = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_x\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"q\\\"}\"}}]}}]}", done = false) + "\n" + answerDelta("C")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(capped))
+
+        val result = client.analyzeQuestion("test", systemPrompt = "test")
+
         assertTrue(result.isSuccess)
         assertEquals(3, server.requestCount)
         coVerify(exactly = 2) { WebSearchToolExecutor.execute(any(), any()) }

@@ -27,6 +27,7 @@ object WebSearchToolExecutor {
      */
     suspend fun execute(query: String, maxResults: Int = 2): String {
         if (query.isBlank()) return ""
+        val startMs = System.currentTimeMillis()
         val providers = WebSearchStorage.getEnabledProviders()
         if (providers.isEmpty()) {
             AppLog.w("WebSearch", "execute: no enabled providers, skipping")
@@ -34,26 +35,41 @@ object WebSearchToolExecutor {
         }
         val selectedName = AppConfig.getWebSearchProvider()
         val selected = providers.find { it.name == selectedName } ?: providers.first()
-        AppLog.d("WebSearch", "execute: using provider=${selected.name}, query=$query")
+        AppLog.d("WebSearch", "execute: provider=${selected.name}, queryLen=${query.length}, maxResults=$maxResults")
         val provider = WebSearchClientFactory.create(selected)
         val results = provider.search(query, maxResults)
         if (results.isEmpty()) {
-            AppLog.w("WebSearch", "execute: provider returned empty results")
+            AppLog.w("WebSearch", "execute: provider returned empty results (elapsed=${System.currentTimeMillis() - startMs}ms)")
             return ""
         }
-        return results.joinToString("\n") { "【${it.title}】${it.snippet}" }
+        val text = results.joinToString("\n") { "【${it.title}】${it.snippet}" }
+        AppLog.d("WebSearch", "execute: done provider=${selected.name}, results=${results.size}, chars=${text.length}, elapsed=${System.currentTimeMillis() - startMs}ms")
+        return text
     }
 
     /**
      * 判断搜索工具（function calling）模式是否激活。
-     * 需要同时满足：配置开启工具模式 + 搜索全局开关开启 + 存在已启用供应商 + 模型支持函数调用（未知模型默认视为支持）。
+     * 需要同时满足：配置开启工具模式 + 搜索全局开关开启 + 存在已启用供应商 + 模型支持函数调用（未知模型按不支持处理，降级为预搜索注入）。
      */
     fun isToolModeActive(): Boolean {
-        if (!AppConfig.isSearchToolModeEnabled()) return false
-        if (!WebSearchStorage.isSearchEnabled()) return false
-        if (WebSearchStorage.getEnabledProviders().isEmpty()) return false
+        if (!AppConfig.isSearchToolModeEnabled()) {
+            AppLog.d("TOOL", "isToolModeActive=false: search tool mode disabled in settings")
+            return false
+        }
+        if (!WebSearchStorage.isSearchEnabled()) {
+            AppLog.d("TOOL", "isToolModeActive=false: web search globally disabled")
+            return false
+        }
+        if (WebSearchStorage.getEnabledProviders().isEmpty()) {
+            AppLog.d("TOOL", "isToolModeActive=false: no enabled search providers")
+            return false
+        }
         val modelName = AppConfig.getModelName()
-        if (modelName.isNotBlank() && !ModelCapabilityChecker.isFunctionCallingModel(modelName)) return false
+        if (modelName.isNotBlank() && !ModelCapabilityChecker.isFunctionCallingModel(modelName)) {
+            AppLog.d("TOOL", "isToolModeActive=false: model '$modelName' not function-calling capable, fallback to pre-search injection")
+            return false
+        }
+        AppLog.d("TOOL", "isToolModeActive=true: tool mode active (model='$modelName')")
         return true
     }
 }
