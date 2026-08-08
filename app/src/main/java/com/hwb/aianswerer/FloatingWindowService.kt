@@ -1354,13 +1354,21 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "closeAnswer called")
         viewModel.currentFetchJob?.cancel()
         viewModel.currentFetchJob = null
+        val recordingActive = viewModel.isRecording.value || viewModel.isProcessingRecording.value
         viewModel.showAnswer.value = false
         viewModel.answerText.value = null
-        viewModel.recordingAnswers.value = emptyList()
         viewModel.paginatedAnswers.value = emptyList()
         viewModel.paginatedCopyTexts.value = emptyList()
         viewModel.floatingStatus.value = FloatingStatus.Idle
         viewModel.statusMessage.value = null
+        // 防呆：录制进行中或结果处理中，只隐藏窗口、保留数据与状态；
+        // 录制中删窗 → 结束录制时照常显示；处理中删窗 → 任务完成时自动重新弹出
+        if (recordingActive) {
+            AppLog.d("FWS", "closeAnswer: recording active/processing, preserving data")
+            viewModel.hasContent = false
+            return
+        }
+        viewModel.recordingAnswers.value = emptyList()
         // 补齐录制/图片相关复位，避免关闭后状态残留（L1）
         viewModel.recordingCopyTexts.value = emptyList()
         viewModel.recordingCaptureCount.value = 0
@@ -1374,6 +1382,20 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
     private fun closeStatus() {
         viewModel.currentFetchJob?.cancel()
         viewModel.currentFetchJob = null
+        val recordingActive = viewModel.isRecording.value || viewModel.isProcessingRecording.value
+        // 防呆：录制进行中或结果处理中，不取消录制任务也不清空已收集答案，
+        // 避免误触关闭导致全部答案丢失；录制中删窗 → 结束录制时照常显示
+        if (recordingActive) {
+            AppLog.d("FWS", "closeStatus: recording active/processing, preserving data")
+            viewModel.showAnswer.value = false
+            viewModel.answerText.value = null
+            viewModel.paginatedAnswers.value = emptyList()
+            viewModel.paginatedCopyTexts.value = emptyList()
+            viewModel.floatingStatus.value = FloatingStatus.Idle
+            viewModel.statusMessage.value = null
+            viewModel.hasContent = false
+            return
+        }
         recorder.cancel()
         imageCollector.cancel()
         viewModel.isImageCollecting.value = false

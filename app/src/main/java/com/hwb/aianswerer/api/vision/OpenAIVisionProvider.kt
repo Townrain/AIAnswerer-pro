@@ -12,6 +12,8 @@ import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.JsonUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -158,9 +160,23 @@ class OpenAIVisionProvider(
 
                     val parsed = parseResponse(jsonStr)
                     AppLog.d("VLM", "${parsed.questionCount}题 | ${parsed.searchKeywords}")
+                    // 调试：完整输出 VLM 提取的题目文本（单题/多图模式看 extractedText，多题分离看 questions）
+                    AppLog.d("VLM", "[VLM-FULL] mode=$multiPage multiQuestion=${parsed.isMultiQuestion} extractedTextLen=${parsed.extractedText.length}")
+                    if (parsed.extractedText.isNotBlank()) {
+                        AppLog.d("VLM", "[VLM-FULL] extractedText: ${parsed.extractedText}")
+                    }
+                    if (parsed.questions.isNotEmpty()) {
+                        parsed.questions.forEach { q ->
+                            AppLog.d("VLM", "[VLM-FULL] question#${q.index} (${q.text.length}): ${q.text}")
+                        }
+                    }
                     AppLog.leave("VLM", "analyze", _start)
                     Result.success(parsed.copy(rawResponse = body))
                 }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                // 超时不应取消整个分析协程：转为失败结果，让调用方降级（如 OCR）
+                AppLog.e("VLM", "analyze timeout after ${WITH_TIMEOUT_MS}ms, degrading to caller fallback", e)
+                Result.failure(Exception("VLM timeout after ${WITH_TIMEOUT_MS}ms"))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -364,6 +380,8 @@ class OpenAIVisionProvider(
     }
 
     companion object {
+        // VLM 图片分析为慢请求，超时保持较长（120s），避免误杀正常慢响应；
+        // 排队问题由 vlmSemaphore 固定小并发解决，而非缩短超时
         const val READ_TIMEOUT_SEC = 120L
         const val CALL_TIMEOUT_SEC = 130L
         const val WITH_TIMEOUT_MS = 120_000L
@@ -423,9 +441,11 @@ class OpenAIVisionProvider(
 
         /**
          * 测试视觉模型API并发性能，返回响应时间（毫秒）
+         * 并发发送 N 个图片分析请求，验证服务商真实并发能力；
+         * 限流/排队/超时会在测试中直接暴露，避免录制时才发现
          */
-        suspend fun testConcurrency(config: OpenAIVisionConfig): Result<Long> {
-            AppLog.d("VLM", "开始测试并发性能, baseUrl: ${config.baseUrl}, model: ${config.modelName}")
+        suspend fun testConcurrency(config: OpenAIVisionConfig, concurrency: Int = 3): Result<Long> {
+            AppLog.d("VLM", "开始测试并发性能, baseUrl: ${config.baseUrl}, model: ${config.modelName}, concurrency=$concurrency")
             return withContext(Dispatchers.IO) {
                 try {
                     if (config.apiKey.isBlank()) {
@@ -434,12 +454,12 @@ class OpenAIVisionProvider(
                     }
 
                     val startTime = System.currentTimeMillis()
+                    val n = concurrency.coerceIn(1, 20)
 
                     // 创建一个简单的测试图片
                     val testBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(testBitmap)
                     canvas.drawColor(Color.WHITE)
-
                     val baos = java.io.ByteArrayOutputStream()
                     testBitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
                     testBitmap.recycle()
@@ -447,54 +467,58 @@ class OpenAIVisionProvider(
                         baos.toByteArray(),
                         android.util.Base64.NO_WRAP
                     )
-
-                    // 构建请求
                     val imageContent = ContentPart(
                         type = "image_url",
                         imageUrl = ImageUrlObj(url = "data:image/jpeg;base64,$base64")
                     )
-                    val textContent = ContentPart(type = "text", text = "test")
-                    val message = OpenAIMessage(
-                        role = "user",
-                        content = listOf(imageContent, textContent)
-                    )
-                    val request = OpenAIVisionRequest(
-                        model = config.modelName,
-                        messages = listOf(message),
-                        temperature = config.temperature,
-                        maxTokens = 64
-                    )
-                    val requestBody = JsonUtil.gson.toJson(request)
-                        .toRequestBody("application/json; charset=utf-8".toMediaType())
 
-                    val requestBuilder = okhttp3.Request.Builder()
-                        .url(config.baseUrl)
-                        .addHeader("Authorization", "Bearer ${config.apiKey}")
-                        .addHeader("Content-Type", "application/json")
-                        .post(requestBody)
-
-                    // 添加额外headers
-                    config.extraHeaders.forEach { (key, value) ->
-                        requestBuilder.addHeader(key, value)
-                    }
-
-                    AppLog.d("VLM", "发送测试请求")
-                    val response = testClient.newCall(requestBuilder.build()).execute()
-                    response.use { resp ->
-                        val elapsed = System.currentTimeMillis() - startTime
-
-                        if (resp.isSuccessful) {
-                            AppLog.d("VLM", "测试成功，耗时: ${elapsed}ms")
-                            Result.success(elapsed)
-                        } else {
-                            AppLog.e("VLM", "测试失败: HTTP ${resp.code}")
-                            Result.failure(Exception("HTTP ${resp.code}"))
+                    // 并发发出 N 个图片分析请求
+                    val results = (1..n).map {
+                        async {
+                            try {
+                                val message = OpenAIMessage(
+                                    role = "user",
+                                    content = listOf(imageContent, ContentPart(type = "text", text = "test"))
+                                )
+                                val request = OpenAIVisionRequest(
+                                    model = config.modelName,
+                                    messages = listOf(message),
+                                    temperature = config.temperature,
+                                    maxTokens = 64
+                                )
+                                val requestBody = JsonUtil.gson.toJson(request)
+                                    .toRequestBody("application/json; charset=utf-8".toMediaType())
+                                val requestBuilder = okhttp3.Request.Builder()
+                                    .url(config.baseUrl)
+                                    .addHeader("Authorization", "Bearer ${config.apiKey}")
+                                    .addHeader("Content-Type", "application/json")
+                                    .post(requestBody)
+                                config.extraHeaders.forEach { (key, value) -> requestBuilder.addHeader(key, value) }
+                                withTimeout(TEST_TIMEOUT_SEC * 1000) {
+                                    testClient.newCall(requestBuilder.build()).execute().use { it.code }
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                -1
+                            }
                         }
+                    }.awaitAll()
+
+                    val ok = results.count { it == 200 }
+                    val elapsed = System.currentTimeMillis() - startTime
+                    AppLog.i("VLM", "testConcurrency: $ok/$n ok, elapsed=${elapsed}ms")
+                    return@withContext if (ok == n) {
+                        Result.success(elapsed)
+                    } else {
+                        Result.failure(
+                            Exception("并发测试 $ok/$n 成功（并发 $n）——请降低最大并发数，否则录制/答题时可能排队超时")
+                        )
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    AppLog.e("VLM", "测试异常: ${e.message}")
+                    AppLog.e("VLM", "并发测试异常", e)
                     Result.failure(e)
                 }
             }

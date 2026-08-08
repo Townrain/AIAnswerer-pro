@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.hwb.aianswerer.MyApplication
+import com.hwb.aianswerer.api.OpenAIClient
+import com.hwb.aianswerer.api.vision.OpenAIVisionConfig
+import com.hwb.aianswerer.api.vision.OpenAIVisionProvider
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.providers.WebSearchStorage
 import com.hwb.aianswerer.ui.components.AppTextField
@@ -78,6 +81,8 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
     var llmTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
     var vlmTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
     var searchTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
+    var llmConcurrencyTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
+    var vlmConcurrencyTest by remember { mutableStateOf<ConnTest>(ConnTest.Idle) }
     var toastMsg by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     var showQuestion by remember { mutableStateOf(AppConfig.getShowAnswerCardQuestion()) }
@@ -126,6 +131,41 @@ fun SettingsPage(t: Th, onBack: () -> Unit, onWebSearch: () -> Unit = {}, onMode
                 if (maxConcurrency > 20) {
                     Text("并发数过高可能导致 API 限流", style = DW.BodySmall.copy(color = t.err), modifier = Modifier.padding(bottom = 4.dp))
                 }
+                Spacer(Modifier.height(4.dp))
+                Sep(t)
+                Text("并发测试（按当前并发数 ${maxConcurrency.toInt()} 同时发请求，验证服务商真实并发能力）", style = DW.LabelLarge.copy(color = t.ob), modifier = Modifier.padding(vertical = 8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TestChip("LLM", llmConcurrencyTest, t, Modifier.weight(1f)) {
+                        if (llmConcurrencyTest is ConnTest.Testing) return@TestChip
+                        val key = AppConfig.getApiKey()
+                        if (key.isBlank()) { toastMsg = "请先在模型厂商设置中配置 LLM API Key"; return@TestChip }
+                        llmConcurrencyTest = ConnTest.Testing
+                        val n = maxConcurrency.toInt()
+                        scope.launch {
+                            llmConcurrencyTest = OpenAIClient.getInstance().testConcurrency(concurrency = n).fold(
+                                { ms -> ConnTest.Ok(ms.toInt()) },
+                                { e -> ConnTest.Fail(e.message ?: "并发测试失败") }
+                            )
+                        }
+                    }
+                    TestChip("VLM", vlmConcurrencyTest, t, Modifier.weight(1f)) {
+                        if (vlmConcurrencyTest is ConnTest.Testing) return@TestChip
+                        val key = AppConfig.getVisionApiKey()
+                        if (key.isBlank()) { toastMsg = "请先在视觉模型设置中配置 API Key"; return@TestChip }
+                        vlmConcurrencyTest = ConnTest.Testing
+                        val n = maxConcurrency.toInt()
+                        scope.launch {
+                            vlmConcurrencyTest = OpenAIVisionProvider.testConcurrency(
+                                OpenAIVisionConfig.fromAppConfig(), concurrency = n
+                            ).fold(
+                                { ms -> ConnTest.Ok(ms.toInt()) },
+                                { e -> ConnTest.Fail(e.message ?: "并发测试失败") }
+                            )
+                        }
+                    }
+                }
+                TestResultLine("LLM", llmConcurrencyTest, t)
+                TestResultLine("VLM", vlmConcurrencyTest, t)
                 Spacer(Modifier.height(4.dp))
                 Sep(t)
                 Text("连接测试", style = DW.LabelLarge.copy(color = t.ob), modifier = Modifier.padding(vertical = 8.dp))

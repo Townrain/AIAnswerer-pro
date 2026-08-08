@@ -229,6 +229,10 @@ class FloatingWindowViewModel : ViewModel() {
         override fun getCurrentFetchJob(): Job? = currentFetchJob
         override fun setCurrentFetchJob(job: Job?) { currentFetchJob = job }
         override fun clearAnswers() {
+            // 防呆：录制结果仍在处理/展示中时，跳过清理，避免误触主按钮清空录制答案
+            if (isProcessingRecording.value) {
+                AppLog.d("VM", "clearAnswers skipped: recording results processing"); return
+            }
             // S3: 新捕获开始即递增代次，让仍在途的旧 fetch/录制回调立即失效
             nextGeneration()
             answerText.value = null

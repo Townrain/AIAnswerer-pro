@@ -548,4 +548,79 @@ class RecordingCoordinatorTest {
         assertTrue(receivedAnswers[0].isEmpty())
     }
 
+    // ===========================================================
+    //  防呆回归: 结束录制时部分答案立即展示 + 误触保护
+    @Test
+    fun stop_with_pending_jobs_and_partial_answers_notifies_immediately() = runBlocking {
+        // 场景: 第1题已完成, 第2题仍在途 — stop 时应立即通知已有答案, 不等全部 job
+        coordinator.start()
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("question")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } answers {
+            Result.success(listOf(mockAnswer()))
+        }
+
+        val latch = CountDownLatch(1)
+        val receivedAnswers = mutableListOf<List<Pair<Int, String>>>()
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers {
+            receivedAnswers.add(firstArg())
+            latch.countDown()
+        }
+
+        // 第一题快速完成
+        coordinator.processBitmap(mockBitmap())
+        delay(50)
+        // 第二题模拟在途（慢 LLM）— 用不同题目文本避免被去重跳过
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("question two")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(500)
+            Result.success(listOf(mockAnswer()))
+        }
+        coordinator.processBitmap(mockBitmap())
+        delay(50)
+
+        assertTrue("still has in-flight job, activeJobs=${coordinator.getActiveJobCount()}", coordinator.getActiveJobCount() >= 1)
+        val result = coordinator.stop()
+        assertTrue(result is RecordingCoordinator.StopResult.Processing)
+
+        // 防呆: 已有部分答案时应立即收到至少一次通知（不阻塞等待全部完成）
+        assertTrue("partial notified, received=${receivedAnswers.size}", latch.await(1, TimeUnit.SECONDS))
+        assertTrue(receivedAnswers.isNotEmpty())
+        assertTrue(receivedAnswers[0].isNotEmpty())
+        // 最终通知（等待在途 job 完成后的 ensureResultsNotified）
+        delay(800)
     }
+
+    @Test
+    fun cancel_after_stop_keeps_partial_answers_visible_via_notify() = runBlocking {
+        // 场景: 用户结束录制后误触关闭 → Service 层防呆已跳过 recorder.cancel();
+        // 此处验证 Coordinator 自身: stop 的部分结果已送达后再 cancel 不丢已展示数据
+        coordinator.start()
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("question")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
+            listOf(mockAnswer())
+        )
+
+        val latch = CountDownLatch(1)
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers { latch.countDown() }
+
+        coordinator.processBitmap(mockBitmap())
+        delay(50)
+
+        // 制造在途 job — 用不同题目文本避免被去重跳过
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("question two")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(Long.MAX_VALUE)
+            Result.success(listOf(mockAnswer()))
+        }
+        coordinator.processBitmap(mockBitmap())
+        delay(50)
+
+        coordinator.stop()
+        // 部分结果已立即通知
+        assertTrue("partial notified", latch.await(1, TimeUnit.SECONDS))
+
+        // 误触保护模拟: cancel 清状态但 answers 已通过通知送达 UI
+        coordinator.cancel()
+        assertFalse(coordinator.isActive)
+    }
+}

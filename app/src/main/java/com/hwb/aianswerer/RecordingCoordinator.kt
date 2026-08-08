@@ -86,6 +86,8 @@ class RecordingCoordinator(
         activeJobCount.set(0)
         val maxConcurrency = AppConfig.getMaxConcurrency()
         llmSemaphore = Semaphore(maxConcurrency)
+        // VLM 与 LLM 共用用户配置的并发数；若服务商并发能力不足，
+        // 应由设置页「并发测试」提前暴露限流，而非在录制时硬编码限制
         vlmSemaphore = Semaphore(maxConcurrency)
         AppLog.i("REC", "startRecording maxConcurrency=$maxConcurrency")
     }
@@ -100,6 +102,13 @@ class RecordingCoordinator(
             return StopResult.Completed
         }
         isProcessing = true
+        // 防呆：立即先展示已收集到的部分答案，避免等待全部在途 job 期间误触导致答案丢失；
+        // 全部完成后 ensureResultsNotified 会再补一次最终通知（幂等，不重复）
+        if (answers.isNotEmpty()) {
+            scope.launch(Dispatchers.Main) {
+                AppLog.d("REC", "stop: partial results (${answers.size}) shown immediately"); notifyResults()
+            }
+        }
         // M9: 兜底——所有 job 去重/失败时 notifyResults 可能永不触发（isProcessing && jobs.isEmpty() 条件不满足），
         //     启动兜底协程：jobs 清空后强制 notifyResults（幂等，防止与正常路径重复触发）
         scope.launch {

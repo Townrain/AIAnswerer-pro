@@ -254,4 +254,37 @@ class FloatingWindowViewModelTest {
         assertEquals(1, count)
         assertEquals(1, viewModel.recordingCaptureCount.value)
     }
+
+    // ── 防呆: 录制结果处理中 clearAnswers 跳过清理 ──
+
+    @Test
+    fun `clearAnswers skipped while recording results processing`() {
+        // 场景: 结束录制后仍在处理（isProcessingRecording=true），误触主按钮不应清空录制答案
+        viewModel.isProcessingRecording.value = true
+        viewModel.recordingAnswers.value = listOf(1 to "答案1", 2 to "答案2")
+        viewModel.recordingCopyTexts.value = listOf(1 to "第1题：A")
+        viewModel.recordingCaptureCount.value = 2
+        viewModel.showAnswer.value = true
+        viewModel.answerText.value = "旧答案"
+
+        viewModel.captureCallbacks.clearAnswers()
+
+        // 录制数据被保留，展示状态也保留（等任务完成自动重新弹出）
+        assertEquals(2, viewModel.recordingAnswers.value.size)
+        assertEquals(2, viewModel.recordingCaptureCount.value)
+        assertTrue(viewModel.showAnswer.value)
+        assertEquals("旧答案", viewModel.answerText.value)
+    }
+
+    @Test
+    fun `clearAnswers proceeds when not processing recording`() {
+        viewModel.isProcessingRecording.value = false
+        viewModel.recordingAnswers.value = listOf(1 to "答案1")
+        viewModel.showAnswer.value = true
+
+        viewModel.captureCallbacks.clearAnswers()
+
+        assertTrue(viewModel.recordingAnswers.value.isEmpty())
+        assertFalse(viewModel.showAnswer.value)
+    }
 }
