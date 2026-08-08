@@ -46,6 +46,7 @@ internal object ConfigStorage {
     internal const val KEY_CAPTURE_MODE = "capture_mode"
     internal const val KEY_STEALTH_MODE = "stealth_mode"
     internal const val KEY_WEB_SEARCH_PROVIDER = "web_search_provider"
+    internal const val KEY_SEARCH_TOOL_MODE = "search_tool_mode"
     internal const val KEY_OUTPUT_LANGUAGE = "output_language"
     internal const val KEY_QUICK_BUTTON_LAYOUT = "quick_button_layout"
     internal const val KEY_DYNAMIC_VISION_MODELS = "dynamic_vision_models"

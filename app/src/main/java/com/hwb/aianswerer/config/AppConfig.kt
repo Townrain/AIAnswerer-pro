@@ -71,6 +71,8 @@ object AppConfig {
     fun getWebSearchProvider(): String = SearchConfig.getWebSearchProvider()
     fun isRegexFilterEnabled(): Boolean = SearchConfig.isRegexFilterEnabled()
     fun saveRegexFilterEnabled(enabled: Boolean) = SearchConfig.saveRegexFilterEnabled(enabled)
+    fun isSearchToolModeEnabled(): Boolean = SearchConfig.isSearchToolModeEnabled()
+    fun saveSearchToolModeEnabled(enabled: Boolean) = SearchConfig.saveSearchToolModeEnabled(enabled)
 
     // ── Capture ──
     fun saveCropMode(mode: String) = CaptureConfig.saveCropMode(mode)

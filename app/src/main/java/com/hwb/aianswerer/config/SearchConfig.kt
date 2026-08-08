@@ -14,6 +14,20 @@ internal object SearchConfig {
         return ConfigStorage.requireMmkv().decodeString(ConfigStorage.KEY_WEB_SEARCH_PROVIDER, "") ?: ""
     }
 
+    // ========== 搜索模式（function calling / 预搜索注入） ==========
+
+    /**
+     * 是否启用 function calling 工具模式（默认 true）。
+     * true 时搜索由 LLM 自主调用工具完成；false 时回退旧预搜索注入模式。
+     */
+    fun isSearchToolModeEnabled(): Boolean {
+        return ConfigStorage.requireMmkv().decodeBool(ConfigStorage.KEY_SEARCH_TOOL_MODE, true)
+    }
+
+    fun saveSearchToolModeEnabled(enabled: Boolean) {
+        ConfigStorage.requireMmkv().encode(ConfigStorage.KEY_SEARCH_TOOL_MODE, enabled)
+    }
+
     // ========== 正则过滤相关 ==========
 
     /**
