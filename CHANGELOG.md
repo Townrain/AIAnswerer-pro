@@ -2,6 +2,24 @@
 
 All notable changes to AIAnswerer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Web search now supports LLM Tool Calling mode (function calling): the request carries a `web_search` tool definition, the model decides when to search and may ask follow-up rounds, with results fed back as tool messages
+- New "Search Mode" selector in web search settings: Tool Calling / Pre-Search Injection (Tool Calling by default; switch back to the legacy mode for models without tool support)
+- Automatic fallback: tool mode degrades to pre-search injection when the model is known not to support function calling
+- WebSearchToolExecutor: unified search executor shared by pre-search and tool modes, reusing all 10 search providers (Tavily/Zhipu/Bocha/Exa etc.)
+
+### Changed
+- OpenAIClient: SSE parsing now handles `delta.tool_calls` (accumulated by index); answering requests run up to 3 rounds (2 tool rounds + final answer), each with an independent 60s timeout
+- ChatMessage supports `tool_calls`/`tool_call_id` with nullable content; ChatRequest adds `tools`/`tool_choice` parameters
+- Tool call arguments sanitized (256-char limit, control characters stripped); invalid arguments fall back to the original recognized text
+- Full AI response logging downgraded to debug level to avoid unconditional log-file writes
+
+### Fixed
+- Warning log added when the tool loop hits its round cap, eliminating silent degradation
+- reasoning_content is no longer promoted to content when tool_calls are present (compliant with the OpenAI requirement of content=null alongside tool_calls)
+
 ## [1.7.0] - 2026-07-27
 
 ### Added

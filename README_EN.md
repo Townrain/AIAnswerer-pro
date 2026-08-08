@@ -14,7 +14,7 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 - 📖 Screen Reading Mode: Directly read screen text through accessibility services without screenshots, faster speed
 - 📝 Smart Text Recognition: Supports CJK/FR/DE/ES/PT local OCR + VLM cloud recognition for RU/AR
 - 👁️ Vision Model Support: Can use vision models instead of OCR, suitable for noisy pages
-- 🔍 Web Search Enhancement: Automatically search related materials as answering references
+- 🔍 Web Search Enhancement: Two modes available — LLM Tool Calling (the model decides when to search and may ask follow-up rounds) and Pre-Search Injection (legacy mode), switchable in the web search settings
 - 🤖 AI Real-time Answering: Generate analysis based on question types and automatically copy answers
 - 📋 Batch Answering: When multiple questions are in a screenshot, search each question and return all answers
 - ⚡ Parallel Answering: Support concurrent processing in multi-question mode, significantly improving answering speed
