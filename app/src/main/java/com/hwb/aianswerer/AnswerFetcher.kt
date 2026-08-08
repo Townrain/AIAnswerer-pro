@@ -80,24 +80,26 @@ class AnswerFetcher(
                         return@withLock
                     }
 
-                    // Single question — build search context
+                    // Single question — build search context（仅预搜索模式；工具模式下由模型自主调用）
                     var searchContext = ""
-                    if (visionResult != null) {
-                        if (visionResult.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
+                    if (!pipeline.isSearchToolModeActive()) {
+                        if (visionResult != null) {
+                            if (visionResult.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
+                                callbacks.onStatus(FloatingStatus.Searching, "搜索中…")
+                                searchContext = pipeline.searchWeb(visionResult.searchKeywords)
+                            }
+                        } else if (callbacks.isSearchEnabled()) {
                             callbacks.onStatus(FloatingStatus.Searching, "搜索中…")
-                            searchContext = pipeline.searchWeb(visionResult.searchKeywords)
+                            val lines = text.lines()
+                            val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
+                            val optionLines = lines
+                                .filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
+                                .map { it.trim() }
+                            val query = if (!questionLine.isNullOrBlank()) {
+                                (listOf(questionLine) + optionLines).joinToString(" ")
+                            } else text
+                            searchContext = pipeline.searchWeb(query)
                         }
-                    } else if (callbacks.isSearchEnabled()) {
-                        callbacks.onStatus(FloatingStatus.Searching, "搜索中…")
-                        val lines = text.lines()
-                        val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
-                        val optionLines = lines
-                            .filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
-                            .map { it.trim() }
-                        val query = if (!questionLine.isNullOrBlank()) {
-                            (listOf(questionLine) + optionLines).joinToString(" ")
-                        } else text
-                        searchContext = pipeline.searchWeb(query)
                     }
 
                     callbacks.onStatus(FloatingStatus.GettingAnswer, "获取答案中…")
@@ -149,7 +151,7 @@ class AnswerFetcher(
 
         for ((idx, question) in questions.withIndex()) {
             var searchContext = ""
-            if (question.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
+            if (!pipeline.isSearchToolModeActive() && question.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
                 callbacks.onStatus(FloatingStatus.Searching,
                     "搜索中 (${idx + 1}/$totalQuestions)")
                 searchContext = pipeline.searchWeb(question.searchKeywords, 2)
@@ -186,7 +188,7 @@ class AnswerFetcher(
                     semaphore.withPermit {
                         try {
                             var searchContext = ""
-                            if (question.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
+                            if (!pipeline.isSearchToolModeActive() && question.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
                                 searchContext = pipeline.searchWeb(question.searchKeywords, 2)
                             }
                             val result = pipeline.askLlm(question.text, questionTypes, searchContext)
