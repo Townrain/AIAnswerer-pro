@@ -1,9 +1,15 @@
 package com.hwb.aianswerer.api
 
-import com.hwb.aianswerer.MyApplication
 import com.hwb.aianswerer.Constants
+import com.hwb.aianswerer.MyApplication
 import com.hwb.aianswerer.R
+import com.hwb.aianswerer.api.search.WebSearchToolExecutor
 import com.hwb.aianswerer.config.AppConfig
+import com.hwb.aianswerer.models.FunctionSpec
+import com.hwb.aianswerer.models.ToolSpec
+import com.google.gson.JsonObject
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -20,13 +26,13 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class OpenAIClientTest {
@@ -64,14 +70,18 @@ class OpenAIClientTest {
         mockkObject(Constants)
         every { Constants.getPromptResources() } returns mockRes
 
+        // function calling 工具模式默认关闭，现有用例保持原行为（tools=null）
+        mockkObject(WebSearchToolExecutor)
+        every { WebSearchToolExecutor.isToolModeActive() } returns false
+
         client = OpenAIClient()
     }
-
     @After
     fun tearDown() {
         server.shutdown()
         unmockkObject(AppConfig)
         unmockkObject(Constants)
+        unmockkObject(WebSearchToolExecutor)
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -559,5 +569,117 @@ data: [DONE]
 
         assertEquals(3, attempts)
         assertEquals(2, delays.size)
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Function calling (tools) tests
+    // ═══════════════════════════════════════════════════════════════
+
+    private fun toolModeOn() {
+        every { WebSearchToolExecutor.isToolModeActive() } returns true
+        every { Constants.buildWebSearchToolSpec() } returns ToolSpec(
+            function = FunctionSpec(name = "web_search", description = "Search",
+                parameters = JsonObject().apply {
+                    addProperty("type", "object")
+                    add("properties", JsonObject().apply {
+                        add("query", JsonObject().apply { addProperty("type", "string") })
+                    })
+                    add("required", com.google.gson.JsonArray().apply { add("query") })
+                }
+            )
+        )
+        coEvery { WebSearchToolExecutor.execute(any(), any()) } returns "【结果】测试搜索内容"
+    }
+
+    private fun sse(json: String, done: Boolean = true): String =
+        "data: $json" + if (done) "\n\ndata: [DONE]\n" else "\n"
+
+    private fun answerDelta(answer: String) =
+        sse("{\"choices\":[{\"delta\":{\"content\":\"{\\\"question\\\":\\\"Q\\\",\\\"answer\\\":\\\"$answer\\\",\\\"questionType\\\":\\\"选择题\\\"}\"}}]}")
+
+    @Test
+    fun `analyzeQuestion - tool mode attaches tools to request body`() = runBlocking {
+        toolModeOn()
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("A")))
+        val result = client.analyzeQuestion("test", systemPrompt = "test")
+        assertTrue(result.isSuccess)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue("request should contain tools", body.contains("\"tools\""))
+        assertTrue("tools should contain web_search", body.contains("web_search"))
+        assertTrue("tools should declare query param", body.contains("\"query\""))
+        assertTrue("tool mode should declare tool_choice auto", body.contains("\"tool_choice\":\"auto\""))
+    }
+
+    @Test
+    fun `analyzeQuestion - non tool mode has no tools field`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("A")))
+        val result = client.analyzeQuestion("test", systemPrompt = "test")
+        assertTrue(result.isSuccess)
+        val body = server.takeRequest().body.readUtf8()
+        assertFalse("request should not contain tools", body.contains("\"tools\""))
+        assertFalse("request should not contain tool_choice", body.contains("\"tool_choice\""))
+    }
+
+    @Test
+    fun `analyzeQuestion - tool loop executes search and feeds back tool message`() = runBlocking {
+        toolModeOn()
+        // Round 1: model requests web_search tool call (no content)
+        val round1 = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"光合作用\\\"}\"}}]}}]}")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(round1))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("B")))
+
+        val result = client.analyzeQuestion("光合作用", systemPrompt = "test")
+
+        assertTrue(result.isSuccess)
+        assertEquals("B", result.getOrNull()!![0].answer)
+        coVerify { WebSearchToolExecutor.execute("光合作用", 2) }
+        server.takeRequest()
+        val body2 = server.takeRequest().body.readUtf8()
+        assertTrue("second request should carry tool message", body2.contains("\"role\":\"tool\""))
+        assertTrue("tool message should reference call id", body2.contains("\"tool_call_id\":\"call_1\""))
+        assertTrue("tool message should carry search result", body2.contains("测试搜索内容"))
+    }
+
+    @Test
+    fun `analyzeQuestion - streamed tool calls accumulate across chunks`() = runBlocking {
+        toolModeOn()
+        val chunk1 = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_9\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"光合\"}}]}}]}", done = false)
+        val chunk2 = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"作用\\\"}\"}}]}}]}", done = false)
+        val finalChunk = sse("{\"choices\":[{\"delta\":{\"content\":\"{\\\"question\\\":\\\"Q\\\",\\\"answer\\\":\\\"D\\\",\\\"questionType\\\":\\\"选择题\\\"}\"}}]}")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(chunk1 + "\n" + chunk2 + "\n" + finalChunk))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("E")))
+
+        val result = client.analyzeQuestion("测试", systemPrompt = "test")
+
+        assertTrue(result.isSuccess)
+        coVerify { WebSearchToolExecutor.execute("光合作用", 2) }
+    }
+
+    @Test
+    fun `analyzeQuestion - invalid tool arguments falls back to recognized text`() = runBlocking {
+        toolModeOn()
+        // arguments is truncated invalid JSON
+        val round1 = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_2\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\"}}]}}]}")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(round1))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("C")))
+
+        val result = client.analyzeQuestion("题目原文", systemPrompt = "test")
+
+        assertTrue(result.isSuccess)
+        coVerify { WebSearchToolExecutor.execute("题目原文", 2) }
+    }
+
+    @Test
+    fun `analyzeQuestion - tool loop caps at MAX_TOOL_ROUNDS`() = runBlocking {
+        toolModeOn()
+        val toolChunk = sse("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_x\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"q\\\"}\"}}]}}]}")
+        repeat(3) { server.enqueue(MockResponse().setResponseCode(200).setBody(toolChunk)) }
+
+        val result = client.analyzeQuestion("test", systemPrompt = "test")
+
+        // round 3 stops looping (rounds=3 > MAX_TOOL_ROUNDS=2); empty content degrades to a fallback answer
+        assertTrue(result.isSuccess)
+        assertEquals(3, server.requestCount)
+        coVerify(exactly = 2) { WebSearchToolExecutor.execute(any(), any()) }
     }
 }

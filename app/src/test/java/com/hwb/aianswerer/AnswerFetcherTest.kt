@@ -34,6 +34,8 @@ class AnswerFetcherTest {
         mockkObject(AppConfig); mockkObject(OpenAIClient)
         every { AppConfig.getQuestionTypes() } returns setOf("选择题")
         coEvery { OpenAIClient.isNetworkAvailable() } returns true
+        // 默认非工具模式（预搜索路径），工具模式用例单独覆盖
+        every { p.isSearchToolModeActive() } returns false
         val c = mockk<AnswerFetcherCallbacks>(relaxed = true)
         every { c.isSearchEnabled() } returns false
         val f = AnswerFetcher(p, CoroutineScope(Dispatchers.Unconfined), c)
@@ -96,6 +98,34 @@ class AnswerFetcherTest {
         coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
         s.f.fetchAnswer("x", vr(kw = "忽略")) { done.countDown() }
         assertTrue("callback timeout", done.await(5, TimeUnit.SECONDS))
+        coVerify(exactly = 0) { s.p.searchWeb(any()) }
+    }
+
+    // ── Tool mode (function calling) ─────────────────────────────────
+
+    @Test
+    fun tool_mode_skips_presearch_single() {
+        val s = setup()
+        every { s.p.isSearchToolModeActive() } returns true
+        every { s.c.isSearchEnabled() } returns true
+        val searchCtx = slot<String>()
+        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), capture(searchCtx)) } returns Result.success(listOf(a("B")))
+        val ans = (await(s.f, "x", vr(kw = "关键词")) as AnswerResult.Success).answers
+        assertEquals("B", ans[0].answer)
+        assertEquals("", searchCtx.captured)
+        coVerify(exactly = 0) { s.p.searchWeb(any()) }
+    }
+
+    @Test
+    fun tool_mode_skips_presearch_multi() {
+        val s = setup()
+        every { s.p.isSearchToolModeActive() } returns true
+        every { s.c.isSearchEnabled() } returns true
+        every { AppConfig.isParallelModeEnabled() } returns true
+        every { AppConfig.getMaxConcurrency() } returns 10
+        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(listOf(a("A")))
+        val ans = (await(s.f, "", vr(listOf(q(1, "Q1"), q(2, "Q2")))) as AnswerResult.Success).answers
+        assertEquals(2, ans.size)
         coVerify(exactly = 0) { s.p.searchWeb(any()) }
     }
 

@@ -5,6 +5,7 @@ import com.hwb.aianswerer.api.OpenAIClient
 import com.hwb.aianswerer.api.search.BaseWebSearchProvider
 import com.hwb.aianswerer.api.search.WebSearchClientFactory
 import com.hwb.aianswerer.api.search.WebSearchResult
+import com.hwb.aianswerer.api.search.WebSearchToolExecutor
 import com.hwb.aianswerer.api.vision.VisionFilterResult
 import com.hwb.aianswerer.api.vision.VisionProvider
 import com.hwb.aianswerer.api.vision.SeparatedQuestion
@@ -264,5 +265,20 @@ class CapturePipelineTest {
     fun `looksLikeQuestion case insensitive for keywords`() {
         assertTrue(pipeline.looksLikeQuestion("WHICH option is CORRECT"))
         assertTrue(pipeline.looksLikeQuestion("what is this"))
+    }
+
+    // ── isSearchToolModeActive ──
+
+    @Test
+    fun `isSearchToolModeActive delegates to WebSearchToolExecutor`() {
+        mockkObject(WebSearchToolExecutor)
+        try {
+            every { WebSearchToolExecutor.isToolModeActive() } returns true
+            assertTrue(pipeline.isSearchToolModeActive())
+            every { WebSearchToolExecutor.isToolModeActive() } returns false
+            assertFalse(pipeline.isSearchToolModeActive())
+        } finally {
+            unmockkObject(WebSearchToolExecutor)
+        }
     }
 }
