@@ -263,6 +263,15 @@
     <string name="system_prompt_limit_header">## Constraints</string>
     <string name="system_prompt_type_template">Only handle the following question types: %1$s. If a question does not match, set questionType="%2$s".</string>
     <string name="system_prompt_search_header">## Reference Materials\nThe following are web search results. Usage rules:\n- Prioritize answering from the question itself; search results are supplementary only\n- If search results conflict with the question text, the question text takes precedence\n- If search results contain obvious errors, ignore them and note in the answer</string>
+    <string name="tool_web_search_name">web_search</string>
+    <string name="tool_web_search_description">Search the internet for the latest or external information to supplement question-related knowledge. Call this when the question involves current events, proper nouns, or content beyond the model\'s knowledge. Search results will be provided as reference material.</string>
+    <string name="tool_web_search_query_description">Search keywords, should be concise and accurate</string>
+    <string name="search_mode_title">Search Mode</string>
+    <string name="search_mode_tool">Tool Calling</string>
+    <string name="search_mode_tool_sub">AI decides whether to search</string>
+    <string name="search_mode_pre">Pre-Search Injection</string>
+    <string name="search_mode_pre_sub">Auto search before sending (legacy)</string>
+    <string name="search_mode_desc">Tool calling: the model decides when to search the web and may ask follow-up rounds; Pre-search injection: auto search after recognition then ask, compatible with models that do not support tool calling</string>
     <string name="system_prompt_user_message">Please analyze the following question:\n\n%1$s</string>
     <string name="system_prompt_recording_header">## Batch Mode\nYou are answering in batch mode. This is question %1$d of %2$d. Please prefix your answer with the question number (e.g., "Q%1$d:"), to enable automatic matching and result aggregation.</string>
     <string name="system_prompt_base"><![CDATA[# Role

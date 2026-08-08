@@ -264,6 +264,15 @@
     <string name="system_prompt_limit_header">## 限制条件</string>
     <string name="system_prompt_type_template">仅处理以下题型：%1$s。请尽量将题目解析为这些类型之一，若不符合则输出 questionType="%2$s"。</string>
     <string name="system_prompt_search_header">## 参考资料\n以下是联网搜索结果。使用规则：\n- 优先根据题目自身知识作答，搜索结果仅作补充\n- 若搜索结果与题目原文冲突，以题目原文为准\n- 若搜索结果包含明显错误，忽略并在回答中注明</string>
+    <string name="tool_web_search_name">web_search</string>
+    <string name="tool_web_search_description">搜索互联网获取最新或外部信息，用于补充题目相关知识。当题目涉及时事、专有名词或超出模型知识范围时调用。搜索结果将作为参考资料。</string>
+    <string name="tool_web_search_query_description">搜索关键词，应简洁准确</string>
+    <string name="search_mode_title">搜索模式</string>
+    <string name="search_mode_tool">工具调用</string>
+    <string name="search_mode_tool_sub">AI 自主决定是否搜索</string>
+    <string name="search_mode_pre">预搜索注入</string>
+    <string name="search_mode_pre_sub">发送前自动搜索（旧模式）</string>
+    <string name="search_mode_desc">工具调用：模型自行决定何时联网搜索并多轮追问；预搜索注入：识别后先自动搜索再提问，兼容不支持工具调用的模型</string>
     <string name="system_prompt_user_message">请分析以下题目：\n\n%1$s</string>
     <string name="system_prompt_recording_header">## 批处理模式\n你正在批量答题，当前为第 %1$d 题，共 %2$d 题。请在答案中明确标注题号（如「第%1$d题：」），便于自动匹配与结果汇总。</string>
     <string name="system_prompt_base"><![CDATA[# 角色
