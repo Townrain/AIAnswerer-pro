@@ -201,11 +201,14 @@ class JsonAnswerExtractor(
                     if (nc == 't' && s.regionMatches(i, "true", 0, 4, true)) continue
                     if (nc == 'f' && s.regionMatches(i, "false", 0, 5, true)) continue
                     if (nc == 'n' && s.regionMatches(i, "null", 0, 4, true)) continue
-                    // 未引号字符串值：提取到 , } ]
+                    // 未引号字符串值：提取到 , } ]，内嵌 ASCII 引号需转义（如“3A大作”）
                     val valStart = i
                     while (i < s.length && s[i] != ',' && s[i] != '}' && s[i] != ']') i++
                     val raw = s.substring(valStart, i).trim()
-                    if (raw.isNotEmpty()) sb.append('"').append(raw).append('"')
+                    if (raw.isNotEmpty()) {
+                        val escaped = raw.replace("\\", "\\\\").replace("\"", "\\\"")
+                        sb.append('"').append(escaped).append('"')
+                    }
                     continue
                 }
                 else -> { sb.append(c); i++; continue }
@@ -286,30 +289,39 @@ class JsonAnswerExtractor(
     }
 
     private fun inferAnswerFromOptions(text: String): String? {
-        val answerIndex = text.indexOf("\"answer\"")
-        if (answerIndex == -1) return null
-        val colonIndex = text.indexOf(':', answerIndex)
-        if (colonIndex == -1) return null
+        val colonIndex = findBareKeyColon(text, "answer") ?: return null
         var i = colonIndex + 1
         while (i < text.length && text[i].isWhitespace()) i++
-        if (i < text.length && text[i] == '"') {
+        if (i < text.length && text[i] == '\"') {
             i++
             val start = i
-            while (i < text.length && text[i] != '"') i++
+            while (i < text.length && text[i] != '\"') i++
             val value = text.substring(start, i)
             if (value.isNotBlank()) return value
         }
         return null
     }
 
-    private fun extractJsonValue(json: String, key: String): String? {
+    /**
+     * 查找键后的冒号位置：兼容带引号键（"key"）与无引号键（key:）两种 JS 字面量格式。
+     */
+    private fun findBareKeyColon(json: String, key: String): Int? {
         val searchKey = "\"$key\""
         val keyIndex = json.indexOf(searchKey)
-        if (keyIndex == -1) return null
-        val colonIndex = json.indexOf(':', keyIndex + searchKey.length)
-        if (colonIndex == -1) return null
+        if (keyIndex != -1) {
+            val colonIndex = json.indexOf(':', keyIndex + searchKey.length)
+            if (colonIndex != -1) return colonIndex
+        }
+        // 无引号键：匹配 {key: 或 ,key: 或 行首 key:，后面紧跟冒号
+        val bareRegex = Regex("(?:[\\{,}]|^)\\s*$key\\s*:")
+        val match = bareRegex.find(json) ?: return null
+        val colonIndex = json.indexOf(':', match.range.last)
+        return if (colonIndex != -1) colonIndex else null
+    }
+
+    private fun extractJsonValue(json: String, key: String): String? {
+        val colonIndex = findBareKeyColon(json, key) ?: return null
         var i = colonIndex + 1
-        while (i < json.length && json[i].isWhitespace()) i++
         if (i >= json.length) return null
         if (json[i] == '"') {
             i++
@@ -326,10 +338,8 @@ class JsonAnswerExtractor(
     }
 
     private fun extractJsonArray(json: String, key: String): List<String>? {
-        val searchKey = "\"$key\""
-        val keyIndex = json.indexOf(searchKey)
-        if (keyIndex == -1) return null
-        val bracketIndex = json.indexOf('[', keyIndex + searchKey.length)
+        val colonIndex = findBareKeyColon(json, key) ?: return null
+        val bracketIndex = json.indexOf('[', colonIndex + 1)
         if (bracketIndex == -1) return null
         var depth = 0
         var endIndex = -1

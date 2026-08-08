@@ -156,6 +156,27 @@ class JsonAnswerExtractorTest {
         assertEquals(1, result.size)
         assertEquals("test", result[0].question)
     }
+    @Test
+    fun `parseJsonAnswers - JS字面量带内嵌ASCII引号 提取成功`() {
+        // 回归: 真实日志第2/3题响应（键无引号 + question 值内含 \"3A大作\" ASCII引号）
+        // 此前 quoteJsonKeys 未转义内嵌引号 → 全部策略失败 → 降级返回“无法解析题目”
+        val input = """{question:以下那款游戏被称为"3A大作" A 绝区零 B 崩坏三 C 崩坏-星穹铁道 D 原神,questionType:选择题,answer:D,options:[A. 绝区零,B. 崩坏三,C. 崩坏-星穹铁道,D. 原神]}"""
+        val result = extractor.parseJsonAnswers(input)
+        assertEquals(1, result.size)
+        assertEquals("D", result[0].answer)
+        assertEquals("选择题", result[0].questionType)
+        assertEquals(4, result[0].options!!.size)
+    }
+
+    @Test
+    fun `parseJsonAnswers - 无引号键JS字面量 降级路径也能解析`() {
+        // 回归: 键完全无引号（{key:value}），extractJsonValue 需兼容 bare key
+        val input = """{question:蚊子的牙齿有多少颗,questionType:选择题,answer:B,options:[A. 20颗,B. 22颗,C. 24颗,D. 26颗]}"""
+        val result = extractor.parseJsonAnswers(input)
+        assertEquals(1, result.size)
+        assertEquals("B", result[0].answer)
+        assertEquals("蚊子的牙齿有多少颗", result[0].question)
+    }
 
     @Test
     fun `parseJsonAnswers - 对象内多个字段带尾部逗号`() {

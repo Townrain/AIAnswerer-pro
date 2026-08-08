@@ -33,11 +33,12 @@ object WebSearchStorage {
         val configs = loadAllConfigs().toMutableMap()
         configs[providerId] = config
         val json = JsonUtil.gson.toJson(configs)
-        android.util.Log.d("WebSearchStorage", "saveUserConfig: providerId=$providerId, json=$json")
+        // 注意：不记录完整 JSON（含明文 API Key），仅记录 key 与掩码
+        AppLog.d("WebSearchStorage", "saveUserConfig: providerId=$providerId, hasApiKey=${config.apiKey.isNotBlank()}")
         mmkv().encode(KEY_USER_CONFIGS, json)
         // 回读验证
         val verify = mmkv().decodeString(KEY_USER_CONFIGS)
-        android.util.Log.d("WebSearchStorage", "verify readback: $verify")
+        AppLog.d("WebSearchStorage", "verify readback: length=${verify?.length ?: 0}")
     }
 
     fun getUserConfig(providerId: String): UserWebSearchConfig {
@@ -46,17 +47,19 @@ object WebSearchStorage {
 
     private fun loadAllConfigs(): Map<String, UserWebSearchConfig> {
         val json = mmkv().decodeString(KEY_USER_CONFIGS)
-        android.util.Log.d("WebSearchStorage", "loadAllConfigs: raw=$json")
+        // 不记录原始 JSON：其中包含明文 API Key（参考早期日志泄露事故）
         if (json == null) return emptyMap()
         return try {
             val type = com.google.gson.reflect.TypeToken
                 .getParameterized(Map::class.java, String::class.java, UserWebSearchConfig::class.java)
                 .type
             val result = JsonUtil.gson.fromJson<Map<String, UserWebSearchConfig>>(json, type)
-            android.util.Log.d("WebSearchStorage", "loadAllConfigs: parsed=$result")
+            // 仅记录供应商 id 列表，掩码 API Key，避免敏感信息落入日志文件/logcat
+            AppLog.d("WebSearchStorage", "loadAllConfigs: providers=${result?.keys ?: emptySet()}")
             result ?: emptyMap()
         } catch (e: Exception) {
-            android.util.Log.e("WebSearchStorage", "Failed to parse configs: $json", e)
+            // 解析失败时不打印原文（可能含 Key），仅记录异常
+            AppLog.e("WebSearchStorage", "Failed to parse configs", e)
             emptyMap()
         }
     }
