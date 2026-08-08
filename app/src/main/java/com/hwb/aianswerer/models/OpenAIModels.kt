@@ -27,7 +27,13 @@ data class ChatRequest(
     val reasoningEffort: String? = null,
 
     @SerializedName("stream")
-    val stream: Boolean? = null
+    val stream: Boolean? = null,
+
+    @SerializedName("tools")
+    val tools: List<ToolSpec>? = null,
+
+    @SerializedName("tool_choice")
+    val toolChoice: String? = null
 )
 
 /**
@@ -35,12 +41,69 @@ data class ChatRequest(
  */
 data class ChatMessage(
     @SerializedName("role")
-    val role: String,  // "system", "user", "assistant"
+    val role: String,  // "system", "user", "assistant", "tool"
 
     @SerializedName("content")
-    val content: String
+    val content: String? = null,
+
+    // assistant 消息携带的工具调用（多轮 function calling 回传用）
+    @SerializedName("tool_calls")
+    val toolCalls: List<ToolCall>? = null,
+
+    // tool 消息回填时关联的 tool_call id
+    @SerializedName("tool_call_id")
+    val toolCallId: String? = null
 )
 
+/**
+ * 工具（function）定义，OpenAI tools 参数中的单个条目
+ */
+data class ToolSpec(
+    @SerializedName("type")
+    val type: String = "function",
+
+    @SerializedName("function")
+    val function: FunctionSpec
+)
+
+/**
+ * 函数定义
+ */
+data class FunctionSpec(
+    @SerializedName("name")
+    val name: String,
+
+    @SerializedName("description")
+    val description: String,
+
+    @SerializedName("parameters")
+    val parameters: com.google.gson.JsonObject
+)
+
+/**
+ * 模型返回的工具调用（tool_calls 数组元素）
+ */
+data class ToolCall(
+    @SerializedName("id")
+    val id: String,
+
+    @SerializedName("type")
+    val type: String = "function",
+
+    @SerializedName("function")
+    val function: ToolCallFunction
+)
+
+/**
+ * 工具调用的函数部分（arguments 为 JSON 字符串，需二次解析）
+ */
+data class ToolCallFunction(
+    @SerializedName("name")
+    val name: String,
+
+    @SerializedName("arguments")
+    val arguments: String
+)
 /**
  * 响应格式配置
  */
