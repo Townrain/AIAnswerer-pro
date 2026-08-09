@@ -267,14 +267,10 @@
     <string name="tool_web_search_name">web_search</string>
     <string name="tool_web_search_description">搜索互联网获取最新或外部信息，用于补充题目相关知识。当题目涉及时事、专有名词或超出模型知识范围时调用。搜索结果将作为参考资料。</string>
     <string name="tool_web_search_query_description">搜索关键词，应简洁准确</string>
-    <string name="search_mode_title">搜索模式</string>
-    <string name="search_mode_tool">工具调用</string>
-    <string name="search_mode_tool_sub">AI 自主决定是否搜索</string>
-    <string name="search_mode_pre">预搜索注入</string>
-    <string name="search_mode_pre_sub">发送前自动搜索（旧模式）</string>
-    <string name="search_mode_desc">工具调用：模型自行决定何时联网搜索并多轮追问；预搜索注入：识别后先自动搜索再提问，兼容不支持工具调用的模型</string>
     <string name="system_prompt_user_message">请分析以下题目：\n\n%1$s</string>
     <string name="system_prompt_recording_header">## 批处理模式\n你正在批量答题，当前为第 %1$d 题，共 %2$d 题。请在答案中明确标注题号（如「第%1$d题：」），便于自动匹配与结果汇总。</string>
+    <string name="system_prompt_force_direct_answer"><![CDATA[## 强制直接作答
+你必须直接输出 JSON 格式的答案，禁止调用任何工具，禁止输出工具调用格式（如 <tool_calls>、<invoke>）。若联网搜索结果不足，请直接根据你的常识作答。]]></string>
     <string name="system_prompt_base"><![CDATA[# 角色
 你是专业的答题助手，擅长解析各类题型的题干和选项，给出准确的答案和简要分析。
 
@@ -314,9 +310,8 @@
   "has_questions": true或false,
   "question_count": 题数,
   "question_types": ["选择题"|"填空题"|"问答题"],
-  "search_keywords": "核心搜索关键词(简短)",
   "extracted_text": "所有题目完整文本",
-  "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
+  "questions": [{"index": 1, "text": "题目文本"}]
 }
 规则：忽略UI噪声和广告。多题时必须分离到questions数组。无题目时has_questions=false。]]></string>
     <string name="system_prompt_vlm_multi"><![CDATA[你是长文分页截图分析器。以下多张截图是同一篇文章的多页连续截图（从上到下）。
@@ -325,9 +320,8 @@
   "has_questions": true或false,
   "question_count": 题数,
   "question_types": ["选择题"|"填空题"|"问答题"],
-  "search_keywords": "核心搜索关键词(简短)",
   "extracted_text": "合并后的所有题目完整文本",
-  "questions": [{"index": 1, "text": "题目文本", "search_keywords": "该题关键词"}]
+  "questions": [{"index": 1, "text": "题目文本"}]
 }
 规则：忽略UI噪声和广告。跨页内容要拼接完整。多题时必须分离到questions数组。无题目时has_questions=false。]]></string>
 
@@ -338,7 +332,6 @@
     <string name="status_recognizing">🔍 OCR识别中…</string>
     <string name="status_recognized">✅ 识别完成</string>
     <string name="status_getting_answer">🤖 AI分析中…</string>
-    <string name="status_searching">🔍 联网搜索中…</string>
     <string name="status_answer_copied">✅ 答案已复制</string>
     <string name="status_answer_generated">✅ 答案已生成</string>
     <string name="status_error_prefix">❌ %s</string>
@@ -466,7 +459,7 @@
     <string name="web_search_regex_filter_desc">检测到多题时跳过联网搜索</string>
 
     <!-- 录制结果卡片进度 -->
-    <string name="recording_processing_header">处理中 (%1$d/%2$d)</string>
+    <string name="recording_processing_header">正在获取答案 (%1$d/%2$d)</string>
     <string name="recording_done_header">全部完成 (共 %1$d 题)</string>
     <string name="recording_more_coming">更多答题中…</string>
 

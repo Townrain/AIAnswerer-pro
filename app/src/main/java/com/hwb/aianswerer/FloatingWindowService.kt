@@ -913,6 +913,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         recordingAnswers = viewModel.recordingAnswers.value,
                         isRecording = viewModel.isRecording.value,
                         isProcessingRecording = viewModel.isProcessingRecording.value,
+                        recordingProcessedCount = viewModel.recordingProcessedCount.value,
+                        recordingCaptureCount = viewModel.recordingCaptureCount.value,
                         onCopyRecordingAnswer = { text ->
                             ClipboardUtil.copyToClipboard(this@FloatingWindowService, text)
                         },

@@ -313,6 +313,8 @@ fun WindowDContent(
     recordingAnswers: List<Pair<Int, String>>,
     isRecording: Boolean,
     isProcessingRecording: Boolean,
+    recordingProcessedCount: Int,
+    recordingCaptureCount: Int,
     onCopyRecordingAnswer: (String) -> Unit,
     onCloseAnswer: () -> Unit,
     onMeasuredHeight: (Float) -> Unit,
@@ -323,9 +325,10 @@ fun WindowDContent(
     val t = sandboxTheme()
     val scrollState = rememberScrollState()
 
+    // M11: 处理中（partial 展示）也允许显示答案卡，配合状态消息 x/N 显示进度
     val displayAnswers = when {
         paginatedAnswers.isNotEmpty() -> paginatedAnswers
-        recordingAnswers.isNotEmpty() && !isRecording && !isProcessingRecording -> recordingAnswers
+        recordingAnswers.isNotEmpty() && !isRecording -> recordingAnswers
         else -> emptyList()
     }
 
@@ -345,9 +348,10 @@ fun WindowDContent(
                 answers = displayAnswers,
                 onClose = onCloseAnswer,
                 onCopyAnswer = onCopyRecordingAnswer,
-                isProcessing = false,
-                processedCount = displayAnswers.size,
-                totalCount = displayAnswers.size,
+                // M11: 处理中（partial 展示）时 header 显示"处理中 (x/N)"，全部完成后才显示"全部完成"
+                isProcessing = isProcessingRecording,
+                processedCount = recordingProcessedCount,
+                totalCount = recordingCaptureCount,
                 onCollapse = onCollapse
             )
         }

@@ -266,14 +266,10 @@
     <string name="tool_web_search_name">web_search</string>
     <string name="tool_web_search_description">Search the internet for the latest or external information to supplement question-related knowledge. Call this when the question involves current events, proper nouns, or content beyond the model\'s knowledge. Search results will be provided as reference material.</string>
     <string name="tool_web_search_query_description">Search keywords, should be concise and accurate</string>
-    <string name="search_mode_title">Search Mode</string>
-    <string name="search_mode_tool">Tool Calling</string>
-    <string name="search_mode_tool_sub">AI decides whether to search</string>
-    <string name="search_mode_pre">Pre-Search Injection</string>
-    <string name="search_mode_pre_sub">Auto search before sending (legacy)</string>
-    <string name="search_mode_desc">Tool calling: the model decides when to search the web and may ask follow-up rounds; Pre-search injection: auto search after recognition then ask, compatible with models that do not support tool calling</string>
     <string name="system_prompt_user_message">Please analyze the following question:\n\n%1$s</string>
     <string name="system_prompt_recording_header">## Batch Mode\nYou are answering in batch mode. This is question %1$d of %2$d. Please prefix your answer with the question number (e.g., "Q%1$d:"), to enable automatic matching and result aggregation.</string>
+    <string name="system_prompt_force_direct_answer"><![CDATA[## Answer Directly
+You MUST output the JSON answer directly. Do NOT call any tools, and do NOT output tool-call syntax (such as <tool_calls> or <invoke>). If the web search results are insufficient, answer directly based on your knowledge.]]></string>
     <string name="system_prompt_base"><![CDATA[# Role
 You are a professional answer assistant, skilled at parsing questions and options across various question types to provide accurate answers with concise analysis.
 
@@ -313,9 +309,8 @@ Output: {"question":"Which gas do plants absorb during photosynthesis?","questio
   "has_questions": true or false,
   "question_count": number of questions,
   "question_types": ["Multiple Choice"|"Fill in the Blank"|"Essay"],
-  "search_keywords": "core search keywords (brief)",
   "extracted_text": "complete text of all questions",
-  "questions": [{"index": 1, "text": "question text", "search_keywords": "keywords for this question"}]
+  "questions": [{"index": 1, "text": "question text"}]
 }
 Rules: Ignore UI noise and ads. For multiple questions, separate them in the questions array. If no questions found, set has_questions=false.]]></string>
     <string name="system_prompt_vlm_multi"><![CDATA[You are a paginated screenshot analyzer. The following images are consecutive pages of the same document (top to bottom).
@@ -324,9 +319,8 @@ Merge all page content in order and extract complete question text. Return JSON 
   "has_questions": true or false,
   "question_count": number of questions,
   "question_types": ["Multiple Choice"|"Fill in the Blank"|"Essay"],
-  "search_keywords": "core search keywords (brief)",
   "extracted_text": "merged complete text of all questions",
-  "questions": [{"index": 1, "text": "question text", "search_keywords": "keywords for this question"}]
+  "questions": [{"index": 1, "text": "question text"}]
 }
 Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple questions, separate them in the questions array. If no questions found, set has_questions=false.]]></string>
 
@@ -337,7 +331,6 @@ Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple
     <string name="status_recognizing">🔍 OCR recognizing…</string>
     <string name="status_recognized">✅ Recognition complete</string>
     <string name="status_getting_answer">🤖 AI analyzing…</string>
-    <string name="status_searching">🔍 Searching web…</string>
     <string name="status_answer_copied">✅ Answer copied</string>
     <string name="status_answer_generated">✅ Answer generated</string>
     <string name="status_error_prefix">❌ %s</string>
@@ -460,7 +453,7 @@ Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple
     <string name="web_search_regex_filter_desc">Skip web search when multiple questions detected</string>
 
     <!-- Recording result card progress -->
-    <string name="recording_processing_header">Processing (%1$d/%2$d)</string>
+    <string name="recording_processing_header">Fetching answers (%1$d/%2$d)</string>
     <string name="recording_done_header">All Done (%1$d total)</string>
     <string name="recording_more_coming">More coming…</string>
 

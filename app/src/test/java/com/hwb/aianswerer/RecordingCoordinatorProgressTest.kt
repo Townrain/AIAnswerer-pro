@@ -41,12 +41,10 @@ class RecordingCoordinatorProgressTest {
         every { AppConfig.getMaxConcurrency() } returns 3
         every { AppConfig.isVisionEnabled() } returns false
         every { AppConfig.getQuestionTypes() } returns setOf("选择题")
-        every { AppConfig.isRegexFilterEnabled() } returns false
         coEvery { OpenAIClient.isNetworkAvailable() } returns true
         every { Constants.buildRecordingSystemPrompt(any(), any(), any(), any()) } returns "recording_system_prompt"
         every { MyApplication.getString(any<Int>()) } returns "MOCK_LABEL"
         every { MyApplication.getString(any<Int>(), *anyVararg()) } returns "MOCK_LABEL"
-        every { callbacks.isSearchEnabled() } returns false
         every { callbacks.getString(any(), *anyVararg()) } returns "mock_string"
         every { callbacks.getString(any()) } returns "mock_string"
         coordinator = RecordingCoordinator(pipeline, CoroutineScope(Dispatchers.Unconfined), callbacks)
@@ -77,7 +75,7 @@ class RecordingCoordinatorProgressTest {
         )
 
         val latch = CountDownLatch(1)
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers { latch.countDown() }
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers { latch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
         delay(1)

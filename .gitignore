@@ -127,3 +127,6 @@ claude-notify-extension*
 
 # Gradle daemon JVM config (machine-specific)
 gradle/gradle-daemon-jvm.properties
+
+# Local unit test reports (build artifacts)
+测试报告/

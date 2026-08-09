@@ -113,8 +113,8 @@ class FloatingWindowViewModel : ViewModel() {
     val recordingCallbacks = object : RecordingCoordinator.Callbacks {
         override fun onError(message: String) { ctx?.showErrorToUser(message) }
         override fun onToast(message: String) { ctx?.showToast(message) }
-        override fun onResultsAvailable(answers: List<Pair<Int, String>>, copyTexts: List<Pair<Int, String>>, total: Int, skipped: Int, failed: Int) {
-            showRecordingResultsFromCoordinator(answers, copyTexts, total, skipped, failed)
+        override fun onResultsAvailable(answers: List<Pair<Int, String>>, copyTexts: List<Pair<Int, String>>, total: Int, skipped: Int, failed: Int, isFinal: Boolean) {
+            showRecordingResultsFromCoordinator(answers, copyTexts, total, skipped, failed, isFinal)
         }
         override fun onProgressUpdate(processed: Int, total: Int) {
             statusMessage.value = ctx?.getString(R.string.recording_processing, processed, total)
@@ -122,7 +122,6 @@ class FloatingWindowViewModel : ViewModel() {
         }
         @Suppress("UNCHECKED_CAST")
         override fun getString(resId: Int, vararg args: Any?): String = ctx?.getString(resId, *(args as Array<out Any>)) ?: ""
-        override fun isSearchEnabled(): Boolean = com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
     }
 
     // ===== ImageCollector.Callbacks =====
@@ -170,8 +169,8 @@ class FloatingWindowViewModel : ViewModel() {
         }
         override fun onToast(message: String) { ctx?.showToast(message) }
         override fun onError(message: String) { ctx?.showErrorToUser(message) }
-        override fun isSearchEnabled(): Boolean = com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
     }
+
 
     // ===== CaptureHandlerCallbacks =====
     val captureCallbacks = object : CaptureHandlerCallbacks {
@@ -181,7 +180,6 @@ class FloatingWindowViewModel : ViewModel() {
         override fun getSavedCropRect() = savedCropRect
         override fun getSavedCropRectEach() = savedCropRectEach
         override fun isVisionEnabled() = com.hwb.aianswerer.config.AppConfig.isVisionEnabled()
-        override fun isSearchEnabled() = com.hwb.aianswerer.providers.WebSearchStorage.isSearchEnabled()
         override fun isStealthModeEnabled(): Boolean {
             return AppConfig.isStealthModeEnabled()
         }
@@ -376,7 +374,8 @@ class FloatingWindowViewModel : ViewModel() {
     private fun showRecordingResultsFromCoordinator(
         answers: List<Pair<Int, String>>,
         copyTexts: List<Pair<Int, String>>,
-        total: Int, skipped: Int, failed: Int
+        total: Int, skipped: Int, failed: Int,
+        isFinal: Boolean
     ) {
         // M8: 若期间用户已发起新捕获/新录制（代次已变），丢弃旧录制结果，避免后置弹出
         if (!isCurrentGeneration(recordingGeneration)) {
@@ -391,17 +390,23 @@ class FloatingWindowViewModel : ViewModel() {
         recordingAnswers.value = answers
         recordingCopyTexts.value = copyTexts
         showAnswer.value = true
-        floatingStatus.value = FloatingStatus.Success
-        val resultSummary = buildString {
-            append(ctx?.getString(R.string.recording_all_done, total))
-            if (skipped > 0) append("，去除重复 ${skipped} 题")
-            if (failed > 0) append("，${failed} 题获取失败")
+        // M11: partial 通知（stop 时已有部分答案）显示"处理中"，全部完成后才显示"全部完成"
+        if (isFinal) {
+            floatingStatus.value = FloatingStatus.Success
+            val resultSummary = buildString {
+                append(ctx?.getString(R.string.recording_all_done, total))
+                if (skipped > 0) append("，去除重复 ${skipped} 题")
+                if (failed > 0) append("，${failed} 题获取失败")
+            }
+            statusMessage.value = resultSummary
+            isProcessingRecording.value = false
+        } else {
+            floatingStatus.value = FloatingStatus.GettingAnswer
+            statusMessage.value = ctx?.getString(R.string.recording_processing, answers.size, total)
         }
-        statusMessage.value = resultSummary
         if (AppConfig.getAutoCopy()) {
             ctx?.copyToClipboard(copyTexts.sortedBy { it.first }.joinToString("\n") { it.second })
         }
-        isProcessingRecording.value = false
     }
 
     fun refreshSettingsFromApp() { AppLog.d("FWS", "settings refreshed") }

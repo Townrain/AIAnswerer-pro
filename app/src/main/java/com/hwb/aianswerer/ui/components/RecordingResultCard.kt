@@ -183,8 +183,18 @@ internal fun RecordingResultCard(
                     }
                 }
 
-                // Pagination controls
-                if (totalPages > 1) {
+                // M12: 获取中提示 — 剩余答案仍在生成，明确告知用户
+                if (isProcessing) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.Center) {
+                        Text("⏳ ${stringResource(R.string.recording_more_coming)}",
+                            style = DW.LabelSmall.copy(color = t.osv))
+                    }
+                }
+
+                // Pagination controls — 获取中不显示翻页（分页数=已获取答案数，避免"不可翻页"困惑），完成后才可翻页
+                if (totalPages > 1 && !isProcessing) {
                     Spacer(Modifier.height(6.dp))
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).padding(bottom = 12.dp),
                         horizontalArrangement = Arrangement.Center,

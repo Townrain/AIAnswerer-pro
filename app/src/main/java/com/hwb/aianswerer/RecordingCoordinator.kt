@@ -37,11 +37,11 @@ class RecordingCoordinator(
         fun onResultsAvailable(
             answers: List<Pair<Int, String>>,
             copyTexts: List<Pair<Int, String>>,
-            total: Int, skipped: Int, failed: Int
+            total: Int, skipped: Int, failed: Int,
+            isFinal: Boolean
         )
         fun onProgressUpdate(processed: Int, total: Int)
         fun getString(resId: Int, vararg args: Any?): String
-        fun isSearchEnabled(): Boolean
     }
 
     // ── 录题状态 ──
@@ -106,13 +106,20 @@ class RecordingCoordinator(
         // 全部完成后 ensureResultsNotified 会再补一次最终通知（幂等，不重复）
         if (answers.isNotEmpty()) {
             scope.launch(Dispatchers.Main) {
-                AppLog.d("REC", "stop: partial results (${answers.size}) shown immediately"); notifyResults()
+                // M11: partial 通知 — 先同步进度计数（状态消息/卡片 header 显示 x/N），再展示答案卡
+                callbacks.onProgressUpdate(answers.size, captureCount)
+                AppLog.d("REC", "stop: partial results (${answers.size}) shown immediately"); notifyResults(isFinal = false)
             }
         }
         // M9: 兜底——所有 job 去重/失败时 notifyResults 可能永不触发（isProcessing && jobs.isEmpty() 条件不满足），
         //     启动兜底协程：jobs 清空后强制 notifyResults（幂等，防止与正常路径重复触发）
         scope.launch {
-            jobs.forEach { it.join() }
+            // M10: 动态 join — stop 后 VLM/OCR job 完成时仍会通过 fetchAnswer 创建新的答案 job，
+            //     必须等待全部 job（含后加入的答案 job）完成后才通知，避免"全部完成"提前弹出、
+            //     结果卡停留在部分答案
+            while (jobs.isNotEmpty()) {
+                jobs.toList().forEach { it.join() }
+            }
             ensureResultsNotified()
         }
         return StopResult.Processing(captureCount, processedCount)
@@ -243,7 +250,7 @@ class RecordingCoordinator(
                     var skipped = 0
                     filter.questions.forEach { separatedQuestion ->
                         if (!dedupeAndTrack(separatedQuestion.text, captureIndex)) { skipped++; return@forEach }
-                        fetchAnswer(separatedQuestion.text, captureIndex, filter)
+                        fetchAnswer(separatedQuestion.text, captureIndex)
                         _totalQuestions.incrementAndGet()
                     }
                     if (skipped > 0) _skippedCount.addAndGet(skipped)
@@ -251,7 +258,7 @@ class RecordingCoordinator(
                     val text = filter.extractedText
                     if (text.isBlank()) return
                     if (!dedupeAndTrack(text, captureIndex)) { _skippedCount.incrementAndGet(); return }
-                    fetchAnswer(text, captureIndex, filter)
+                    fetchAnswer(text, captureIndex)
                 _totalQuestions.incrementAndGet()
                 }
             }
@@ -275,10 +282,7 @@ class RecordingCoordinator(
         }
     }
 
-    private fun fetchAnswer(
-        text: String, captureIndex: Int,
-        visionResult: com.hwb.aianswerer.api.vision.VisionFilterResult? = null
-    ) {
+    private fun fetchAnswer(text: String, captureIndex: Int) {
         activeJobCount.incrementAndGet()
         AppLog.enter("REC", "recordingFetchAnswer Q$captureIndex")
         val job = scope.launch(Dispatchers.IO) {
@@ -289,43 +293,26 @@ class RecordingCoordinator(
                         return@withPermit
                     }
                     val questionTypes = AppConfig.getQuestionTypes()
-                    var searchContext = ""
-                    // 预搜索模式才预搜索；工具模式下由 LLM 自主调用搜索工具
-                    if (!pipeline.isSearchToolModeActive()) {
-                        if (visionResult != null && visionResult.searchKeywords.isNotBlank()
-                            && callbacks.isSearchEnabled()) {
-                            searchContext = pipeline.searchWeb(visionResult.searchKeywords)
-                        } else if (visionResult == null && callbacks.isSearchEnabled()) {
-                            // OCR模式：从文本中提取搜索关键词
-                            val lines = text.lines()
-                            val multiQuestionPattern = Regex("""[1-9]\s*[.、．]\s*\S""")
-                            val isMultiQuestion = AppConfig.isRegexFilterEnabled() && multiQuestionPattern.containsMatchIn(text)
-                            if (!isMultiQuestion) {
-                                val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
-                                val optionLines = lines.filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }.map { it.trim() }
-                                val searchQuery = if (!questionLine.isNullOrBlank()) {
-                                    (listOf(questionLine) + optionLines).joinToString(" ")
-                                } else {
-                                    text
-                                }
-                                AppLog.d("REC", "Web搜索(OCR): $searchQuery")
-                                searchContext = pipeline.searchWeb(searchQuery)
-                            } else {
-                                AppLog.d("REC", "多题正则过滤: 跳过OCR搜索")
-                            }
-                        }
-                    }
+                    // 仅工具模式：联网搜索由 LLM 自主调用工具完成（预搜索注入已移除）
                     val result = pipeline.askLlm(
-                        text, questionTypes, searchContext,
+                        text, questionTypes, "",
                         systemPrompt = Constants.buildRecordingSystemPrompt(
-                            captureIndex, captureCount, questionTypes, searchContext
+                            captureIndex, captureCount, questionTypes, ""
                         )
                     )
-                    result.onSuccess { aiAnswers -> storeAnswer(aiAnswers, captureIndex) }
-                        .onFailure { error ->
+                    result.onSuccess { aiAnswers ->
+                        if (aiAnswers.isEmpty()) {
+                            // 空答案（如工具伪文本解析失败）计入失败，避免静默丢失
                             _failedCount.incrementAndGet()
-                            AppLog.e("REC", "answer failed for Q$captureIndex", error)
+                            AppLog.w("REC", "empty answers for Q$captureIndex, counted as failed")
+                        } else {
+                            storeAnswer(aiAnswers, captureIndex)
                         }
+                    }
+                    .onFailure { error ->
+                        _failedCount.incrementAndGet()
+                        AppLog.e("REC", "answer failed for Q$captureIndex", error)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -339,8 +326,10 @@ class RecordingCoordinator(
             jobs.remove(job)
             activeJobCount.decrementAndGet()
             AppLog.d("REC", "计数器-1(API完成): activeJobs=${activeJobCount.get()}")
-            if (isProcessing && jobs.isEmpty()) {
-                ensureResultsNotified()
+            if (isProcessing) {
+                // M12: 每个答案完成也走进度检查，保证 (x/N) 进度随答案增长更新，
+                //     而不是从 partial 直接跳到"全部完成"
+                scope.launch(Dispatchers.Main) { checkAndNotifyProgress() }
             }
         }
     }
@@ -368,13 +357,14 @@ class RecordingCoordinator(
         copyTexts.add(captureIndex to copyEntry)
     }
 
-    private fun notifyResults() {
+    private fun notifyResults(isFinal: Boolean = true) {
         callbacks.onResultsAvailable(
             answers = answers.sortedBy { it.first },
             copyTexts = copyTexts.sortedBy { it.first },
             total = captureCount,
             skipped = skippedCount,
-            failed = failedCount
+            failed = failedCount,
+            isFinal = isFinal
         )
     }
 
@@ -385,7 +375,9 @@ class RecordingCoordinator(
         if (done >= total && jobs.isEmpty()) {
             ensureResultsNotified()
         } else {
-            callbacks.onProgressUpdate(answersSoFar, totalQuestions)
+            // 进度分母 = max(截图数, 已识别题数)，恒定不变（避免分母随识别结果动态增长造成"识别不全"错觉），
+            //     且一图多题场景不会出现已完成数超过分母的荒谬显示
+            callbacks.onProgressUpdate(answersSoFar, maxOf(captureCount, totalQuestions))
         }
     }
 

@@ -34,12 +34,10 @@ class RecordingCoordinatorTest {
         every { AppConfig.getMaxConcurrency() } returns 3
         every { AppConfig.isVisionEnabled() } returns false
         every { AppConfig.getQuestionTypes() } returns setOf("选择题")
-        every { AppConfig.isRegexFilterEnabled() } returns false
         coEvery { OpenAIClient.isNetworkAvailable() } returns true
         every { Constants.buildRecordingSystemPrompt(any(), any(), any(), any()) } returns "recording_system_prompt"
         every { MyApplication.getString(any<Int>()) } returns "MOCK_LABEL"
         every { MyApplication.getString(any<Int>(), *anyVararg()) } returns "MOCK_LABEL"
-        every { callbacks.isSearchEnabled() } returns false
         every { callbacks.getString(any(), *anyVararg()) } returns "mock_string"
         every { callbacks.getString(any()) } returns "mock_string"
         coordinator = RecordingCoordinator(pipeline, CoroutineScope(Dispatchers.Unconfined), callbacks)
@@ -92,7 +90,7 @@ class RecordingCoordinatorTest {
         )
 
         val latch = CountDownLatch(1)
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers { latch.countDown() }
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers { latch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
         delay(10)
@@ -258,7 +256,8 @@ class RecordingCoordinatorTest {
         )
 
         coordinator.processBitmap(mockBitmap())
-        delay(10)
+        // 全量并行测试下 IO 线程池竞争，固定 delay 不可靠：轮询等待 VLM 回调完成
+        while (coordinator.totalQuestions < 2) { delay(10) }
 
         assertEquals(2, coordinator.totalQuestions)
         assertEquals(1, coordinator.skippedCount)
@@ -352,63 +351,9 @@ class RecordingCoordinatorTest {
     // ===========================================================
     //  fetchAnswer Tests
     // ===========================================================
-
-    @Test
-    fun fetchAnswer_with_VLM_search_keywords_calls_searchWeb() = runBlocking {
-        every { AppConfig.isVisionEnabled() } returns true
-        every { callbacks.isSearchEnabled() } returns true
-        coordinator.start()
-
-        val vlmResult = VisionFilterResult(
-            hasQuestions = true,
-            extractedText = "test",
-            searchKeywords = "custom search keywords"
-        )
-        coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vlmResult)
-        coEvery { pipeline.searchWeb(any(), any()) } returns "search results"
-        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
-            listOf(mockAnswer())
-        )
-
-        coordinator.processBitmap(mockBitmap())
-        delay(10)
-
-        coVerify { pipeline.searchWeb("custom search keywords", any()) }
-    }
-
-    @Test
-    fun fetchAnswer_without_VLM_search_enabled_builds_text_based_query() = runBlocking {
-        every { callbacks.isSearchEnabled() } returns true
-        coordinator.start()
-        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("What is the answer?")
-        coEvery { pipeline.searchWeb(any(), any()) } returns "search results"
-        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
-            listOf(mockAnswer())
-        )
-
-        coordinator.processBitmap(mockBitmap())
-        delay(10)
-
-        coVerify { pipeline.searchWeb(any(), any()) }
-    }
-
-    @Test
-    fun fetchAnswer_multi_question_pattern_skips_OCR_web_search_when_regex_enabled() = runBlocking {
-        every { callbacks.isSearchEnabled() } returns true
-        every { AppConfig.isRegexFilterEnabled() } returns true
-        coordinator.start()
-        coEvery { pipeline.recognizeOcr(any()) } returns Result.success(
-            "1. 第一题\nA. 选项A\nB. 选项B\n2. 第二题\nA. 选项A\nB. 选项B"
-        )
-        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
-            listOf(mockAnswer())
-        )
-
-        coordinator.processBitmap(mockBitmap())
-        delay(10)
-
-        coVerify(exactly = 0) { pipeline.searchWeb(any(), any()) }
-    }
+    // ===========================================================
+    //  fetchAnswer Tests
+    // ===========================================================
 
     @Test
     fun fetchAnswer_network_unavailable_increments_failedCount() = runBlocking {
@@ -433,7 +378,7 @@ class RecordingCoordinatorTest {
 
         val latch = CountDownLatch(1)
         val receivedAnswers = mutableListOf<List<Pair<Int, String>>>()
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers {
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
             receivedAnswers.add(firstArg())
             latch.countDown()
         }
@@ -457,7 +402,7 @@ class RecordingCoordinatorTest {
 
         val latch = CountDownLatch(1)
         val receivedFailed = mutableListOf<Int>()
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers {
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
             receivedFailed.add(invocation.args[4] as Int)
             latch.countDown()
         }
@@ -483,7 +428,7 @@ class RecordingCoordinatorTest {
 
         val latch = CountDownLatch(1)
         val receivedAnswers = mutableListOf<List<Pair<Int, String>>>()
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers {
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
             receivedAnswers.add(firstArg())
             latch.countDown()
         }
@@ -511,7 +456,7 @@ class RecordingCoordinatorTest {
 
         val latch = CountDownLatch(1)
         val receivedAnswers = mutableListOf<List<Pair<Int, String>>>()
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers {
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
             receivedAnswers.add(firstArg())
             latch.countDown()
         }
@@ -535,7 +480,7 @@ class RecordingCoordinatorTest {
 
         val latch = CountDownLatch(1)
         val receivedAnswers = mutableListOf<List<Pair<Int, String>>>()
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers {
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
             receivedAnswers.add(firstArg())
             latch.countDown()
         }
@@ -561,8 +506,10 @@ class RecordingCoordinatorTest {
 
         val latch = CountDownLatch(1)
         val receivedAnswers = mutableListOf<List<Pair<Int, String>>>()
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers {
+        val receivedIsFinal = mutableListOf<Boolean>()
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
             receivedAnswers.add(firstArg())
+            receivedIsFinal.add(invocation.args[5] as Boolean)
             latch.countDown()
         }
 
@@ -586,8 +533,11 @@ class RecordingCoordinatorTest {
         assertTrue("partial notified, received=${receivedAnswers.size}", latch.await(1, TimeUnit.SECONDS))
         assertTrue(receivedAnswers.isNotEmpty())
         assertTrue(receivedAnswers[0].isNotEmpty())
-        // 最终通知（等待在途 job 完成后的 ensureResultsNotified）
+        // M11: partial 通知必须标记 isFinal=false（UI 显示"处理中"而非"全部完成"）
+        assertFalse("partial notification must be isFinal=false", receivedIsFinal[0])
+        // 最终通知（等待在途 job 完成后的 ensureResultsNotified）— 必须 isFinal=true
         delay(800)
+        assertTrue("final notification must arrive", receivedIsFinal.any { it })
     }
 
     @Test
@@ -601,7 +551,7 @@ class RecordingCoordinatorTest {
         )
 
         val latch = CountDownLatch(1)
-        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any()) } answers { latch.countDown() }
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers { latch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
         delay(50)
@@ -622,5 +572,76 @@ class RecordingCoordinatorTest {
         // 误触保护模拟: cancel 清状态但 answers 已通过通知送达 UI
         coordinator.cancel()
         assertFalse(coordinator.isActive)
+    }
+
+    @Test
+    fun fetchAnswer_empty_answers_counts_as_failed() = runBlocking {
+        coordinator.start()
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("empty answer question?")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(emptyList())
+
+        coordinator.processBitmap(mockBitmap())
+        coordinator.stop()
+        // 等待在途 job 完成（IO 线程异步）后再断言
+        while (coordinator.getActiveJobCount() > 0) { delay(10) }
+        delay(50)
+
+        assertEquals(1, coordinator.failedCount)
+        assertEquals(1, coordinator.captureCount)
+    }
+
+    @Test
+    fun stop_waits_for_late_fetch_jobs_before_final_notify() = runBlocking {
+        every { AppConfig.isVisionEnabled() } returns true
+        coordinator.start()
+        // VLM 识别耗时（stop 时仍在途），完成后才启动 fetchAnswer
+        coEvery { pipeline.recognizeVlm(any()) } coAnswers {
+            delay(100)
+            Result.success(VisionFilterResult(hasQuestions = true, extractedText = "late question?"))
+        }
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(100)
+            Result.success(listOf(mockAnswer()))
+        }
+
+        coordinator.processBitmap(mockBitmap())
+        delay(20) // VLM job 仍在途
+
+        val result = coordinator.stop()
+        assertTrue(result is RecordingCoordinator.StopResult.Processing)
+
+        delay(500) // 等待兜底协程动态 join 全部 job（VLM + 后加入的 fetchAnswer）
+        // 最终通知必须发生在答案完整之后（回归：旧实现会提前通知空/部分答案且不再刷新）
+        coVerify(exactly = 1) {
+            callbacks.onResultsAvailable(
+                match { answers -> answers.isNotEmpty() },
+                any(), any(), any(), any(), any()
+            )
+        }
+        assertEquals(0, coordinator.failedCount)
+    }
+
+    @Test
+    fun fetch_answer_completion_updates_progress_after_stop() = runBlocking {
+        coordinator.start()
+        // OCR 识别立即完成，但答案生成延迟（stop 后才完成）
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("question")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(200)
+            Result.success(listOf(mockAnswer()))
+        }
+        val progressUpdates = mutableListOf<Pair<Int, Int>>()
+        every { callbacks.onProgressUpdate(any(), any()) } answers {
+            progressUpdates.add(invocation.args[0] as Int to invocation.args[1] as Int)
+        }
+
+        coordinator.processBitmap(mockBitmap())
+        delay(50) // OCR 完成、fetch 还在跑
+        coordinator.stop() // isProcessing=true，answers=0 → 无 partial 通知
+        delay(400) // fetch 完成后 M12 触发 checkAndNotifyProgress
+
+        // 答案完成后进度必须更新（回归：M12 代码行曾丢失导致 (x/N) 不更新）
+        assertTrue("progress should update after answer completes", progressUpdates.any { it.first == 1 })
+        assertEquals(0, coordinator.failedCount)
     }
 }
