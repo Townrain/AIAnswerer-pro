@@ -9,9 +9,7 @@ import com.hwb.aianswerer.utils.AppLog
 /**
  * 联网搜索工具执行器。
  *
- * 被两处复用：
- * 1. 旧预搜索模式 — [com.hwb.aianswerer.CapturePipeline.searchWeb] 委托调用（行为不变）
- * 2. function calling 模式 — [com.hwb.aianswerer.api.OpenAIClient] 工具循环中执行 web_search 工具
+ * 唯一使用方：function calling 模式 — [com.hwb.aianswerer.api.OpenAIClient] 工具循环中执行 web_search 工具。
  *
  * 逻辑：读取已启用供应商 → 按用户选择匹配（找不到回退第一个）→ 执行单次搜索 → 拼接结果字符串。
  * 失败/空结果一律返回空串，不抛异常，调用方自行降级。
@@ -49,13 +47,9 @@ object WebSearchToolExecutor {
 
     /**
      * 判断搜索工具（function calling）模式是否激活。
-     * 需要同时满足：配置开启工具模式 + 搜索全局开关开启 + 存在已启用供应商 + 模型支持函数调用（未知模型按不支持处理，降级为预搜索注入）。
+     * 需要同时满足：搜索全局开关开启 + 存在已启用供应商 + 模型支持函数调用（不支持则无搜索）。
      */
     fun isToolModeActive(): Boolean {
-        if (!AppConfig.isSearchToolModeEnabled()) {
-            AppLog.d("TOOL", "isToolModeActive=false: search tool mode disabled in settings")
-            return false
-        }
         if (!WebSearchStorage.isSearchEnabled()) {
             AppLog.d("TOOL", "isToolModeActive=false: web search globally disabled")
             return false
@@ -66,7 +60,7 @@ object WebSearchToolExecutor {
         }
         val modelName = AppConfig.getModelName()
         if (modelName.isNotBlank() && !ModelCapabilityChecker.isFunctionCallingModel(modelName)) {
-            AppLog.d("TOOL", "isToolModeActive=false: model '$modelName' not function-calling capable, fallback to pre-search injection")
+            AppLog.d("TOOL", "isToolModeActive=false: model '$modelName' not function-calling capable, search disabled")
             return false
         }
         AppLog.d("TOOL", "isToolModeActive=true: tool mode active (model='$modelName')")

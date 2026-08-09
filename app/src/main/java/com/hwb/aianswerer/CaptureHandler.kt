@@ -26,7 +26,6 @@ interface CaptureHandlerCallbacks {
     fun getSavedCropRect(): CropRect?
     fun getSavedCropRectEach(): CropRect?
     fun isVisionEnabled(): Boolean
-    fun isSearchEnabled(): Boolean
     fun isStealthModeEnabled(): Boolean
     fun getFloatButtonSizeDp(): Int
     fun getDensity(): Float

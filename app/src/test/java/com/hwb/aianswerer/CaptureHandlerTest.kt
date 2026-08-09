@@ -62,7 +62,6 @@ class CaptureHandlerTest {
         every { cb.isStealthModeEnabled() } returns false
         every { cb.getCurrentWindowHeightPx() } returns 0f
         every { cb.isVisionEnabled() } returns false
-        every { cb.isSearchEnabled() } returns false
 
         every { scm.isReady } returns true
         every { recorder.getActiveJobCount() } returns 0

@@ -159,7 +159,7 @@ class OpenAIVisionProvider(
                     }
 
                     val parsed = parseResponse(jsonStr)
-                    AppLog.d("VLM", "${parsed.questionCount}题 | ${parsed.searchKeywords}")
+                    AppLog.d("VLM", "${parsed.questionCount}题")
                     // 调试：完整输出 VLM 提取的题目文本（单题/多图模式看 extractedText，多题分离看 questions）
                     AppLog.d("VLM", "[VLM-FULL] mode=$multiPage multiQuestion=${parsed.isMultiQuestion} extractedTextLen=${parsed.extractedText.length}")
                     if (parsed.extractedText.isNotBlank()) {
@@ -387,7 +387,9 @@ class OpenAIVisionProvider(
         const val WITH_TIMEOUT_MS = 120_000L
         const val CONNECT_TIMEOUT_SEC = 15L
         const val WRITE_TIMEOUT_SEC = 15L
-        const val TEST_TIMEOUT_SEC = 30L
+        // M-TOOL: 测试超时与生产单请求超时（READ_TIMEOUT_SEC=120s）对齐，
+        //     避免真实尺寸测试图在并发排队时被 30s 短超时误判为限流（假阳性）
+        const val TEST_TIMEOUT_SEC = 120L
 
         @Volatile
         private var instance: OpenAIVisionProvider? = null
@@ -397,8 +399,8 @@ class OpenAIVisionProvider(
 
         private val testClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .connectTimeout(CONNECT_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(TEST_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
         }
 
@@ -440,6 +442,43 @@ class OpenAIVisionProvider(
         }
 
         /**
+         * 生成接近真实录制场景的测试图：720x1280、白色背景 + 题目样式文字。
+         * 并发测试必须用真实尺寸的截图负载，100x100 纯色小图会被服务商秒回，
+         * 掩盖真实截图（1080x2400）的视觉推理耗时与服务端排队问题。
+         */
+        private fun buildRealisticTestBitmap(): Bitmap {
+            val width = 720
+            val height = 1280
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.WHITE)
+            val paint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                color = Color.BLACK
+                textSize = 42f
+                typeface = android.graphics.Typeface.DEFAULT
+            }
+            val lines = listOf(
+                "1. 以下哪个选项是正确的？",
+                "A. 选项一",
+                "B. 选项二",
+                "C. 选项三",
+                "D. 选项四",
+                "2. 下列说法错误的是？",
+                "A. 甲",
+                "B. 乙",
+                "C. 丙",
+                "D. 丁"
+            )
+            var y = 120f
+            lines.forEach { line ->
+                canvas.drawText(line, 60f, y, paint)
+                y += 100f
+            }
+            return bitmap
+        }
+
+        /**
          * 测试视觉模型API并发性能，返回响应时间（毫秒）
          * 并发发送 N 个图片分析请求，验证服务商真实并发能力；
          * 限流/排队/超时会在测试中直接暴露，避免录制时才发现
@@ -456,12 +495,11 @@ class OpenAIVisionProvider(
                     val startTime = System.currentTimeMillis()
                     val n = concurrency.coerceIn(1, 20)
 
-                    // 创建一个简单的测试图片
-                    val testBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(testBitmap)
-                    canvas.drawColor(Color.WHITE)
+                    // 生成接近真实录制场景的测试图（720x1280、含题目样式文字），
+                    // 使并发测试结果能反映真实截图负载，而非 100x100 纯色小图（小图秒回会掩盖服务端排队）
+                    val testBitmap = buildRealisticTestBitmap()
                     val baos = java.io.ByteArrayOutputStream()
-                    testBitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
+                    testBitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos)
                     testBitmap.recycle()
                     val base64 = android.util.Base64.encodeToString(
                         baos.toByteArray(),
@@ -484,7 +522,7 @@ class OpenAIVisionProvider(
                                     model = config.modelName,
                                     messages = listOf(message),
                                     temperature = config.temperature,
-                                    maxTokens = 64
+                                    maxTokens = 256
                                 )
                                 val requestBody = JsonUtil.gson.toJson(request)
                                     .toRequestBody("application/json; charset=utf-8".toMediaType())

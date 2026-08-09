@@ -37,8 +37,6 @@ interface AnswerFetcherCallbacks {
     fun onToast(message: String)
     /** Show a dismissible error message. */
     fun onError(message: String)
-    /** Check whether web-search is currently toggled on. */
-    fun isSearchEnabled(): Boolean
 }
 
 // ── Fetcher ───────────────────────────────────────────────────────────
@@ -80,33 +78,13 @@ class AnswerFetcher(
                         return@withLock
                     }
 
-                    // Single question — build search context（仅预搜索模式；工具模式下由模型自主调用）
-                    var searchContext = ""
-                    if (!pipeline.isSearchToolModeActive()) {
-                        if (visionResult != null) {
-                            if (visionResult.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
-                                callbacks.onStatus(FloatingStatus.Searching, "搜索中…")
-                                searchContext = pipeline.searchWeb(visionResult.searchKeywords)
-                            }
-                        } else if (callbacks.isSearchEnabled()) {
-                            callbacks.onStatus(FloatingStatus.Searching, "搜索中…")
-                            val lines = text.lines()
-                            val questionLine = lines.firstOrNull { it.contains("?") || it.contains("？") }?.trim()
-                            val optionLines = lines
-                                .filter { it.trim().matches(Regex("""^[A-Da-d][.、．)\s].*""")) }
-                                .map { it.trim() }
-                            val query = if (!questionLine.isNullOrBlank()) {
-                                (listOf(questionLine) + optionLines).joinToString(" ")
-                            } else text
-                            searchContext = pipeline.searchWeb(query)
-                        }
-                    }
-
+                    // 联网搜索由 LLM 自主调用工具完成（预搜索注入已移除）
                     callbacks.onStatus(FloatingStatus.GettingAnswer, "获取答案中…")
 
                     val result = withTimeout(60_000L) {
-                        pipeline.askLlm(text, questionTypes, searchContext)
+                        pipeline.askLlm(text, questionTypes, "")
                     }
+
 
                     result
                         .onSuccess { answers -> callback(AnswerResult.Success(answers)) }
@@ -150,16 +128,9 @@ class AnswerFetcher(
         val allAnswers = mutableListOf<AIAnswer>()
 
         for ((idx, question) in questions.withIndex()) {
-            var searchContext = ""
-            if (!pipeline.isSearchToolModeActive() && question.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
-                callbacks.onStatus(FloatingStatus.Searching,
-                    "搜索中 (${idx + 1}/$totalQuestions)")
-                searchContext = pipeline.searchWeb(question.searchKeywords, 2)
-            }
-
             callbacks.onStatus(FloatingStatus.GettingAnswer,
                 "获取答案中 (${idx + 1}/$totalQuestions)")
-            val result = pipeline.askLlm(question.text, questionTypes, searchContext)
+            val result = pipeline.askLlm(question.text, questionTypes, "")
 
             result.onSuccess { answers -> allAnswers.addAll(answers) }
                 .onFailure { error ->
@@ -187,11 +158,7 @@ class AnswerFetcher(
                 async(Dispatchers.IO) {
                     semaphore.withPermit {
                         try {
-                            var searchContext = ""
-                            if (!pipeline.isSearchToolModeActive() && question.searchKeywords.isNotBlank() && callbacks.isSearchEnabled()) {
-                                searchContext = pipeline.searchWeb(question.searchKeywords, 2)
-                            }
-                            val result = pipeline.askLlm(question.text, questionTypes, searchContext)
+                            val result = pipeline.askLlm(question.text, questionTypes, "")
                             result.onSuccess { answers ->
                                 allAnswers[idx] = answers
                             }.onFailure { error ->

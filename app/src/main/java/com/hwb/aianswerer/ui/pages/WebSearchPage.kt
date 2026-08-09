@@ -115,8 +115,6 @@ private fun badgeFor(p: SearchProviderDef) = when {
 @Composable
 fun WebSearchPage(t: Th, onBack: () -> Unit) {
     var searchEnabled by remember { mutableStateOf(WebSearchStorage.isSearchEnabled()) }
-    var toolMode by remember { mutableStateOf(AppConfig.isSearchToolModeEnabled()) }
-    var regexFilter by remember { mutableStateOf(AppConfig.isRegexFilterEnabled()) }
     var searchText by remember { mutableStateOf("") }
     var expandedId by remember { mutableStateOf<String?>(null) }
     val providers = remember {
@@ -148,10 +146,6 @@ fun WebSearchPage(t: Th, onBack: () -> Unit) {
 
             WSGlass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
                 WSSwitch(t, "启用联网搜索", "识别题目后自动联网检索答案", searchEnabled) { searchEnabled = it; WebSearchStorage.saveSearchEnabled(it) }
-                WSSep(t)
-                WSModeSelector(t, toolMode) { toolMode = it; AppConfig.saveSearchToolModeEnabled(it) }
-                WSSep(t)
-                WSSwitch(t, "多题正则过滤", "检测到多题时跳过联网搜索（关闭后始终搜索）", regexFilter) { regexFilter = it; AppConfig.saveRegexFilterEnabled(it) }
             }
 
             if (searchEnabled) {
@@ -311,48 +305,6 @@ private fun WSSwitch(t: Th, title: String, desc: String, checked: Boolean, onChe
         }
     }
 }
-
-@Composable
-private fun WSModeSelector(t: Th, toolMode: Boolean, onSelect: (Boolean) -> Unit) {
-    val title = stringResource(R.string.search_mode_title)
-    val toolLabel = stringResource(R.string.search_mode_tool)
-    val toolSub = stringResource(R.string.search_mode_tool_sub)
-    val preLabel = stringResource(R.string.search_mode_pre)
-    val preSub = stringResource(R.string.search_mode_pre_sub)
-    val desc = stringResource(R.string.search_mode_desc)
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(title, style = DW.BodyMedium.copy(color = t.ob))
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth()) {
-            WSModeOption(Modifier.weight(1f), t, toolLabel, toolSub, toolMode) { onSelect(true) }
-            Spacer(Modifier.width(8.dp))
-            WSModeOption(Modifier.weight(1f), t, preLabel, preSub, !toolMode) { onSelect(false) }
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(desc,
-            style = DW.BodySmall.copy(color = t.osv))
-    }
-}
-
-@Composable
-private fun WSModeOption(modifier: Modifier, t: Th, label: String, sub: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) t.p.copy(alpha = 0.16f) else t.gb.copy(alpha = 0.4f))
-            .border(1.dp, if (selected) t.p else t.ac.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = DW.BodySmall.copy(color = if (selected) t.p else t.ob,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal))
-            Text(sub, style = DW.LabelSmall.copy(color = t.osv))
-        }
-    }
-}
-
 @Composable private fun WSSep(t: Th) { HorizontalDivider(color = t.ac.copy(alpha = 0.12f), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp)) }
 
 @Composable

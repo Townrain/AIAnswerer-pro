@@ -59,7 +59,7 @@ class ConfigStorageTest {
             ConfigStorage.KEY_QUESTION_TYPES, ConfigStorage.KEY_IS_FIRST_LAUNCH,
             ConfigStorage.KEY_CROP_MODE, ConfigStorage.KEY_DARK_MODE,
             ConfigStorage.KEY_PARALLEL_MODE, ConfigStorage.KEY_MAX_CONCURRENCY,
-            ConfigStorage.KEY_LLM_TEMPERATURE, ConfigStorage.KEY_REGEX_FILTER_ENABLED,
+            ConfigStorage.KEY_LLM_TEMPERATURE,
             ConfigStorage.KEY_REASONING_EFFORT, ConfigStorage.KEY_CAPTURE_MODE
         )
         assertEquals(keys.size, keys.toSet().size)

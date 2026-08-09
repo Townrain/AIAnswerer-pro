@@ -2,12 +2,9 @@ package com.hwb.aianswerer
 
 import android.graphics.Bitmap
 import com.hwb.aianswerer.api.OpenAIClient
-import com.hwb.aianswerer.api.search.WebSearchToolExecutor
 import com.hwb.aianswerer.api.vision.VisionFilterResult
 import com.hwb.aianswerer.api.vision.VisionProviderFactory
-import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.AIAnswer
-import com.hwb.aianswerer.providers.WebSearchStorage
 
 /**
  * 答题流水线 — 纯粹的识别、搜索、AI 调用逻辑。
@@ -55,19 +52,6 @@ class CapturePipeline(
             text, questionTypes, searchContext, systemPrompt = systemPrompt
         )
     }
-
-    /**
-     * 联网搜索。
-     * 调用前请先检查 searchEnabled，本方法不判断开关状态。
-     */
-    suspend fun searchWeb(query: String, maxResults: Int = 2): String =
-        WebSearchToolExecutor.execute(query, maxResults)
-
-    /**
-     * 判断是否应使用 function calling 工具模式（而非预搜索注入模式）。
-     * 委托 [WebSearchToolExecutor.isToolModeActive] 统一判定。
-     */
-    fun isSearchToolModeActive(): Boolean = WebSearchToolExecutor.isToolModeActive()
 
     /** 判断文本是否像一道题目 */
     fun looksLikeQuestion(text: String): Boolean {

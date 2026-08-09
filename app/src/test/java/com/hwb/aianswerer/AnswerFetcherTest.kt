@@ -25,7 +25,6 @@ class AnswerFetcherTest {
     private fun a(answer: String) = AIAnswer("Q", "选择题", answer)
     private fun q(i: Int, t: String) = SeparatedQuestion(index = i, text = t, searchKeywords = "")
     private fun vr(qs: List<SeparatedQuestion>) = VisionFilterResult(hasQuestions = true, questionTypes = listOf("选择题"), questions = qs)
-    private fun vr(kw: String) = VisionFilterResult(hasQuestions = true, questionTypes = listOf("选择题"), searchKeywords = kw)
     private fun novr() = VisionFilterResult(hasQuestions = false)
 
     data class F(val f: AnswerFetcher, val p: CapturePipeline, val c: AnswerFetcherCallbacks)
@@ -34,10 +33,7 @@ class AnswerFetcherTest {
         mockkObject(AppConfig); mockkObject(OpenAIClient)
         every { AppConfig.getQuestionTypes() } returns setOf("选择题")
         coEvery { OpenAIClient.isNetworkAvailable() } returns true
-        // 默认非工具模式（预搜索路径），工具模式用例单独覆盖
-        every { p.isSearchToolModeActive() } returns false
         val c = mockk<AnswerFetcherCallbacks>(relaxed = true)
-        every { c.isSearchEnabled() } returns false
         val f = AnswerFetcher(p, CoroutineScope(Dispatchers.Unconfined), c)
         return F(f, p, c)
     }
@@ -68,67 +64,7 @@ class AnswerFetcherTest {
         coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.failure(RuntimeException("boom"))
         assertTrue((await(s.f, "t") as AnswerResult.Error).message.contains("AI分析失败"))
     }
-
-    // ── Search context ────────────────────────────────────────────────
-    @Test fun search_builds_query() {
-        val s = setup(); every { s.c.isSearchEnabled() } returns true
-        val slot = slot<String>()
-        val done = CountDownLatch(1)
-        coEvery { s.p.searchWeb(capture(slot)) } returns ""
-        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
-        s.f.fetchAnswer("光合作用？\nA.水") { done.countDown() }
-        assertTrue("callback timeout", done.await(5, TimeUnit.SECONDS))
-        assertTrue(slot.captured.contains("光合"))
-    }
-
-    @Test fun search_fulltext_fallback() {
-        val s = setup(); every { s.c.isSearchEnabled() } returns true
-        val slot = slot<String>()
-        val done = CountDownLatch(1)
-        coEvery { s.p.searchWeb(capture(slot)) } returns ""
-        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
-        s.f.fetchAnswer("光合作用 原料") { done.countDown() }
-        assertTrue("callback timeout", done.await(5, TimeUnit.SECONDS))
-        assertEquals("光合作用 原料", slot.captured)
-    }
-
-    @Test fun vlm_search_disabled() {
-        val s = setup(); every { s.c.isSearchEnabled() } returns false
-        val done = CountDownLatch(1)
-        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
-        s.f.fetchAnswer("x", vr(kw = "忽略")) { done.countDown() }
-        assertTrue("callback timeout", done.await(5, TimeUnit.SECONDS))
-        coVerify(exactly = 0) { s.p.searchWeb(any()) }
-    }
-
-    // ── Tool mode (function calling) ─────────────────────────────────
-
-    @Test
-    fun tool_mode_skips_presearch_single() {
-        val s = setup()
-        every { s.p.isSearchToolModeActive() } returns true
-        every { s.c.isSearchEnabled() } returns true
-        val searchCtx = slot<String>()
-        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), capture(searchCtx)) } returns Result.success(listOf(a("B")))
-        val ans = (await(s.f, "x", vr(kw = "关键词")) as AnswerResult.Success).answers
-        assertEquals("B", ans[0].answer)
-        assertEquals("", searchCtx.captured)
-        coVerify(exactly = 0) { s.p.searchWeb(any()) }
-    }
-
-    @Test
-    fun tool_mode_skips_presearch_multi() {
-        val s = setup()
-        every { s.p.isSearchToolModeActive() } returns true
-        every { s.c.isSearchEnabled() } returns true
-        every { AppConfig.isParallelModeEnabled() } returns true
-        every { AppConfig.getMaxConcurrency() } returns 10
-        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(listOf(a("A")))
-        val ans = (await(s.f, "", vr(listOf(q(1, "Q1"), q(2, "Q2")))) as AnswerResult.Success).answers
-        assertEquals(2, ans.size)
-        coVerify(exactly = 0) { s.p.searchWeb(any()) }
-    }
-
+    // ── Mutex serialisation ───────────────────────────────────────────
     // ── Mutex serialisation ───────────────────────────────────────────
     @Test fun mutex_serializes() {
         val s = setup()

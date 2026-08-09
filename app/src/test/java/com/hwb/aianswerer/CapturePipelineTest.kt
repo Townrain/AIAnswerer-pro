@@ -145,76 +145,6 @@ class CapturePipelineTest {
         assertEquals("搜索结果内容", capturedSearchContext)
     }
 
-    // ── searchWeb ──
-
-    @Test
-    fun `searchWeb returns empty when no providers enabled`() = runBlocking {
-        every { WebSearchStorage.getEnabledProviders() } returns emptyList()
-
-        val result = pipeline.searchWeb("测试查询")
-
-        assertEquals("", result)
-    }
-
-    @Test
-    fun `searchWeb uses selected provider`() = runBlocking {
-        val providerInfo = LocalWebSearchConfig(
-            id = "tavily", name = "Tavily", apiHost = "https://api.tavily.com",
-            url = "", requiresApiKey = true, requiresHost = false,
-            supportsBasicAuth = false, websites = null,
-            apiKey = "test-key", enabled = true
-        )
-        every { WebSearchStorage.getEnabledProviders() } returns listOf(providerInfo)
-        every { AppConfig.getWebSearchProvider() } returns "Tavily"
-        every { WebSearchClientFactory.create(providerInfo) } returns mockSearchProvider
-        coEvery { mockSearchProvider.search("测试查询", 2) } returns listOf(
-            WebSearchResult(title = "标题", url = "https://example.com", snippet = "片段")
-        )
-
-        val result = pipeline.searchWeb("测试查询", 2)
-
-        assertTrue(result.contains("标题"))
-        assertTrue(result.contains("片段"))
-    }
-
-    @Test
-    fun `searchWeb falls back to first provider when selected not found`() = runBlocking {
-        val providerInfo = LocalWebSearchConfig(
-            id = "bocha", name = "Bocha", apiHost = "https://api.bocha.com",
-            url = "", requiresApiKey = true, requiresHost = false,
-            supportsBasicAuth = false, websites = null,
-            apiKey = "test-key", enabled = true
-        )
-        every { WebSearchStorage.getEnabledProviders() } returns listOf(providerInfo)
-        every { AppConfig.getWebSearchProvider() } returns "NonExistent"
-        every { WebSearchClientFactory.create(providerInfo) } returns mockSearchProvider
-        coEvery { mockSearchProvider.search(any(), any()) } returns listOf(
-            WebSearchResult(title = "Bocha结果", url = "https://bocha.com", snippet = "内容")
-        )
-
-        val result = pipeline.searchWeb("查询")
-
-        assertTrue(result.contains("Bocha结果"))
-    }
-
-    @Test
-    fun `searchWeb returns empty when provider returns empty results`() = runBlocking {
-        val providerInfo = LocalWebSearchConfig(
-            id = "tavily", name = "Tavily", apiHost = "https://api.tavily.com",
-            url = "", requiresApiKey = true, requiresHost = false,
-            supportsBasicAuth = false, websites = null,
-            apiKey = "test-key", enabled = true
-        )
-        every { WebSearchStorage.getEnabledProviders() } returns listOf(providerInfo)
-        every { AppConfig.getWebSearchProvider() } returns "Tavily"
-        every { WebSearchClientFactory.create(providerInfo) } returns mockSearchProvider
-        coEvery { mockSearchProvider.search(any(), any()) } returns emptyList()
-
-        val result = pipeline.searchWeb("查询")
-
-        assertEquals("", result)
-    }
-
     // ── looksLikeQuestion ──
 
     @Test
@@ -265,20 +195,5 @@ class CapturePipelineTest {
     fun `looksLikeQuestion case insensitive for keywords`() {
         assertTrue(pipeline.looksLikeQuestion("WHICH option is CORRECT"))
         assertTrue(pipeline.looksLikeQuestion("what is this"))
-    }
-
-    // ── isSearchToolModeActive ──
-
-    @Test
-    fun `isSearchToolModeActive delegates to WebSearchToolExecutor`() {
-        mockkObject(WebSearchToolExecutor)
-        try {
-            every { WebSearchToolExecutor.isToolModeActive() } returns true
-            assertTrue(pipeline.isSearchToolModeActive())
-            every { WebSearchToolExecutor.isToolModeActive() } returns false
-            assertFalse(pipeline.isSearchToolModeActive())
-        } finally {
-            unmockkObject(WebSearchToolExecutor)
-        }
     }
 }

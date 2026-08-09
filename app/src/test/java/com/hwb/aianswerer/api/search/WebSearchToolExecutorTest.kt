@@ -108,21 +108,13 @@ class WebSearchToolExecutorTest {
     // ── isToolModeActive ────────────────────────────────────────────
 
     @Test
-    fun `tool mode inactive when config disabled`() {
-        every { AppConfig.isSearchToolModeEnabled() } returns false
-        assertFalse(WebSearchToolExecutor.isToolModeActive())
-    }
-
-    @Test
     fun `tool mode inactive when search toggle off`() {
-        every { AppConfig.isSearchToolModeEnabled() } returns true
         every { WebSearchStorage.isSearchEnabled() } returns false
         assertFalse(WebSearchToolExecutor.isToolModeActive())
     }
 
     @Test
     fun `tool mode inactive when no enabled providers`() {
-        every { AppConfig.isSearchToolModeEnabled() } returns true
         every { WebSearchStorage.isSearchEnabled() } returns true
         every { WebSearchStorage.getEnabledProviders() } returns emptyList()
         assertFalse(WebSearchToolExecutor.isToolModeActive())
@@ -130,7 +122,6 @@ class WebSearchToolExecutorTest {
 
     @Test
     fun `tool mode inactive when model explicitly does not support function calling`() {
-        every { AppConfig.isSearchToolModeEnabled() } returns true
         every { WebSearchStorage.isSearchEnabled() } returns true
         every { WebSearchStorage.getEnabledProviders() } returns listOf(provider("tavily", "Tavily"))
         every { AppConfig.getModelName() } returns "deepseek-r1-0528"
@@ -140,7 +131,6 @@ class WebSearchToolExecutorTest {
 
     @Test
     fun `tool mode active when all conditions met`() {
-        every { AppConfig.isSearchToolModeEnabled() } returns true
         every { WebSearchStorage.isSearchEnabled() } returns true
         every { WebSearchStorage.getEnabledProviders() } returns listOf(provider("tavily", "Tavily"))
         every { AppConfig.getModelName() } returns "deepseek-chat"
@@ -150,7 +140,6 @@ class WebSearchToolExecutorTest {
 
     @Test
     fun `tool mode active for unknown model name (defaults to supported)`() {
-        every { AppConfig.isSearchToolModeEnabled() } returns true
         every { WebSearchStorage.isSearchEnabled() } returns true
         every { WebSearchStorage.getEnabledProviders() } returns listOf(provider("tavily", "Tavily"))
         every { AppConfig.getModelName() } returns ""
