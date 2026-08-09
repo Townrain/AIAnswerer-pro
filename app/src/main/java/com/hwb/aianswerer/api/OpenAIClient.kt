@@ -102,15 +102,13 @@ class OpenAIClient {
 
             // 构建请求，使用动态系统提示词（可被调用方覆盖）
             val systemPrompt = systemPrompt ?: Constants.buildSystemPrompt(questionTypes, searchContext)
-            val messages = mutableListOf(
+            val baseUserMessage = com.hwb.aianswerer.Constants.getPromptResources().getString(
+                R.string.system_prompt_user_message,
+                recognizedText
+            )
+            var messages = mutableListOf(
                 ChatMessage(role = "system", content = systemPrompt),
-                ChatMessage(
-                    role = "user",
-                    content = com.hwb.aianswerer.Constants.getPromptResources().getString(
-                        R.string.system_prompt_user_message,
-                        recognizedText
-                    )
-                )
+                ChatMessage(role = "user", content = baseUserMessage)
             )
 
             // function calling 工具模式：携带 web_search 工具定义，由模型自主决定是否搜索
@@ -119,15 +117,37 @@ class OpenAIClient {
                 AppLog.d("TOOL", "analyzeQuestion: tool mode active, attaching tool '${spec.function.name}' with messages=${messages.size}")
                 listOf(spec)
             } else {
-                AppLog.d("TOOL", "analyzeQuestion: tool mode inactive, using pre-search injection path")
+                AppLog.d("TOOL", "analyzeQuestion: tool mode inactive, answering without web search")
                 null
             }
+
 
             // 多轮工具循环：模型请求工具 → 执行搜索 → role:tool 回填 → 重发，直到模型直接给出答案
             var answerContent = ""
             var rounds = 0
+            // M-TOOL: 搜索无有效信息时强制直接作答；已收集的搜索上下文用于重建干净对话
+            val searchContextBuilder = StringBuilder()
+            var forceDirectAnswer = false
+            // M-TOOL: 重建"直接作答"对话 — 丢弃全部工具历史，避免模型惯性输出 <tool_calls> 伪文本
+            fun buildDirectAnswerMessages(): MutableList<ChatMessage> {
+                val forcePrompt = systemPrompt + "\n\n" +
+                    MyApplication.getString(R.string.system_prompt_force_direct_answer)
+                val userContent = baseUserMessage + if (searchContextBuilder.isNotEmpty()) {
+                    "\n\n【已获取的联网搜索结果（仅供参考，可能不足以作答）】\n" + searchContextBuilder
+                } else ""
+                return mutableListOf(
+                    ChatMessage(role = "system", content = forcePrompt),
+                    ChatMessage(role = "user", content = userContent)
+                )
+            }
             while (true) {
                 rounds++
+                // M-TOOL: 搜索无有效信息 → 去掉工具并用干净对话强制直接作答（从源头掐断死循环）
+                if (forceDirectAnswer && tools != null) {
+                    AppLog.w("API", "search yielded no useful info, rebuilding clean conversation without tools")
+                    messages = buildDirectAnswerMessages()
+                    tools = null
+                }
                 AppLog.d("TOOL", "round $rounds: sending chat request (messages=${messages.size}, tools=${tools != null})")
                 val chatRequest = ChatRequest(
                     model = modelName,
@@ -183,6 +203,13 @@ class OpenAIClient {
                         AppLog.d("TOOL", "round $rounds: executing ${tc.name}: argsParsed=${parsed != null}, fallbackToQuestion=${parsed == null}, queryLen=${query.length}")
                         val searchResult = WebSearchToolExecutor.execute(query, 2)
                         AppLog.d("TOOL", "round $rounds: tool result: chars=${searchResult.length}, blank=${searchResult.isBlank()}")
+                        // M-TOOL: 搜索无有效信息时标记强制直接作答；有效结果收集进上下文供重建对话使用
+                        // M-TOOL: 搜索完全无结果时标记强制直接作答；有效结果收集进上下文供重建对话使用
+                        if (searchResult.isBlank()) {
+                            forceDirectAnswer = true
+                        } else {
+                            searchContextBuilder.append(searchResult).append('\n')
+                        }
                         messages.add(
                             ChatMessage(
                                 role = "tool",
@@ -197,10 +224,13 @@ class OpenAIClient {
                 // 工具循环封顶：模型仍在请求工具但已超出轮数上限
                 if (streamResult.toolCalls.isNotEmpty() && rounds > MAX_TOOL_ROUNDS) {
                     AppLog.w("API", "tool loop capped after $MAX_TOOL_ROUNDS rounds, forcing answer from remaining content (len=${streamResult.content.length})")
-                    // 防呆：封顶且 content 为空（推理模型仍在输出 reasoning、未给出答案）时，
-                    // 去掉 tools 再发最后一轮，强制模型直接作答，避免返回空答案
+                    // M-TOOL: 封顶且 content 为空（推理模型仍在输出 reasoning、未给出答案）时，
+                    //     重建干净对话（丢弃工具历史）再发最后一轮，避免模型惯性输出 <tool_calls> 伪文本
                     if (streamResult.content.isBlank() && tools != null) {
-                        AppLog.w("API", "tool loop capped with empty content, retrying without tools to force final answer"); tools = null; continue
+                        AppLog.w("API", "tool loop capped with empty content, rebuilding clean conversation without tools")
+                        messages = buildDirectAnswerMessages()
+                        tools = null
+                        continue
                     }
                 }
 
@@ -209,12 +239,41 @@ class OpenAIClient {
             }
             AppLog.d("TOOL", "tool loop finished: rounds=$rounds, answerLen=${answerContent.length}")
 
-            AppLog.d("API", "AI原始响应长度: ${answerContent.length}")
+            // M-TOOL: 伪工具文本防护 — 模型在无 tools 请求中仍可能输出 <tool_calls> 伪文本，
+            //         先剥离工具调用标记再交给解析器，避免伪文本被降级提取成垃圾答案
+            val sanitizedAnswer = sanitizeToolCallText(answerContent)
+            AppLog.d("API", "AI原始响应长度: ${sanitizedAnswer.length}")
             // 完整响应含题目与答案内容，降级为 debug 级别（受调试日志开关控制），避免无条件写入日志文件
-            AppLog.d("API", "AI原始完整响应: $answerContent")
+            AppLog.d("API", "AI原始完整响应: $sanitizedAnswer")
             // 解析AI返回的JSON答案
             // 策略：先直接解析原文（AI通常返回干净JSON），失败再提取+修复
-            val result = Result.success(answerExtractor.parseJsonAnswers(answerContent))
+            val result: Result<List<AIAnswer>> = if (containsToolCallMarkers(answerContent) &&
+                !sanitizedAnswer.contains("{") && !sanitizedAnswer.contains("[")
+
+
+            ) {
+                // 伪工具文本剥离后无任何 JSON 负载（如截断前缀只是普通叙述），按空答案处理，
+                // 避免被降级文本提取成垃圾答案条目
+                AppLog.w("API", "sanitized tool-call pseudo text has no JSON payload, treating as empty answer")
+
+
+                Result.success(emptyList())
+
+
+            } else {
+                val parsed = answerExtractor.parseJsonAnswers(sanitizedAnswer).toMutableList()
+                // 降级文本提取的条目可能缺题目（question 为占位文案）：用原始题目文本补全，
+                // 避免结果卡显示"无法解析题目"
+                if (parsed.size == 1) {
+                    val ans = parsed[0]
+                    if (ans.question == MyApplication.getString(R.string.error_parse_question_failed) &&
+                        ans.answer.isNotBlank()
+                    ) {
+                        parsed[0] = ans.copy(question = recognizedText)
+                    }
+                }
+                Result.success(parsed)
+            }
 
             AppLog.leave("API", "analyzeQuestion", _start)
             result
@@ -507,6 +566,31 @@ class OpenAIClient {
 
         // function calling 工具循环：最多执行 2 轮工具调用（加首轮共最多 3 次请求），防止死循环
         const val MAX_TOOL_ROUNDS = 2
+
+        /**
+         * 防伪工具文本：模型在无 tools 参数请求中仍可能输出 <tool_calls> 格式伪文本（受历史工具消息影响）。
+         * 含工具调用标记时截断到首个 '<' 之前；无可用内容则返回空串（交由解析层按失败处理）。
+         */
+        fun sanitizeToolCallText(content: String): String {
+            val trimmed = content.trim()
+            if (!trimmed.contains("<tool_calls") && !trimmed.contains("</tool_calls>") &&
+                !trimmed.contains("<invoke") && !trimmed.contains("</invoke>")
+            ) {
+                return content
+            }
+            val cut = trimmed.indexOf('<')
+            return if (cut > 0) trimmed.substring(0, cut).trim() else ""
+        }
+
+        /**
+         * 判断内容是否含工具调用标记（伪 <tool_calls> 或 JSON 风格 \"tool_calls\" 字段）。
+         */
+        fun containsToolCallMarkers(content: String): Boolean {
+            val trimmed = content.trim()
+            return trimmed.contains("<tool_calls") || trimmed.contains("</tool_calls>") ||
+                trimmed.contains("<invoke") || trimmed.contains("</invoke>") ||
+                trimmed.contains("tool_call_id") || trimmed.contains("\"tool_calls\"")
+        }
 
         // 使用全局共享的Gson实例
         private val gson = JsonUtil.gson

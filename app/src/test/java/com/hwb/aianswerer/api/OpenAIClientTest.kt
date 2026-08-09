@@ -706,4 +706,72 @@ data: [DONE]
         assertEquals(3, server.requestCount)
         coVerify(exactly = 2) { WebSearchToolExecutor.execute(any(), any()) }
     }
+
+    @Test
+    fun `sanitizeToolCallText - strips tool call pseudo text`() {
+        val pseudo = "前置说明\n<tool_calls>\n<invoke name=\"web_search\">\n<parameter name=\"query\">\"测试\"</parameter>\n</invoke>\n</tool_calls>"
+        assertEquals("前置说明", OpenAIClient.sanitizeToolCallText(pseudo))
+        assertEquals("", OpenAIClient.sanitizeToolCallText("<tool_calls><invoke name=\"web_search\"></invoke></tool_calls>"))
+        assertEquals("{\"answer\":\"A\"}", OpenAIClient.sanitizeToolCallText("{\"answer\":\"A\"}"))
+    }
+
+    @Test
+    fun `analyzeQuestion - tool loop capped rebuilds clean conversation without tools and parses answer`() = runBlocking {
+        toolModeOn()
+        // Round 1-3: 模型持续请求工具且无内容（冷门题搜不到 → 死循环），round 3 触发封顶
+        val toolCallDelta = "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"冷门题\\\"}\"}}]}}]}"
+        repeat(3) {
+            server.enqueue(MockResponse().setResponseCode(200).setBody(sse(toolCallDelta)))
+        }
+        // 封顶重建后的无工具请求：模型直接输出 JSON 答案
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("C")))
+
+        val result = client.analyzeQuestion("冷门题", systemPrompt = "test")
+
+        assertTrue(result.isSuccess)
+        assertEquals("C", result.getOrNull()!![0].answer)
+        repeat(3) { server.takeRequest() }
+        val body4 = server.takeRequest().body.readUtf8()
+        assertFalse("final request must not carry tools", body4.contains("\"tools\""))
+        assertFalse("final request must not carry tool history", body4.contains("\"role\":\"tool\""))
+        assertTrue("final request should inject force-direct-answer prompt", body4.contains("mocked_message"))
+    }
+
+    @Test
+    fun `analyzeQuestion - tool pseudo text after rebuild returns empty answers`() = runBlocking {
+        toolModeOn()
+        val toolCallDelta = "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"冷门题\\\"}\"}}]}}]}"
+        repeat(3) {
+            server.enqueue(MockResponse().setResponseCode(200).setBody(sse(toolCallDelta)))
+        }
+        // round 4（无工具重建后）：模型仍输出 <tool_calls> 伪文本（纯文本 content，非协议级 tool_calls）
+        val pseudoText = sse("{\"choices\":[{\"delta\":{\"content\":\"<tool_calls>\\n<invoke name=\\\"web_search\\\">\\n</invoke>\\n</tool_calls>\"}}]}")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(pseudoText))
+
+        val result = client.analyzeQuestion("冷门题", systemPrompt = "test")
+
+        // 伪文本剥离后无 JSON 负载 → 空答案列表（上层计失败），而不是降级出垃圾条目
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrNull()!!.isEmpty())
+        repeat(3) { server.takeRequest() }
+        server.takeRequest()
+        Unit // 保持返回类型为 Unit（JUnit 要求测试方法 void）
+    }
+
+    @Test
+    fun `analyzeQuestion - markdown text answer fills missing question from recognizedText`() = runBlocking {
+        // 模型输出非 JSON 的 Markdown 文本（含 **答案：X**），降级提取后 question 用原始题目补全
+        val markdownText = "以下哪款游戏被称为“3A大作”？\nA. 绝区零\nB. 崩坏三\nC. 崩坏-星穹铁道\nD. 原神\n\n**答案：D 原神**\n\n**解析：** 原神常被称作3A大作"
+        val escaped = markdownText.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(sse("{\"choices\":[{\"delta\":{\"content\":\"$escaped\"}}]}")))
+
+        val result = client.analyzeQuestion("以下哪款游戏被称为“3A大作”？", systemPrompt = "test")
+
+        assertTrue(result.isSuccess)
+        val answers = result.getOrNull()!!
+        assertEquals(1, answers.size)
+        assertEquals("D 原神", answers[0].answer)
+        // question 必须被原始题目文本补全，而非"无法解析题目"占位
+        assertEquals("以下哪款游戏被称为“3A大作”？", answers[0].question)
+    }
 }

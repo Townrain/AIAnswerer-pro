@@ -22,6 +22,12 @@ class JsonAnswerExtractor(
      */
     fun parseJsonAnswers(content: String): List<AIAnswer> {
         val trimmed = content.trim()
+        // 空内容（如伪工具文本被剥离后）直接返回空列表，由上层按失败处理，
+        // 避免降级文本提取产出垃圾答案条目
+        if (trimmed.isEmpty()) {
+            AppLog.d("API", "JSON解析: 空内容, 返回空列表")
+            return emptyList()
+        }
 
         // 策略1：直接解析原文（AI 通常返回干净 JSON）
         tryParseAsAnswers(trimmed)?.let {
@@ -60,10 +66,23 @@ class JsonAnswerExtractor(
             } catch (_: Exception) {}
         }
 
-        // 策略5：文本降级提取
+        // 策略5：文本降级提取 — 工具调用伪文本直接放弃（模型在无 tools 请求中输出 <tool_calls> 伪代码时，
+        //     降级提取只会产出垃圾答案条目，返回空列表由上层按失败处理）
+        if (containsToolCallSyntax(trimmed)) {
+            AppLog.d("API", "JSON解析: 检测到工具调用伪文本, 放弃降级提取")
+            return emptyList()
+        }
         AppLog.d("API", "JSON解析: 全部失败, 降级文本提取")
         return listOf(parseAnswerFromText(content))
     }
+
+    /**
+     * 判断文本是否包含工具调用伪语法（<tool_calls>/<invoke> 等）。
+     */
+    private fun containsToolCallSyntax(text: String): Boolean =
+        text.contains("<tool_calls") || text.contains("</tool_calls>") ||
+            text.contains("<invoke") || text.contains("</invoke>") ||
+            text.contains("tool_call_id") || text.contains("\"tool_calls\"")
 
     /**
      * 尝试将字符串解析为 AIAnswer 列表
@@ -280,12 +299,27 @@ class JsonAnswerExtractor(
             ?: MyApplication.getString(R.string.error_parse_question_failed)
         val rawAnswer = extractJsonValue(text, "answer")
         val answer = rawAnswer?.takeIf { it.isNotBlank() }
+            ?: inferAnswerFromMarkdown(text)
             ?: inferAnswerFromOptions(text)
             ?: MyApplication.getString(R.string.error_parse_question_failed)
         val questionType = extractJsonValue(text, "questionType")
             ?: MyApplication.getString(R.string.question_type_essay)
         val options = extractJsonArray(text, "options")
         return AIAnswer(question, questionType, answer, options)
+    }
+
+    /**
+     * 提取中文 Markdown 风格的答案标注（模型输出非 JSON 文本时的常见格式）：
+     * **答案：D 原神**、答案：B、answer: C 等。
+     */
+    private fun inferAnswerFromMarkdown(text: String): String? {
+        val regex = Regex(
+            """(?:答案|answer)\s*[:：]\s*(.+?)(?:\*\*|\n|\r|。|；|;|，|,|$)""",
+            RegexOption.IGNORE_CASE
+        )
+        val match = regex.find(text) ?: return null
+        val raw = match.groupValues[1].trim().trimEnd('*', '。', '，', ',', '；', ';', ' ').trim()
+        return raw.takeIf { it.isNotBlank() }
     }
 
     private fun inferAnswerFromOptions(text: String): String? {

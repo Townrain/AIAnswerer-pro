@@ -1,12 +1,29 @@
 package com.hwb.aianswerer
 
 import com.hwb.aianswerer.api.JsonAnswerExtractor
+import io.mockk.every
+import io.mockk.mockkObject
+import io.mockk.unmockkAll
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 
 class JsonAnswerExtractorTest {
 
     private val extractor = JsonAnswerExtractor()
+
+    @Before
+    fun setUp() {
+        // 降级文本提取会调用 MyApplication.getString（错误占位文案）
+        mockkObject(MyApplication.Companion)
+        every { MyApplication.getString(any<Int>()) } returns "MOCK_TEXT"
+    }
+
+    @After
+    fun tearDown() {
+        unmockkAll()
+    }
 
     // ═══ 策略1：直接解析（有效JSON） ═══
 
@@ -186,5 +203,33 @@ class JsonAnswerExtractorTest {
         assertEquals(2, result.size)
         assertEquals("q", result[0].question)
         assertEquals("q2", result[1].question)
+    }
+
+    @Test
+    fun `parseJsonAnswers - 工具调用伪文本返回空列表`() {
+        val pseudo = "<tool_calls>\n<invoke name=\"web_search\">\n<parameter name=\"query\">\"高洁善良\" \"勇者\"</parameter>\n</invoke>\n</tool_calls>"
+        assertTrue(JsonAnswerExtractor().parseJsonAnswers(pseudo).isEmpty())
+    }
+
+    @Test
+    fun `parseJsonAnswers - 前置说明后跟工具伪文本也返回空列表`() {
+        val pseudo = "我先搜索一下\n<tool_calls>\n<invoke name=\"web_search\">\n</invoke>\n</tool_calls>"
+        assertTrue(JsonAnswerExtractor().parseJsonAnswers(pseudo).isEmpty())
+    }
+
+    @Test
+    fun `parseJsonAnswers - Markdown答案文本降级提取成功`() {
+        val text = "以下哪款游戏被称为“3A大作”？\nA. 绝区零\nB. 崩坏三\nC. 崩坏-星穹铁道\nD. 原神\n\n**答案：D 原神**\n\n**解析：** 原神常被称作3A大作"
+        val result = JsonAnswerExtractor().parseJsonAnswers(text)
+        assertEquals(1, result.size)
+        assertEquals("D 原神", result[0].answer)
+    }
+
+    @Test
+    fun `parseJsonAnswers - 纯文本答案冒号格式降级提取成功`() {
+        val text = "题目内容\n\n答案：B\n解析：略"
+        val result = JsonAnswerExtractor().parseJsonAnswers(text)
+        assertEquals(1, result.size)
+        assertEquals("B", result[0].answer)
     }
 }
