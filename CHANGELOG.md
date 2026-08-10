@@ -7,6 +7,8 @@ All notable changes to AIAnswerer will be documented in this file.
 ### Added
 - Web search now supports LLM Tool Calling mode (function calling): the request carries a `web_search` tool definition, the model decides when to search and may ask follow-up rounds, with results fed back as tool messages
 - Web search unified to LLM Tool Calling mode; the legacy pre-search injection mode and its settings selector have been removed (models without function-calling support search silently disabled)
+- Non-tool-mode answering requests enable `response_format: json_object` for enforced JSON output (not sent in tool mode for compatibility)
+- Settings page shows a hint when the active model cannot use web search (no function-calling support)
 - WebSearchToolExecutor: unified search executor shared across all 10 search providers (Tavily/Zhipu/Bocha/Exa etc.)
 - Floating window: collapsible answer cards — expand/collapse toggle with elastic collapse animation and compact answer-summary view when collapsed
 - Floating window C/D: WRAP_CONTENT adaptive height
@@ -15,7 +17,10 @@ All notable changes to AIAnswerer will be documented in this file.
 
 ### Changed
 - OpenAIClient: SSE parsing now handles `delta.tool_calls` (accumulated by index); in tool mode, answering requests run up to 3 rounds (2 tool rounds + final answer), each with an independent 60s timeout
-- ChatMessage supports `tool_calls`/`tool_call_id` with nullable content; ChatRequest adds `tools`/`tool_choice` parameters
+- ChatMessage supports `tool_calls`/`tool_call_id` with nullable content; ChatRequest adds `tools`/`tool_choice`/`response_format` parameters
+- Answer parsing hardened: tool pseudo-text is stripped block-wise preserving surrounding text (no more truncation at first `<`); question-number prefixes in answer values are stripped (e.g. `第2题：C` → `C`); Markdown answers after tool blocks are no longer discarded
+- Recording mode: outer answer timeout fallback (relaxed to the tool-loop cap); progress denominator unified to max(screenshot count, recognized question count)
+- Recording prompt explicitly forbids question-number prefixes in the answer/question fields (root-cause fix)
 - Tool call arguments sanitized (256-char limit, control characters stripped); invalid arguments fall back to the original recognized text
 - Full AI response logging downgraded to debug level to avoid unconditional log-file writes
 
@@ -23,6 +28,13 @@ All notable changes to AIAnswerer will be documented in this file.
 - Warning log added when the tool loop hits its round cap, eliminating silent degradation
 - reasoning_content is no longer promoted to content when tool_calls are present (compliant with the OpenAI requirement of content=null alongside tool_calls)
 - Tool mode no longer performs duplicate pre-search injection (scheduling layer skips pre-search when tool mode is active)
+- Fixed second consecutive recording not notifying results (notify idempotency flag reset on start)
+- Fixed stale fallback notify coroutine stealing the new session's result after a quick stop→start (cancel leftover coroutine and reset processing flag)
+- Fixed single-question outer 60s timeout leaving the floating window stuck at "fetching answer" (timeout now reports an error)
+- Fixed empty answers rendering a blank answer card and clearing the clipboard (empty answers now report an error)
+- Fixed late screenshots/text still processed after recording stop (late captures dropped, no more inflated counts)
+- Fixed x/1 progress denominator for one-image-multi-question recordings (unified to max(screenshot count, recognized count))
+- Removed plaintext API key logging in web-search settings save
 - Floating window lifecycle crash chain and coordinate fixes
 - Floating window recording count and drag gesture fixes
 - Floating window state thread-safety and generation mechanism
