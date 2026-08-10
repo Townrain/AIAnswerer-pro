@@ -151,6 +151,8 @@ class CaptureHandler(
                         callbacks.showError("未识别到题目")
                         return@launch
                     }
+                    // P1-4: 文本路径对称守卫——stop 后丢弃迟到文本，避免计数分叉
+                    if (!callbacks.isRecording()) return@launch
                     callbacks.setHasContent(true)
                     callbacks.updateWindowHeight()
                     // M10: 成功读取后才计数（与 RecordingCoordinator 的 _captureCount 对齐）
@@ -182,6 +184,8 @@ class CaptureHandler(
                                     callbacks.showError("未识别到题目")
                                     return@launch
                                 }
+                                // P1-4: 回退文本路径对称守卫
+                                if (!callbacks.isRecording()) return@launch
                                 callbacks.setHasContent(true)
                                 callbacks.updateWindowHeight()
                                 callbacks.showToast("视觉模型截图失败，已使用屏幕文字")
@@ -193,8 +197,13 @@ class CaptureHandler(
                                 return@launch
                             }
                         } else {
+                            // B7: 截图落地时若已停止录制，丢弃迟到截图（recorder.processBitmap 也有 isActive 守卫，此处防止计数虚增）
+                            if (!callbacks.isRecording()) {
+                                if (!bitmap.isRecycled) bitmap.recycle()
+                                return@launch
+                            }
                             callbacks.setHasContent(true)
-                            callbacks.updateWindowHeight()
+                            callbacks.updateWindowHeight() // P1-3: 恢复 B7 守卫误删的调用
                             // M10: 截图成功后才计数（原在捕获前 inc，截图失败会虚增）
                             callbacks.incRecordingCaptureCount()
                             dispatchCropForRecording(bitmap)

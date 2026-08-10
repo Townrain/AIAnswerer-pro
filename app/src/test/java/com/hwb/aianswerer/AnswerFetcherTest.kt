@@ -8,12 +8,18 @@ import com.hwb.aianswerer.models.AIAnswer
 import io.mockk.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+@OptIn(ExperimentalCoroutinesApi::class)
 /**
  * AnswerFetcher unit tests — 11 tests covering single/multi question,
  * parallel ordering, search context building, network guard, and mutex.
@@ -63,6 +69,34 @@ class AnswerFetcherTest {
         val s = setup()
         coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.failure(RuntimeException("boom"))
         assertTrue((await(s.f, "t") as AnswerResult.Error).message.contains("AI分析失败"))
+    }
+
+    @Test
+    fun single_timeout_invokes_error_callback() = runTest {
+        mockkObject(AppConfig); mockkObject(OpenAIClient)
+        every { AppConfig.getQuestionTypes() } returns setOf("选择题")
+        coEvery { OpenAIClient.isNetworkAvailable() } returns true
+        val p = mockk<CapturePipeline>()
+        coEvery { p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } coAnswers {
+            delay(AnswerFetcher.ANSWER_TIMEOUT_MS + 10_000)
+            Result.success(listOf(a("X")))
+        }
+        val c = mockk<AnswerFetcherCallbacks>(relaxed = true)
+        val f = AnswerFetcher(p, this, c)
+        val r = mutableListOf<AnswerResult>()
+        f.fetchAnswer("t") { r.add(it) }
+        advanceTimeBy(AnswerFetcher.ANSWER_TIMEOUT_MS + 1)
+        runCurrent()
+        assertEquals("超时必须回调错误而非静默取消", 1, r.size)
+        assertTrue((r[0] as AnswerResult.Error).message.contains("超时"))
+    }
+
+    @Test
+    fun single_empty_answers_returns_error() {
+        val s = setup()
+        coEvery { s.p.askLlm(any<String>(), any<Set<String>>(), any<String>()) } returns Result.success(emptyList())
+        val err = await(s.f, "t") as AnswerResult.Error
+        assertTrue(err.message.contains("未获取到答案"))
     }
     // ── Mutex serialisation ───────────────────────────────────────────
     // ── Mutex serialisation ───────────────────────────────────────────

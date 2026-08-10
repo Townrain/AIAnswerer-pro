@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 
 // ── Result types ──────────────────────────────────────────────────────
@@ -81,13 +82,25 @@ class AnswerFetcher(
                     // 联网搜索由 LLM 自主调用工具完成（预搜索注入已移除）
                     callbacks.onStatus(FloatingStatus.GettingAnswer, "获取答案中…")
 
-                    val result = withTimeout(60_000L) {
+                    val result = withTimeoutOrNull(ANSWER_TIMEOUT_MS) {
                         pipeline.askLlm(text, questionTypes, "")
+                    }
+                    if (result == null) {
+                        AppLog.e("AnswerFetcher", "fetchAnswer timed out after ${ANSWER_TIMEOUT_MS}ms")
+                        callback(AnswerResult.Error("获取答案超时，请重试"))
+                        return@withLock
                     }
 
 
                     result
-                        .onSuccess { answers -> callback(AnswerResult.Success(answers)) }
+                        .onSuccess { answers ->
+                            if (answers.isEmpty()) {
+                                AppLog.w("AnswerFetcher", "empty answers from single-question path")
+                                callback(AnswerResult.Error("未获取到答案"))
+                            } else {
+                                callback(AnswerResult.Success(answers))
+                            }
+                        }
                         .onFailure { error ->
                             AppLog.e("AnswerFetcher", "LLM request failed: ${error.message}", error)
                             callback(AnswerResult.Error(
@@ -196,5 +209,14 @@ class AnswerFetcher(
             return AnswerResult.Success(ordered)
         }
         return AnswerResult.Error("所有题目答题失败")
+    }
+
+    companion object {
+        /**
+         * 单题答题总超时。注意：withTimeoutOrNull 超时时会整体取消内部 askLlm（含其多轮工具循环），
+         * 超时后返回 null 并回调错误。60s 上限可能掐断合法的多轮工具搜索——
+         * 录制路径使用更宽松的 RecordingCoordinator.recordingAnswerTimeoutMs（工具循环上限）。
+         */
+        const val ANSWER_TIMEOUT_MS = 60_000L
     }
 }
