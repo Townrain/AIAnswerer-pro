@@ -35,7 +35,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hwb.aianswerer.R
-import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.providers.WebSearchStorage
 import com.hwb.aianswerer.ui.icons.LocalIcons
 import com.hwb.aianswerer.ui.theme.*
@@ -146,6 +145,15 @@ fun WebSearchPage(t: Th, onBack: () -> Unit) {
 
             WSGlass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
                 WSSwitch(t, "启用联网搜索", "识别题目后自动联网检索答案", searchEnabled) { searchEnabled = it; WebSearchStorage.saveSearchEnabled(it) }
+                // B4: 当前模型不支持 function calling 时搜索静默失效，明确提示用户
+                val modelName = com.hwb.aianswerer.config.AppConfig.getModelName()
+                if (searchEnabled && modelName.isNotBlank() &&
+                    !com.hwb.aianswerer.models.ModelCapabilityChecker.isFunctionCallingModel(modelName)
+                ) {
+                    Text(stringResource(R.string.search_model_not_supported_hint),
+                        style = DW.BodySmall.copy(color = t.osv),
+                        modifier = Modifier.padding(top = 4.dp))
+                }
             }
 
             if (searchEnabled) {
@@ -225,7 +233,6 @@ fun WebSearchPage(t: Th, onBack: () -> Unit) {
                         val idx = providers.indexOfFirst { it.def.id == ps.def.id }
                         if (idx >= 0) {
                             val p = providers[idx]
-                            android.util.Log.d("WebSearchPage", "onSave: apiKey='${p.apiKey}', enabled=${p.enabled}")
                             WebSearchStorage.saveUserConfig(p.def.id, WebSearchStorage.UserWebSearchConfig(
                                 enabled = p.enabled, apiKey = p.apiKey,
                                 customApiHost = p.customApiHost.ifBlank { null },

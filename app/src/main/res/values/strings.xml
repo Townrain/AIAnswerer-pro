@@ -268,7 +268,7 @@
     <string name="tool_web_search_description">搜索互联网获取最新或外部信息，用于补充题目相关知识。当题目涉及时事、专有名词或超出模型知识范围时调用。搜索结果将作为参考资料。</string>
     <string name="tool_web_search_query_description">搜索关键词，应简洁准确</string>
     <string name="system_prompt_user_message">请分析以下题目：\n\n%1$s</string>
-    <string name="system_prompt_recording_header">## 批处理模式\n你正在批量答题，当前为第 %1$d 题，共 %2$d 题。请在答案中明确标注题号（如「第%1$d题：」），便于自动匹配与结果汇总。</string>
+    <string name="system_prompt_recording_header">## 批处理模式\n你正在批量答题，当前为第 %1$d 题，共 %2$d 题。题号由系统自动关联，你的 JSON 输出中：answer 字段只填答案内容本身（如 "C"），禁止包含题号前缀（如「第%1$d题：」）；question 字段同样只填题目文本，不要加题号。</string>
     <string name="system_prompt_force_direct_answer"><![CDATA[## 强制直接作答
 你必须直接输出 JSON 格式的答案，禁止调用任何工具，禁止输出工具调用格式（如 <tool_calls>、<invoke>）。若联网搜索结果不足，请直接根据你的常识作答。]]></string>
     <string name="system_prompt_base"><![CDATA[# 角色
@@ -384,10 +384,8 @@
     <string name="setting_thinking_mode">启用思考模式</string>
     <string name="setting_thinking_mode_desc">向 API 发送 reasoning_effort 参数，适用于推理模型（如 o1、DeepSeek-R1）</string>
 
-    <!-- 正则过滤设置 -->
-    <string name="setting_regex_filter">多题正则过滤</string>
-    <string name="setting_regex_filter_desc">检测到多题时跳过联网搜索（关闭后始终搜索）</string>
 
+    <!-- 并发设置 -->
     <!-- 并发设置 -->
     <string name="setting_parallel_title">并发答题设置</string>
     <string name="setting_parallel_desc">多题模式下的并行处理配置</string>
@@ -455,8 +453,7 @@
     <string name="web_search_test_connection">测试搜索</string>
     <string name="web_search_test_query">AI最新进展</string>
     <string name="web_search_enabled_label">启用联网搜索</string>
-    <string name="web_search_regex_filter">多题正则过滤</string>
-    <string name="web_search_regex_filter_desc">检测到多题时跳过联网搜索</string>
+    <string name="search_model_not_supported_hint">当前模型不支持联网搜索（工具调用），搜索将静默停用</string>
 
     <!-- 录制结果卡片进度 -->
     <string name="recording_processing_header">正在获取答案 (%1$d/%2$d)</string>

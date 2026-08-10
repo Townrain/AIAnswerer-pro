@@ -267,7 +267,8 @@
     <string name="tool_web_search_description">Search the internet for the latest or external information to supplement question-related knowledge. Call this when the question involves current events, proper nouns, or content beyond the model\'s knowledge. Search results will be provided as reference material.</string>
     <string name="tool_web_search_query_description">Search keywords, should be concise and accurate</string>
     <string name="system_prompt_user_message">Please analyze the following question:\n\n%1$s</string>
-    <string name="system_prompt_recording_header">## Batch Mode\nYou are answering in batch mode. This is question %1$d of %2$d. Please prefix your answer with the question number (e.g., "Q%1$d:"), to enable automatic matching and result aggregation.</string>
+    <string name="system_prompt_recording_header">## Batch Mode
+You are answering in batch mode. This is question %1$d of %2$d. Question numbers are auto-associated by the system: in your JSON output, the answer field must contain ONLY the answer itself (e.g., "C"), never a question-number prefix (like "Q%1$d:"); the question field must also contain only the question text, without a number prefix.</string>
     <string name="system_prompt_force_direct_answer"><![CDATA[## Answer Directly
 You MUST output the JSON answer directly. Do NOT call any tools, and do NOT output tool-call syntax (such as <tool_calls> or <invoke>). If the web search results are insufficient, answer directly based on your knowledge.]]></string>
     <string name="system_prompt_base"><![CDATA[# Role
@@ -383,10 +384,8 @@ Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple
     <string name="setting_thinking_mode">Enable Thinking Mode</string>
     <string name="setting_thinking_mode_desc">Send reasoning_effort parameter to API, for reasoning models (e.g. o1, DeepSeek-R1)</string>
 
-    <!-- Regex Filter -->
-    <string name="setting_regex_filter">Multi-question Regex Filter</string>
-    <string name="setting_regex_filter_desc">Skip web search when multi-question pattern detected (always search when off)</string>
 
+    <!-- Parallel Settings -->
     <!-- Parallel Settings -->
     <string name="setting_parallel_title">Parallel Answer Settings</string>
     <string name="setting_parallel_desc">Parallel processing configuration for multi-question mode</string>
@@ -449,8 +448,7 @@ Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple
     <string name="web_search_test_connection">Test Search</string>
     <string name="web_search_test_query">Latest AI advances</string>
     <string name="web_search_enabled_label">Enable Web Search</string>
-    <string name="web_search_regex_filter">Multi-question Regex Filter</string>
-    <string name="web_search_regex_filter_desc">Skip web search when multiple questions detected</string>
+    <string name="search_model_not_supported_hint">Current model does not support web search (tool calling); search will be silently disabled</string>
 
     <!-- Recording result card progress -->
     <string name="recording_processing_header">Fetching answers (%1$d/%2$d)</string>

@@ -6,9 +6,8 @@ All notable changes to AIAnswerer will be documented in this file.
 
 ### Added
 - Web search now supports LLM Tool Calling mode (function calling): the request carries a `web_search` tool definition, the model decides when to search and may ask follow-up rounds, with results fed back as tool messages
-- New "Search Mode" selector in web search settings: Tool Calling / Pre-Search Injection (Tool Calling by default; switch back to the legacy mode for models without tool support)
-- Automatic fallback: tool mode degrades to pre-search injection when the model is known not to support function calling
-- WebSearchToolExecutor: unified search executor shared by pre-search and tool modes, reusing all 10 search providers (Tavily/Zhipu/Bocha/Exa etc.)
+- Web search unified to LLM Tool Calling mode; the legacy pre-search injection mode and its settings selector have been removed (models without function-calling support search silently disabled)
+- WebSearchToolExecutor: unified search executor shared across all 10 search providers (Tavily/Zhipu/Bocha/Exa etc.)
 - Floating window: collapsible answer cards — expand/collapse toggle with elastic collapse animation and compact answer-summary view when collapsed
 - Floating window C/D: WRAP_CONTENT adaptive height
 - M14 landscape/portrait rotation support

@@ -117,6 +117,8 @@ class FloatingWindowViewModel : ViewModel() {
             showRecordingResultsFromCoordinator(answers, copyTexts, total, skipped, failed, isFinal)
         }
         override fun onProgressUpdate(processed: Int, total: Int) {
+            // P1-2b: 分母钳制——协调器可能先发来一图多题时的 maxOf 分母，避免卡片 header 回落
+            recordingCaptureCount.value = maxOf(recordingCaptureCount.value, total)
             statusMessage.value = ctx?.getString(R.string.recording_processing, processed, total)
             recordingProcessedCount.value = processed
         }
@@ -389,6 +391,8 @@ class FloatingWindowViewModel : ViewModel() {
         }
         recordingAnswers.value = answers
         recordingCopyTexts.value = copyTexts
+        // P1-2b: 最终/partial 通知的 total 同样钳制卡片 header 分母
+        recordingCaptureCount.value = maxOf(recordingCaptureCount.value, total)
         showAnswer.value = true
         // M11: partial 通知（stop 时已有部分答案）显示"处理中"，全部完成后才显示"全部完成"
         if (isFinal) {

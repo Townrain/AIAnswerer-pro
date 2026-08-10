@@ -14,7 +14,7 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 - 📖 Screen Reading Mode: Directly read screen text through accessibility services without screenshots, faster speed
 - 📝 Smart Text Recognition: Supports CJK/FR/DE/ES/PT local OCR + VLM cloud recognition for RU/AR
 - 👁️ Vision Model Support: Can use vision models instead of OCR, suitable for noisy pages
-- 🔍 Web Search Enhancement: Two modes available — LLM Tool Calling (the model decides when to search and may ask follow-up rounds) and Pre-Search Injection (legacy mode), switchable in the web search settings
+- 🔍 Web Search Enhancement: LLM Tool Calling mode (the model decides when to search and may ask follow-up rounds; pre-search injection removed)
 - 🤖 AI Real-time Answering: Generate analysis based on question types and automatically copy answers
 - 📋 Batch Answering: When multiple questions are in a screenshot, search each question and return all answers
 - ⚡ Parallel Answering: Support concurrent processing in multi-question mode, significantly improving answering speed
@@ -138,7 +138,7 @@ com.hwb.aianswerer/
 ### Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) or [变更日志](变更日志.md). Recent highlights:
-- **Unreleased**: LLM Tool Calling web search mode + two-mode selector + floating window collapsible cards & WRAP_CONTENT adaptive height
+- **Unreleased**: Web search unified to LLM Tool Calling mode (pre-search injection removed) + floating window collapsible cards & WRAP_CONTENT adaptive height
 - **v1.7.0**: Four-window floating architecture (A/B/C/D independent windows) + C/D lifecycle decoupling + configurable long-press duration + model config detection + pill badge removal + multi-window bug fixes
 - **v1.6.2**: Dark mode button theme responsiveness + multi-version API URL fix (v2/v3/v4 compatibility)
 ### License
