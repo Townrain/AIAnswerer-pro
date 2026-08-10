@@ -73,9 +73,23 @@ interface CaptureHandlerCallbacks {
     fun clearAnswers()
     /** Whether image-collection mode is active. */
     fun isImageCollecting(): Boolean
-
-    /** Called to pass recognized text to the image collector (after VLM/OCR recognition). */
+    /**
+     * Called to pass recognized screen text to the image collector (multi-image mode, accessibility path).
+     * 序号由 ImageCollector 进站时同步生成。
+     */
     fun onImageText(text: String)
+
+    /**
+     * Called to pass a screenshot bitmap to the image collector (multi-image mode).
+     * 与录制模式 onRecordingBitmap 对称；序号由 ImageCollector 进站时同步生成。
+     */
+    fun onImageBitmap(bitmap: Bitmap)
+
+    /** Current image-collection collected count (for status message). */
+    fun getImageCollectCount(): Int
+
+    /** Current image-collection capture count (total captured, for status message x/n). */
+    fun getImageCaptureCount(): Int
 }
 
 // ── Handler ───────────────────────────────────────────────────────────
@@ -224,6 +238,8 @@ class CaptureHandler(
         }
 
         // ── Image collection mode ─────────────────────────────────────
+        // 与录制分支同构：截图/读屏 → dispatchCropForImageCollecting → onImageBitmap
+        // 识别与序号全部交给 ImageCollector 内部处理（进站同步生成序号）
         if (callbacks.isImageCollecting()) {
             AppLog.enter("CaptureHandler", "handleCapture imageMode #$captureCounter")
 
@@ -236,75 +252,76 @@ class CaptureHandler(
                 callbacks.setCurrentWindowHeightPx(idleH)
                 callbacks.updateWindowPosition()
 
-                var bitmap: Bitmap? = null
+                // Accessibility text mode: read screen directly when capture mode is
+                // '屏幕读取' and VLM is OFF（与录制分支同级）
+                val useAccessibilityText = AppConfig.isAccessibilityCaptureMode() && !callbacks.isVisionEnabled()
+                if (useAccessibilityText) {
+                    val screenText = readScreenWithRetry()
+                    callbacks.setCaptureInProgress(false)
+                    if (screenText.isNullOrBlank()) {
+                        callbacks.showError("屏幕读取失败")
+                        return@launch
+                    }
+                    // stop 后丢弃迟到文本
+                    if (!callbacks.isImageCollecting()) return@launch
+                    callbacks.setHasContent(true)
+                    callbacks.updateWindowHeight()
+                    callbacks.onImageText(screenText)
+                    callbacks.setStatus(FloatingStatus.Idle)
+                    return@launch
+                }
+
+                // Screenshot path
+                val wasStealth = callbacks.isStealthModeEnabled()
                 try {
-                    // Accessibility mode + VLM off: read screen text directly
-                    if (AppConfig.isAccessibilityCaptureMode() && !callbacks.isVisionEnabled()) {
-                        val screenText = readScreenWithRetry()
-                        callbacks.setCaptureInProgress(false)
-                        if (screenText.isNullOrBlank()) {
-                            callbacks.showError("屏幕读取失败")
+                    callbacks.setWindowAlpha(0f)           // hide window
+                    callbacks.setFlagSecure(enabled = false) // remove FLAG_SECURE for clean screenshot
+                    delay(FLAG_SECURE_DELAY_MS)
+                    var bitmap = screenCaptureManager?.captureScreen()
+                    if (bitmap == null) {
+                        delay(300)
+                        bitmap = screenCaptureManager?.captureScreen()
+                    }
+                    callbacks.setCaptureInProgress(false)
+                    if (bitmap == null) {
+                        // Accessibility+VLM fallback: read screen text
+                        if (AppConfig.isAccessibilityCaptureMode()) {
+                            val screenText = readScreenWithRetry()
+                            if (screenText.isNullOrBlank()) {
+                                callbacks.showError("截图失败且屏幕读取失败")
+                                return@launch
+                            }
+                            if (!callbacks.isImageCollecting()) return@launch
+                            callbacks.setHasContent(true)
+                            callbacks.updateWindowHeight()
+                            callbacks.showToast("视觉模型截图失败，已使用屏幕文字")
+                            callbacks.onImageText(screenText)
+                        } else {
+                            callbacks.showError("截图失败")
+                            return@launch
+                        }
+                    } else {
+                        // stop 后丢弃迟到截图（ImageCollector.processBitmap 也有 isActive 守卫）
+                        if (!callbacks.isImageCollecting()) {
+                            if (!bitmap.isRecycled) bitmap.recycle()
                             return@launch
                         }
                         callbacks.setHasContent(true)
                         callbacks.updateWindowHeight()
-                        callbacks.onImageText(screenText)
-                        callbacks.setStatus(FloatingStatus.Idle)
-                        return@launch
+                        callbacks.setStatus(FloatingStatus.Recognizing)
+                        callbacks.setStatusMessage("识别中…")
+                        dispatchCropForImageCollecting(bitmap)
                     }
-
-                    // Screenshot path
-                    if (screenCaptureManager?.isReady != true) {
-                        callbacks.setCaptureInProgress(false)
-                        callbacks.showError("截图权限未授权")
-                        return@launch
-                    }
-
-                    val wasStealth = callbacks.isStealthModeEnabled()
-                    callbacks.setWindowAlpha(0f)
-                    callbacks.setFlagSecure(enabled = false)
-                    delay(FLAG_SECURE_DELAY_MS)
-                    bitmap = screenCaptureManager?.captureScreen()
-                    callbacks.setCaptureInProgress(false)
-                    callbacks.setWindowAlpha(if (wasStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
-                    if (wasStealth) callbacks.setFlagSecure(enabled = true)
-
-                    if (bitmap == null) {
-                        callbacks.showError("截图失败")
-                        return@launch
-                    }
-
-                    callbacks.setHasContent(true)
-                    callbacks.updateWindowHeight()
-                    callbacks.setStatus(FloatingStatus.Recognizing)
-                    callbacks.setStatusMessage("识别中…")
-
-                    // Run through VLM/OCR recognition pipeline
-                    if (callbacks.isVisionEnabled()) {
-                        pipeline.recognizeVlm(bitmap)
-                            .onSuccess { filter ->
-                                if (!filter.hasQuestions || filter.extractedText.isBlank()) {
-                                    callbacks.showError("未识别到题目")
-                                    return@launch
-                                }
-                                callbacks.onImageText(filter.extractedText)
-                            }
-                            .onFailure {
-                                AppLog.w("CaptureHandler", "VLM failed, fallback to OCR")
-                                pipeline.recognizeOcr(bitmap)
-                                    .onSuccess { text -> callbacks.onImageText(text) }
-                                    .onFailure { callbacks.showError("识别失败: ${it.message}") }
-                            }
-                    } else {
-                        pipeline.recognizeOcr(bitmap)
-                            .onSuccess { text -> callbacks.onImageText(text) }
-                            .onFailure { err -> callbacks.showError("识别失败: ${err.message}") }
-                    }
-                    callbacks.setStatus(FloatingStatus.Idle)
                 } finally {
-                    bitmap?.let { if (!it.isRecycled) it.recycle() }
+                    callbacks.setWindowAlpha(if (wasStealth) Constants.STEALTH_ALPHA else Constants.VISIBLE_ALPHA)
+                    if (wasStealth) { callbacks.setFlagSecure(enabled = true) }
                     callbacks.setCaptureInProgress(false)
                 }
+                callbacks.setStatus(FloatingStatus.Idle)
+                // Fix B: 不再覆盖 statusMessage——保留"识别中…"，由 ImageCollector.onProgressUpdate
+                //        实时更新为"图片收集中 (x/n)"。若此处读 ViewModel 缓存会滞后
+                //        （识别异步，缓存未更新时显示旧值如 0/0、1/2）
+                delay(50)
             }
             return
         }
@@ -512,6 +529,30 @@ class CaptureHandler(
                 } ?: launchCropActivity(bitmap, null)
             }
             else -> callbacks.onRecordingBitmap(bitmap)
+        }
+    }
+
+    /** Dispatch cropped or full bitmap to image collector for multi-image mode（与录制同构）. */
+    private fun dispatchCropForImageCollecting(bitmap: Bitmap) {
+        when (callbacks.getCropMode()) {
+            AppConfig.CROP_MODE_FULL -> callbacks.onImageBitmap(bitmap)
+            AppConfig.CROP_MODE_EACH -> {
+                callbacks.getSavedCropRectEach()?.let { rect ->
+                    val cropped = try { ImageCropUtil.cropBitmap(bitmap, rect) }
+                    catch (e: Exception) { bitmap.recycle(); throw e }
+                    bitmap.recycle()
+                    callbacks.onImageBitmap(cropped)
+                } ?: launchCropActivity(bitmap, null)
+            }
+            AppConfig.CROP_MODE_ONCE -> {
+                callbacks.getSavedCropRect()?.let { rect ->
+                    val cropped = try { ImageCropUtil.cropBitmap(bitmap, rect) }
+                    catch (e: Exception) { bitmap.recycle(); throw e }
+                    bitmap.recycle()
+                    callbacks.onImageBitmap(cropped)
+                } ?: launchCropActivity(bitmap, null)
+            }
+            else -> callbacks.onImageBitmap(bitmap)
         }
     }
 

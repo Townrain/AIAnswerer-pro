@@ -474,4 +474,69 @@ class CaptureHandlerTest {
         coVerify { pipeline.recognizeOcr(any()) }
         verify { cb.onTextRecognized("text", null) }
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    // handleCapture() — image collection mode（多图采集）
+    // ─────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `image mode screenshot dispatches bitmap to image collector`() = runBlocking {
+        every { cb.isImageCollecting() } returns true
+        every { cb.getImageCollectCount() } returns 0
+        every { cb.getImageCaptureCount() } returns 0
+        coEvery { scm.captureScreen() } returns bitmap
+
+        handler().handleCapture()
+        testScheduler.advanceUntilIdle()
+
+        // 截图成功 → onImageBitmap 交给 ImageCollector（不直接识别）
+        verify { cb.onImageBitmap(bitmap) }
+        coVerify(exactly = 0) { pipeline.recognizeOcr(any()) }
+        coVerify(exactly = 0) { pipeline.recognizeVlm(any()) }
+        // 分支末尾保留状态消息（不置 null，避免 C 窗被清理）
+        verify { cb.setStatusMessage(any()) }
+        verify(exactly = 0) { cb.setStatusMessage(null) }
+    }
+
+    @Test
+    fun `image mode accessibility text goes to image collector`() = runBlocking {
+        every { cb.isImageCollecting() } returns true
+        every { AppConfig.isAccessibilityCaptureMode() } returns true
+        every { ScreenReaderService.readScreenText() } returns "屏幕上的题目文本"
+
+        handler().handleCapture()
+        testScheduler.advanceUntilIdle()
+
+        verify { cb.onImageText("屏幕上的题目文本") }
+        coVerify(exactly = 0) { scm.captureScreen() }
+    }
+
+    @Test
+    fun `image mode screenshot after stop is dropped`() = runBlocking {
+        every { cb.isImageCollecting() } returns false // stop 后
+        coEvery { scm.captureScreen() } returns bitmap
+
+        handler().handleCapture()
+        testScheduler.advanceUntilIdle()
+
+        verify(exactly = 0) { cb.onImageBitmap(any()) }
+    }
+
+    @Test
+    fun `image mode VLM enabled still forwards bitmap without direct vlm call`() = runBlocking {
+        every { cb.isImageCollecting() } returns true
+        every { cb.getImageCollectCount() } returns 2
+        every { cb.getImageCaptureCount() } returns 3
+        every { AppConfig.isVisionEnabled() } returns true
+        coEvery { scm.captureScreen() } returns bitmap
+
+        handler().handleCapture()
+        testScheduler.advanceUntilIdle()
+
+        // 识别完全交给 ImageCollector 内部处理，CaptureHandler 不直接调 VLM
+        verify { cb.onImageBitmap(bitmap) }
+        coVerify(exactly = 0) { pipeline.recognizeVlm(any()) }
+        // 状态消息用实时 x/n
+        verify { cb.setStatusMessage(any()) }
+    }
 }

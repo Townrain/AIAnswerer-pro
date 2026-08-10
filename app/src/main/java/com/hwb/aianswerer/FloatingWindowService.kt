@@ -165,8 +165,6 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
 
     /** Measured height of Window D content in px. */
     private var measuredWindowDHeight: Float? = null
-
-    /** Whether Window D (detail content) is currently expanded. */
     private var isDetailExpanded = mutableStateOf(false)
     /** M16: 动画帧 B/C/D 同步节流时间戳 */
     private var lastAnimSyncMs = 0L
@@ -235,6 +233,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         }
                         if (viewModel.isRecording.value) {
                             recorder.handleCroppedImage(imagePath, cropRect)
+                        } else if (viewModel.isImageCollecting.value) {
+                            imageCollector.handleCroppedImage(imagePath, cropRect)
                         } else {
                             captureHandler.handleCroppedImage(imagePath, cropRect)
                         }
@@ -291,7 +291,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
             override fun animateWindowX(targetX: Float, animated: Boolean) { this@FloatingWindowService.animateWindowX(targetX, animated) }
             override fun setHasContent(has: Boolean) { viewModel.hasContent = has }
             override fun onRecordingBitmap(bitmap: Bitmap) { recorder.processBitmap(bitmap) }
-            override fun onImageText(text: String) { imageCollector.addText(text) }
+            override fun onImageText(text: String) { imageCollector.processText(text) }
+            override fun onImageBitmap(bitmap: Bitmap) { imageCollector.processBitmap(bitmap) }
         })
 
         recorder = RecordingCoordinator(pipeline, serviceScope, viewModel.recordingCallbacks)
@@ -460,9 +461,20 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                     // appears directly below (or above) Window A.
                     LaunchedEffect(Unit) {
                         // 观察答案/状态/折叠三态：展开态显示 D 窗，收起态显示 C 窗（紧凑摘要）
+                        // M-EXPAND: 答案生成(show false→true)时自动展开 D 窗显示完整答案，
+                        //           避免用户需手动点展开才看到结果；用户手动收起后保持收起
+                        var prevShow = false
                         snapshotFlow {
                             Triple(viewModel.showAnswer.value, viewModel.statusMessage.value, isDetailExpanded.value)
                         }.collect { (show, msg, expanded) ->
+                            // 答案新到达且当前收起态 → 自动展开
+                            if (show && !prevShow && !expanded) {
+                                AppLog.d("FWS", "snapshotFlow: answer arrived, auto-expanding");
+                                isDetailExpanded.value = true
+                                prevShow = true
+                                return@collect
+                            }
+                            prevShow = show
                             // 折叠过渡动画进行中:窗口增删由动画回调统一收尾,
                             // 此处跳过避免与动画帧竞争(收起先收缩再替换 C 窗)
                             if (windowTransitionJob?.isActive == true) {
@@ -719,8 +731,11 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         imageCollector.start()
                         viewModel.isImageCollecting.value = true
                         viewModel.imageCollectCount.value = 0
+                        viewModel.imageCaptureCount.value = 0
                         viewModel.showAnswer.value = false
                         viewModel.paginatedAnswers.value = emptyList()
+                        // Fix A: 立即显示状态消息，让折叠窗马上出现（窗口由 statusMessage 驱动）
+                        viewModel.statusMessage.value = getString(R.string.image_collection_start)
                         settings.imageEnabled.value = true
                         Toast.makeText(this@FloatingWindowService,
                             getString(R.string.image_collection_start),
@@ -915,6 +930,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         isProcessingRecording = viewModel.isProcessingRecording.value,
                         recordingProcessedCount = viewModel.recordingProcessedCount.value,
                         recordingCaptureCount = viewModel.recordingCaptureCount.value,
+                        // Fix C: 多图模式答案卡 header 总数用进站截图数（录制模式用 recordingCaptureCount）
+                        imageCaptureCount = viewModel.imageCaptureCount.value,
                         onCopyRecordingAnswer = { text ->
                             ClipboardUtil.copyToClipboard(this@FloatingWindowService, text)
                         },

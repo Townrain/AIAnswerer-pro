@@ -1,28 +1,36 @@
 package com.hwb.aianswerer
 
+import android.graphics.Bitmap
 import com.hwb.aianswerer.config.AppConfig
 import com.hwb.aianswerer.models.AIAnswer
+import com.hwb.aianswerer.models.CropRect
 import com.hwb.aianswerer.utils.AppLog
+import com.hwb.aianswerer.utils.ImageCropUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+
 /**
- * 多图文本收集器 — 收集每次截图/屏幕读取提取的文字，去重后合并发送给 LLM。
+ * 多图采集器 — 与 RecordingCoordinator 同构的生命周期：
+ * 截图进站（processBitmap，进站同步生成序号）→ 内部识别（VLM→OCR 降级）→ 按序号收集文本；
+ * stop() 只关入口并等待在途识别完成，然后合并所有文本 → 专职去重 LLM → 单次 LLM 答题（幂等，双 stop 安全）。
  *
  * 与 RecordingCoordinator 的区别：
  *   - Recording: 每次截图独立 VLM/OCR → 独立 LLM 答题 → 逐题展示
- *   - ImageCollector: 每次截图独立识别文字 → 去重累积 → stop 时合并所有文本 → 单次 LLM 答题
+ *   - ImageCollector: 每次截图独立识别文字 → 按序号累积 → stop 时合并所有文本 → 单次 LLM 答题
  *
  * 适用场景：长文阅读题目，一张图切不下，需要多次截图收集完整题干。
  *
  * 流程：
- *   1. start() → 开始采集
- *   2. 每次点击主按钮 → CaptureHandler 识别文字 → addText() 去重收集
- *   3. stop() → 合并所有文本 → LLM 答题
+ *   1. start() → 开始采集（同录制）
+ *   2. 每次点击主按钮 → CaptureHandler 截图/读屏 → processBitmap()/processText() 进站
+ *   3. stop() → 关入口 → 等在途识别完成 → 合并 → 去重 LLM → 答题 LLM（去重失败降级原始拼接）
  */
 class ImageCollector(
     private val pipeline: CapturePipeline,
@@ -33,7 +41,8 @@ class ImageCollector(
         fun onError(message: String)
         fun onToast(message: String)
         fun onResult(answers: List<AIAnswer>)
-        fun onProgressUpdate(collected: Int)
+        /** @param collected 已收集段数；@param total 已进站截图数（含识别中/失败的） */
+        fun onProgressUpdate(collected: Int, total: Int)
     }
 
     companion object {
@@ -45,32 +54,96 @@ class ImageCollector(
     @Volatile var isProcessing = false
         private set
 
-    private val collectedTexts = java.util.concurrent.CopyOnWriteArrayList<String>()
+    private val collectedTexts = java.util.concurrent.ConcurrentSkipListMap<Int, String>()
     private val textHashes = mutableSetOf<String>()
     private val stateLock = Any()
     private val collectCount = AtomicInteger(0)
-    private var processingJob: Job? = null
+    /** 截图进站序号 — 进站同步生成，识别响应乱序时用于还原页面顺序 */
+    private val captureCount = AtomicInteger(0)
+    private val jobs: MutableSet<Job> = ConcurrentHashMap.newKeySet()
+    /** 幂等提交锁 — 保证 stop 只触发一次合并分析（双 stop 安全） */
+    private val submitScheduled = AtomicBoolean(false)
+    private var notifyJob: Job? = null
 
     fun getCollectedCount(): Int = collectCount.get()
-    fun getActiveJobCount(): Int = if (isProcessing) 1 else 0
+    fun getActiveJobCount(): Int = jobs.size
 
     /** 开始采集 */
     fun start() {
         isActive = true
         collectCount.set(0)
+        captureCount.set(0)
         collectedTexts.clear()
         textHashes.clear()
         isProcessing = false
+        submitScheduled.set(false)
+        notifyJob?.cancel() // 取消上一会话遗留的等待协程
+        notifyJob = null
         AppLog.i("IMG", "ImageCollector started")
     }
 
-    /** 收集一段已识别的文本（去重） */
-    fun addText(text: String) {
+    /** 截图进站 — 进站同步生成序号；内部识别（VLM→OCR 降级）后按序号收集文本 */
+    fun processBitmap(bitmap: Bitmap) {
+        // B7 同款：stop 后丢弃迟到截图，避免内容静默丢失与计数虚增
+        if (!isActive) {
+            AppLog.d("IMG", "drop late capture (image collecting already stopped)")
+            if (!bitmap.isRecycled) bitmap.recycle()
+            return
+        }
+        val pageIndex = captureCount.incrementAndGet() // 进站同步取号，杜绝协程内延迟读取的序号竞态
+        val job = scope.launch(Dispatchers.IO) {
+            try {
+                pipeline.recognizeToText(bitmap)
+                    .onSuccess { text -> addCollectedText(pageIndex, text) }
+                    .onFailure { e -> AppLog.e("IMG", "recognize failed for page $pageIndex", e) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.e("IMG", "process failed for page $pageIndex", e)
+            } finally {
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+        }
+        jobs.add(job)
+        job.invokeOnCompletion { jobs.remove(job) }
+    }
+
+    /** 屏幕读取文本进站（无障碍模式 — 与录制 processText 同级） */
+    fun processText(text: String) {
         if (!isActive) return
+        val pageIndex = captureCount.incrementAndGet()
+        addCollectedText(pageIndex, text)
+    }
+
+    /** 处理裁剪后的录图截图（ImageCropActivity 结果 — 与录制 handleCroppedImage 同级） */
+    fun handleCroppedImage(imagePath: String, cropRect: CropRect) {
+        scope.launch {
+            try {
+                val bitmap = ImageCropUtil.loadBitmapFromFile(imagePath)
+                try {
+                    val croppedBitmap = ImageCropUtil.cropBitmap(bitmap, cropRect)
+                    processBitmap(croppedBitmap)
+                } finally {
+                    bitmap.recycle()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                callbacks.onError("裁剪失败: ${e.message ?: ""}")
+            } finally {
+                ImageCropUtil.deleteTempFile(imagePath)
+            }
+        }
+    }
+
+    /** 收集一段已识别的文本（去重 + 按截图序号存储，合并时按序号排序保证材料顺序） */
+    private fun addCollectedText(index: Int, text: String) {
         if (text.isBlank()) return
 
         if (collectCount.get() >= MAX_COLLECT_COUNT) {
-            callbacks.onToast("已达到最大收集数量 ($MAX_COLLECT_COUNT)")
+            scope.launch(Dispatchers.Main) {
+                callbacks.onToast("已达到最大收集数量 ($MAX_COLLECT_COUNT)")
+            }
             return
         }
 
@@ -83,28 +156,68 @@ class ImageCollector(
             textHashes.add(normalized)
         }
         val idx = collectCount.incrementAndGet()
-        collectedTexts.add(text)
-        callbacks.onProgressUpdate(idx)
-        AppLog.d("IMG", "collected text #$idx (${text.length} chars)")
+        collectedTexts[index] = text
+        scope.launch(Dispatchers.Main) {
+            callbacks.onProgressUpdate(idx, captureCount.get())
+        }
+        AppLog.d("IMG", "collected text #$idx (page=$index, ${text.length} chars)")
     }
 
-    /** 停止采集并开始合并分析 */
+    /** 停止采集 — 只关入口；等在途识别完成后合并提交一次（幂等，双 stop 安全） */
     fun stop() {
         isActive = false
-        if (collectedTexts.isEmpty()) {
-            callbacks.onToast("未收集到内容")
+        if (isProcessing) {
+            AppLog.d("IMG", "stop ignored: already processing")
+            return
+        }
+        if (jobs.isEmpty()) {
+            if (collectedTexts.isEmpty()) {
+                scope.launch(Dispatchers.Main) { callbacks.onToast("未收集到内容") }
+            } else {
+                ensureSubmit()
+            }
             return
         }
         isProcessing = true
-        processingJob = scope.launch {
+        // 兜底：等待全部在途识别（含识别完成后才加入的文本）完成后统一提交
+        notifyJob = scope.launch {
+            while (jobs.isNotEmpty()) {
+                jobs.toList().forEach { it.join() }
+            }
+            ensureSubmit()
+        }
+    }
+
+    /** 幂等提交：合并 → 专职去重 LLM → 答题 LLM（去重失败降级原始拼接） */
+    private fun ensureSubmit() {
+        if (!submitScheduled.compareAndSet(false, true)) {
+            AppLog.d("IMG", "submit already scheduled, skip")
+            return
+        }
+        scope.launch(Dispatchers.Main) {
             try {
-                callbacks.onProgressUpdate(-1) // -1 = 分析中
-                val combinedText = collectedTexts.joinToString("\n\n---\n\n")
-                AppLog.i("IMG", "analysing combined text, ${collectedTexts.size} segments, ${combinedText.length} chars")
+                callbacks.onProgressUpdate(-1, captureCount.get()) // -1 = 分析中
+                val segments = collectedTexts.values.toList()
+                if (segments.isEmpty()) {
+                    callbacks.onToast("未收集到内容")
+                    return@launch
+                }
+                val combinedText = segments.mapIndexed { i, t ->
+                    "【第 ${i + 1}/${segments.size} 页】\n$t"
+                }.joinToString("\n\n--- 分页分隔 ---\n\n")
+                AppLog.i("IMG", "analysing combined text, ${segments.size} segments, ${combinedText.length} chars")
 
                 val questionTypes = AppConfig.getQuestionTypes()
                 val result = withContext(Dispatchers.IO) {
-                    pipeline.askLlm(combinedText, questionTypes, searchContext = "")
+                    // 专职去重 LLM：合并重叠、修正识别误差，输出完整干净文本；失败降级为原始拼接
+                    val deduped = pipeline.dedupeText(combinedText)
+                    if (deduped.isSuccess) {
+                        AppLog.i("IMG", "dedupe ok, clean text ${deduped.getOrThrow().length} chars")
+                        pipeline.askLlm(deduped.getOrThrow(), questionTypes, searchContext = "")
+                    } else {
+                        AppLog.w("IMG", "dedupe failed (${deduped.exceptionOrNull()?.message}), fallback to raw combined text")
+                        pipeline.askLlm(combinedText, questionTypes, searchContext = "")
+                    }
                 }
                 result.onSuccess { answers ->
                     callbacks.onResult(answers)
@@ -126,11 +239,14 @@ class ImageCollector(
     fun cancel() {
         isActive = false
         isProcessing = false
-        processingJob?.cancel()
-        processingJob = null
+        notifyJob?.cancel()
+        notifyJob = null
+        jobs.forEach { it.cancel() }
+        jobs.clear()
         collectedTexts.clear()
         textHashes.clear()
         collectCount.set(0)
-}
-
+        captureCount.set(0)
+        submitScheduled.set(false)
+    }
 }

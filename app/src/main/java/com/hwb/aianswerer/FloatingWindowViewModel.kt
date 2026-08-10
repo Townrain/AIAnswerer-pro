@@ -46,6 +46,7 @@ class FloatingWindowViewModel : ViewModel() {
         fun setHasContent(has: Boolean)
         fun onRecordingBitmap(bitmap: Bitmap)
         fun onImageText(text: String)
+        fun onImageBitmap(bitmap: Bitmap)
     }
 
     private var ctx: ServiceContext? = null
@@ -103,6 +104,8 @@ class FloatingWindowViewModel : ViewModel() {
     // ===== Image collection mode state =====
     var isImageCollecting = mutableStateOf(false)
     var imageCollectCount = mutableStateOf(0)
+    /** 已进站截图总数（含识别中/失败的），用于 x/n 显示 */
+    var imageCaptureCount = mutableStateOf(0)
     var isProcessingImages = mutableStateOf(false)
 
     // ===== Paginated answers =====
@@ -153,10 +156,11 @@ class FloatingWindowViewModel : ViewModel() {
             statusMessage.value = if (autoCopy) "答案已复制" else "答案已生成"
             isProcessingImages.value = false
         }
-        override fun onProgressUpdate(collected: Int) {
+        override fun onProgressUpdate(collected: Int, total: Int) {
             imageCollectCount.value = collected
+            imageCaptureCount.value = total
             if (collected >= 0) {
-                statusMessage.value = ctx?.getString(R.string.image_collecting, collected)
+                statusMessage.value = ctx?.getString(R.string.image_collecting, collected, total)
             } else {
                 statusMessage.value = ctx?.getString(R.string.image_analyzing)
             }
@@ -178,6 +182,8 @@ class FloatingWindowViewModel : ViewModel() {
     val captureCallbacks = object : CaptureHandlerCallbacks {
         override fun isRecording() = isRecording.value
         override fun isImageCollecting() = isImageCollecting.value
+        override fun getImageCollectCount() = imageCollectCount.value
+        override fun getImageCaptureCount() = imageCaptureCount.value
         override fun getCropMode() = cropMode
         override fun getSavedCropRect() = savedCropRect
         override fun getSavedCropRectEach() = savedCropRectEach
@@ -221,6 +227,7 @@ class FloatingWindowViewModel : ViewModel() {
         }
         override fun onRecordingBitmap(bitmap: Bitmap) { ctx?.onRecordingBitmap(bitmap) }
         override fun onImageText(text: String) { ctx?.onImageText(text) }
+        override fun onImageBitmap(bitmap: Bitmap) { ctx?.onImageBitmap(bitmap) }
         override fun incRecordingCaptureCount(): Int {
             recordingCaptureCount.value++
             return recordingCaptureCount.value

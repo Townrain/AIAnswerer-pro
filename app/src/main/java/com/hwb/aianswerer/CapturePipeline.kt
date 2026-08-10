@@ -5,6 +5,7 @@ import com.hwb.aianswerer.api.OpenAIClient
 import com.hwb.aianswerer.api.vision.VisionFilterResult
 import com.hwb.aianswerer.api.vision.VisionProviderFactory
 import com.hwb.aianswerer.models.AIAnswer
+import com.hwb.aianswerer.utils.AppLog
 
 /**
  * 答题流水线 — 纯粹的识别、搜索、AI 调用逻辑。
@@ -40,6 +41,28 @@ class CapturePipeline(
             ?: return Result.failure(Exception("VLM provider not available"))
         return provider.analyzeMultiple(bitmaps)
     }
+
+    /**
+     * 识别图片并提取文本 — VLM 优先，失败或未提取到题目时降级 OCR。
+     * 与录制模式的识别策略一致（RecordingCoordinator.processWithVlm/processWithOcr），
+     * 供多图采集模式复用，避免两处重复实现。
+     */
+    suspend fun recognizeToText(bitmap: Bitmap): Result<String> {
+        val vlm = recognizeVlm(bitmap)
+        if (vlm.isSuccess) {
+            val filter = vlm.getOrThrow()
+            if (filter.hasQuestions && filter.extractedText.isNotBlank()) {
+                return Result.success(filter.extractedText)
+            }
+            AppLog.d("VLM", "VLM succeeded but no question text, falling back to OCR")
+        } else {
+            AppLog.w("VLM", "VLM failed, fallback to OCR")
+        }
+        return recognizeOcr(bitmap)
+    }
+
+    /** 专职去重 LLM — 合并多页识别文本，去除相邻页重叠与识别噪声，输出完整干净文本 */
+    suspend fun dedupeText(rawText: String): Result<String> = openAiClient.dedupeText(rawText)
 
     /** 调用大模型获取答案 */
     suspend fun askLlm(

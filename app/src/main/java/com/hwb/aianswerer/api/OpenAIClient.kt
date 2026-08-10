@@ -71,6 +71,30 @@ class OpenAIClient {
     }
 
     /**
+     * 长读超时客户端 — 专供 dedupeText（长文合并去重）：DeepSeek 等服务商对长输出
+     * 采用 200 响应头先返、body 流式生成的方式，共享 client 的 readTimeout(60s) 会在
+     * body 读取阶段超时（实测 SocketTimeoutException）。readTimeout 与 DEDUPE_TIMEOUT_MS 对齐。
+     */
+    private val longReadClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
+            .callTimeout(DEDUPE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .connectTimeout(CONNECT_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .readTimeout(DEDUPE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .writeTimeout(WRITE_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
+            .apply {
+                if (com.hwb.aianswerer.BuildConfig.DEBUG) {
+                    addInterceptor(HttpLoggingInterceptor().apply {
+                        level = HttpLoggingInterceptor.Level.HEADERS
+                        redactHeader("Authorization")
+                    })
+                }
+            }
+            .build()
+    }
+
+    /**
      * 分析题目并获取答案
      *
      * 动态从AppConfig读取最新的API配置
@@ -154,7 +178,8 @@ class OpenAIClient {
                     model = modelName,
                     messages = messages,
                     temperature = AppConfig.getLlmTemperature(),
-                    maxTokens = 4096,
+                    // 多图模式合并后材料可达数万字，4096 会截断答案 JSON（多题/长材料时）；提高到 16384
+                    maxTokens = 16384,
                     reasoningEffort = AppConfig.getReasoningEffort(),
                     stream = true,
                     tools = tools,
@@ -359,6 +384,87 @@ class OpenAIClient {
     }
 
     /**
+     * 专职去重 LLM — 将多页识别文本（OCR/VLM 分页截图识别结果）合并去重，
+     * 去除相邻页重叠内容与识别噪声，输出完整干净的题目材料文本。
+     * 非流式轻量调用（与 countQuestions 同款模式），失败时返回 Result.failure 由调用方降级。
+     */
+    suspend fun dedupeText(rawText: String): Result<String> = withContext(Dispatchers.IO) {
+        val _start = System.currentTimeMillis()
+        AppLog.enter("API", "dedupeText textLen=${rawText.length}")
+        try {
+            val apiUrl = AppConfig.getApiUrl()
+            val apiKey = AppConfig.getApiKey()
+            val modelName = AppConfig.getModelName()
+            if (!AppConfig.isApiConfigValid()) {
+                return@withContext Result.failure(
+                    Exception(MyApplication.getString(R.string.error_api_config_invalid))
+                )
+            }
+
+            val systemPrompt = com.hwb.aianswerer.Constants.getPromptResources().getString(
+                R.string.system_prompt_dedupe
+            )
+            val messages = listOf(
+                ChatMessage(role = "system", content = systemPrompt),
+                ChatMessage(role = "user", content = rawText)
+            )
+            val request = ChatRequest(
+                model = modelName,
+                messages = messages,
+                temperature = 0.0,
+                // 多图模式合并文本可达数万字（10 段 × 长文材料），8192 token 会截断整理结果，
+                // 提高到 16384 覆盖绝大多数长文场景；若服务商不支持该上限会失败，由调用方降级原始拼接
+                maxTokens = 16384
+            )
+            val body = gson.toJson(request)
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+            val httpRequest = Request.Builder()
+                .url(apiUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(body)
+                .build()
+
+            // 长文去重输出（16384 tokens）在 60s 内可能生成不完，放宽到 240s
+            // 必须用 longReadClient：共享 client 的 readTimeout=60s 会在 body 流式读取阶段超时（实测 SocketTimeoutException）
+            val response = withTimeout(DEDUPE_TIMEOUT_MS) {
+                longReadClient.newCall(httpRequest).execute()
+            }
+            response.use { resp ->
+                if (!resp.isSuccessful) {
+                    val errorBody = resp.body?.string().orEmpty()
+                    return@withContext Result.failure(
+                        Exception("HTTP ${resp.code}: $errorBody")
+                    )
+                }
+                val responseBody = resp.body?.string()
+                    ?: return@withContext Result.failure(
+                        Exception(MyApplication.getString(R.string.error_api_empty_response))
+                    )
+                val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
+                val content = chatResponse.choices.firstOrNull()?.message?.content?.trim()
+                if (content.isNullOrBlank()) {
+                    return@withContext Result.failure(
+                        Exception(MyApplication.getString(R.string.error_api_empty_stream))
+                    )
+                }
+                AppLog.i("API", "dedupeText ok: in=${rawText.length} out=${content.length}")
+                Result.success(content)
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            AppLog.e("API", "dedupeText timeout after ${DEDUPE_TIMEOUT_MS}ms")
+            Result.failure(java.io.IOException(MyApplication.getString(R.string.error_llm_timeout)))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.e("API", "dedupeText failed: ${e.message}", e)
+            Result.failure(e)
+        } finally {
+            AppLog.leave("API", "dedupeText", _start)
+        }
+    }
+
+    /**
      * 测试API连接，支持传入未保存的配置参数
      */
     suspend fun testConnection(
@@ -554,6 +660,8 @@ class OpenAIClient {
         const val READ_TIMEOUT_SEC = 60L
         const val CALL_TIMEOUT_SEC = 65L
         const val WITH_TIMEOUT_MS = 60_000L
+        /** 去重 LLM（长文合并）外层超时 — 输出上限 16384 tokens，长文材料生成慢，放宽至 240s */
+        const val DEDUPE_TIMEOUT_MS = 240_000L
         const val CONNECT_TIMEOUT_SEC = 15L
         const val WRITE_TIMEOUT_SEC = 15L
         const val TEST_TIMEOUT_MS = 30_000L

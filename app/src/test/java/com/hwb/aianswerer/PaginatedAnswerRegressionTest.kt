@@ -60,6 +60,7 @@ class PaginatedAnswerRegressionTest {
             override fun animateWindowX(targetX: Float, animated: Boolean) {}
             override fun setHasContent(has: Boolean) {}
             override fun onImageText(text: String) {}
+            override fun onImageBitmap(bitmap: android.graphics.Bitmap) {}
             override fun onRecordingBitmap(bitmap: android.graphics.Bitmap) {}
         })
 
