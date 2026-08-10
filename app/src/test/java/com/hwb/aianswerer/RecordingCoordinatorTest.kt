@@ -93,7 +93,11 @@ class RecordingCoordinatorTest {
         every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers { latch.countDown() }
 
         coordinator.processBitmap(mockBitmap())
-        delay(10)
+        // 全量并行测试下 IO 线程池竞争，固定 delay 不可靠：
+        // 等 fetchAnswer 完成（activeJobCount 归零）且 processBitmap job 收尾（totalQuestions 递增、jobs 移除）
+        while (coordinator.totalQuestions == 0) { delay(10) }
+        while (coordinator.getActiveJobCount() > 0) { delay(10) }
+        delay(50) // 给 processBitmap job 的 invokeOnCompletion（jobs.remove）收尾
 
         val result = coordinator.stop()
         assertTrue(result is RecordingCoordinator.StopResult.Completed)
