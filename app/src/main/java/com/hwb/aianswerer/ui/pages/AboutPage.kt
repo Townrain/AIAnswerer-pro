@@ -131,14 +131,14 @@ fun AboutPage(t: Th, onBack: () -> Unit) {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                     .background(t.p.copy(alpha = if (t.isLight) 0.08f else 0.1f))
                     .clickable {
-                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Townrain/AIAnswerer-pro")))
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Townrain/FloatyAnswer")))
                     }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("GitHub", style = DW.BodyMedium.copy(color = t.ob, fontWeight = FontWeight.Medium))
                         Spacer(Modifier.height(2.dp))
-                        Text("github.com/Townrain/AIAnswerer-pro", style = DW.BodySmall.copy(color = t.p))
+                        Text("github.com/Townrain/FloatyAnswer", style = DW.BodySmall.copy(color = t.p))
                     }
                     Text("↗", style = DW.LabelLarge.copy(color = t.osv))
                 }

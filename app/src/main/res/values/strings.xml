@@ -1,9 +1,9 @@
 <resources>
     <!-- 应用名称 -->
-    <string name="app_name">AI答题助手</string>
+    <string name="app_name">FloatyAnswer</string>
 
     <!-- 主界面 -->
-    <string name="main_title">AI答题助手</string>
+    <string name="main_title">FloatyAnswer</string>
     <string name="main_subtitle">截屏 · 识别 · AI 答题，一气呵成</string>
     <string name="status_label">当前状态</string>
     <string name="status_running">答题模式运行中</string>
@@ -65,7 +65,7 @@
     <string name="float_quick_reasoning">深度</string>
     <string name="float_quick_record">录制</string>
     <string name="float_quick_image">图片</string>
-    <string name="image_collecting">图片收集中 (%1$d)</string>
+    <string name="image_collecting">图片收集中 (%1$d/%2$d)</string>
     <string name="image_analyzing">图片分析中…</string>
     <string name="image_collection_start">图片采集已开始，点击主按钮截图</string>
     <string name="image_recording_conflict">请先停止录制模式</string>
@@ -131,7 +131,7 @@
     <string name="about_libraries_title">核心第三方库</string>
     <string name="about_github_title">GitHub</string>
     <string name="about_github_subtitle">GitHub</string>
-    <string name="about_github_link" translatable="false">https://github.com/Townrain/AIAnswerer-pro</string>
+    <string name="about_github_link" translatable="false">https://github.com/Townrain/FloatyAnswer</string>
     <string name="about_language_title">语言设置</string>
     <string name="about_language_chinese">简体中文</string>
     <string name="about_language_english">English</string>
@@ -324,6 +324,15 @@
   "questions": [{"index": 1, "text": "题目文本"}]
 }
 规则：忽略UI噪声和广告。跨页内容要拼接完整。多题时必须分离到questions数组。无题目时has_questions=false。]]></string>
+    <string name="system_prompt_dedupe"><![CDATA[你是多页识别文本整理器。以下是同一份材料的多页截图识别文本（可能来自 OCR 或视觉模型，按页面顺序排列）。
+相邻页面之间可能存在重复内容（如上一页结尾与下一页开头重叠）、识别误差或噪声。
+请完成以下任务：
+1. 按页面顺序合并所有内容，去除相邻页面间的重复部分；
+2. 修正明显的识别错误（错字、漏字），还原完整通顺的原文；
+3. 忽略与题目无关的界面噪声（按钮文字、广告、页眉页脚）；
+4. 保留题目原文的所有关键信息（材料、选项、问题），不要增删或概括。
+
+只输出整理后的完整文本本身，不要任何解释、标记或 JSON 包裹。]]></string>
 
     <!-- 悬浮窗状态消息 -->
     <string name="status_capturing">📸 正在截图…</string>
@@ -343,7 +352,7 @@
     <string name="status_recognition_error">识别失败: %s</string>
     <string name="status_ai_analysis_failed">AI分析失败: %s</string>
     <string name="status_fetch_answer_failed">获取答案失败: %s</string>
-    <string name="notification_channel_name">AI答题助手服务</string>
+    <string name="notification_channel_name">FloatyAnswer 服务</string>
     <string name="clipboard_label">AI答案</string>
 
     <!-- 视觉模型相关 -->

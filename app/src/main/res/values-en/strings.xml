@@ -1,9 +1,9 @@
 <resources>
     <!-- App name -->
-    <string name="app_name">AI Answerer</string>
+    <string name="app_name">FloatyAnswer</string>
 
     <!-- Main screen -->
-    <string name="main_title">AI Answerer</string>
+    <string name="main_title">FloatyAnswer</string>
     <string name="main_subtitle">Capture · Recognize · Answer, in one flow</string>
     <string name="status_label">Current Status</string>
     <string name="status_running">Answer Mode Running</string>
@@ -65,7 +65,7 @@
     <string name="float_quick_reasoning">Reason</string>
     <string name="float_quick_record">Record</string>
     <string name="float_quick_image">Image</string>
-    <string name="image_collecting">Collecting (%1$d)</string>
+    <string name="image_collecting">Collecting (%1$d/%2$d)</string>
     <string name="image_analyzing">Analyzing images…</string>
     <string name="image_collection_start">Image collection started, tap main button to capture</string>
     <string name="image_recording_conflict">Please stop recording mode first</string>
@@ -324,6 +324,15 @@ Merge all page content in order and extract complete question text. Return JSON 
   "questions": [{"index": 1, "text": "question text"}]
 }
 Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple questions, separate them in the questions array. If no questions found, set has_questions=false.]]></string>
+    <string name="system_prompt_dedupe"><![CDATA[You are a multi-page recognized-text organizer. The following is recognized text from multiple pages of the same material (from OCR or a vision model, in page order).
+Adjacent pages may contain overlapping content (e.g., the end of one page repeats the start of the next), recognition errors, or noise.
+Your tasks:
+1. Merge all content in page order, removing overlaps between adjacent pages;
+2. Fix obvious recognition errors (typos, missing characters) to restore the original text;
+3. Ignore UI noise unrelated to the questions (button text, ads, headers/footers);
+4. Preserve all key information from the original text (materials, options, questions) — do not add, remove, or summarize.
+
+Output only the cleaned complete text itself, with no explanations, markers, or JSON wrapping.]]></string>
 
     <!-- Floating Window Status Messages -->
     <string name="status_capturing">📸 Capturing screen…</string>
@@ -343,7 +352,7 @@ Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple
     <string name="status_recognition_error">Recognition error: %s</string>
     <string name="status_ai_analysis_failed">AI analysis failed: %s</string>
     <string name="status_fetch_answer_failed">Failed to get answer: %s</string>
-    <string name="notification_channel_name">AI Answerer Service</string>
+    <string name="notification_channel_name">FloatyAnswer Service</string>
     <string name="clipboard_label">AI Answer</string>
 
     <!-- Vision Model -->
@@ -464,7 +473,7 @@ Rules: Ignore UI noise and ads. Stitch cross-page content together. For multiple
     <string name="debug_export_success">Logs exported</string>
     <string name="debug_export_failed">Log export failed</string>
     <string name="debug_no_logs">No log files available</string>
-    <string name="debug_log_share_title">AIAnswerer Debug Logs</string>
+    <string name="debug_log_share_title">FloatyAnswer Debug Logs</string>
 
     <!-- Enhanced Error Messages -->
     <string name="error_api_empty_stream">AI returned no valid content. Check:

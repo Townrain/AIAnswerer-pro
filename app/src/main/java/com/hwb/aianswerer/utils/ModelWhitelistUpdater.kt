@@ -148,7 +148,7 @@ object ModelWhitelistUpdater {
         val url = URL(urlString)
         val connection = url.openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
-        connection.setRequestProperty("User-Agent", "AIAnswerer-Android")
+        connection.setRequestProperty("User-Agent", "FloatyAnswer")
         connection.connectTimeout = 15000
         connection.readTimeout = 15000
 

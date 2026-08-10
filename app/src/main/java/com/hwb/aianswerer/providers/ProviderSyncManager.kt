@@ -40,7 +40,7 @@ object ProviderSyncManager {
     // 默认远程 URL — OpenCode provider-data.json
     // 可通过 AppConfig 覆盖为自行部署的 API-Key-Manager 地址
     const val DEFAULT_SYNC_URL =
-        "https://github.com/Townrain/AIAnswerer-pro/releases/latest/download/provider_data.json"
+        "https://github.com/Townrain/FloatyAnswer/releases/latest/download/provider_data.json"
 
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
