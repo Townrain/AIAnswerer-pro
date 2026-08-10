@@ -31,7 +31,7 @@ AI答题助手是一款基于 OCR/视觉模型与大语言模型的安卓答题�
 | UI | Jetpack Compose + Material3 |
 | OCR | Google ML Kit (中文/拉丁/日/韩) + VLM 降级 |
 | 视觉模型 | OpenAI 兼容接口 (DeepSeek/GPT-4o 等) |
-| 联网搜索 | 多供应商 (Tavily/Bocha/Zhipu等) |
+| 联网搜索 | 多供应商 (Tavily/Bocha/Zhipu/ExaMCP 等 10 家) |
 | 网络 | OkHttp 4.12.0 |
 | 存储 | MMKV + EncryptedSharedPreferences |
 | 构建 | Gradle (AGP 8.13.0) |

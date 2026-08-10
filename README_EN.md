@@ -30,7 +30,7 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 | UI | Jetpack Compose + Material3 |
 | OCR | Google ML Kit (Chinese/Latin/Japanese/Korean) + VLM fallback |
 | Vision Model | OpenAI Compatible API (DeepSeek/GPT-4o, etc.) |
-| Web Search | Multi-provider (Tavily/Bocha/Zhipu etc.) |
+| Web Search | Multi-provider (Tavily/Bocha/Zhipu/ExaMCP etc., 10 providers) |
 | Network | OkHttp 4.12.0 |
 | Storage | MMKV + EncryptedSharedPreferences |
 | Build | Gradle (AGP 8.13.0) |

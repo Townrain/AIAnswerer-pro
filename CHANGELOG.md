@@ -10,6 +10,10 @@ All notable changes to AIAnswerer will be documented in this file.
 - Non-tool-mode answering requests enable `response_format: json_object` for enforced JSON output (not sent in tool mode for compatibility)
 - Settings page shows a hint when the active model cannot use web search (no function-calling support)
 - WebSearchToolExecutor: unified search executor shared across all 10 search providers (Tavily/Zhipu/Bocha/Exa etc.)
+- Real ExaMCP provider (MCP Streamable HTTP client: initialize session handshake + tools/call JSON-RPC + SSE/JSON dual transport parsing), removing the silent Tavily fallback
+- Recording guard-rails: answers already fetched are shown immediately on stop; closing the window during recording/processing only hides it while keeping data; answer cleanup skipped while processing
+- Real concurrency test entry in settings (fires N concurrent requests and reports success rate) with realistic test images (720x1280 with text) so results are meaningful
+- VLM timeout degradation: 120s timeout now fails over to OCR instead of silently dropping the question
 - Floating window: collapsible answer cards — expand/collapse toggle with elastic collapse animation and compact answer-summary view when collapsed
 - Floating window C/D: WRAP_CONTENT adaptive height
 - M14 landscape/portrait rotation support
@@ -35,6 +39,9 @@ All notable changes to AIAnswerer will be documented in this file.
 - Fixed late screenshots/text still processed after recording stop (late captures dropped, no more inflated counts)
 - Fixed x/1 progress denominator for one-image-multi-question recordings (unified to max(screenshot count, recognized count))
 - Removed plaintext API key logging in web-search settings save
+- Fixed home answer button clickable in the half-configured state (model selected but API key missing); now requires both
+- ThemeManager validates all 24 color fields and persists before mutating memory (import failure no longer silently lost on restart)
+- Stealth mode now bypasses the D detail window for accessibility; Android 14 startForeground now passes the explicit foreground service type
 - Floating window lifecycle crash chain and coordinate fixes
 - Floating window recording count and drag gesture fixes
 - Floating window state thread-safety and generation mechanism
