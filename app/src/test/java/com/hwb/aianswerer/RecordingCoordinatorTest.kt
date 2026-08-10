@@ -102,6 +102,54 @@ class RecordingCoordinatorTest {
     }
 
     @Test
+    fun second_recording_still_notifies_results() = runBlocking {
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("test question")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
+            listOf(mockAnswer())
+        )
+
+        val notifyCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val latch = CountDownLatch(2)
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
+            notifyCount.incrementAndGet()
+            latch.countDown()
+        }
+
+        // 第一次录制
+        coordinator.start()
+        coordinator.processBitmap(mockBitmap())
+        delay(10)
+        val first = coordinator.stop()
+        assertTrue(first is RecordingCoordinator.StopResult.Completed)
+
+        // 第二次录制：start() 必须复位 resultsNotified，否则第二次 stop 永不通知
+        coordinator.start()
+        coordinator.processBitmap(mockBitmap())
+        delay(10)
+        val second = coordinator.stop()
+        assertTrue(second is RecordingCoordinator.StopResult.Completed)
+
+        assertEquals(2, notifyCount.get())
+    }
+
+    @Test
+    fun processBitmap_after_stop_is_dropped() = runBlocking {
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("test question")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
+            listOf(mockAnswer())
+        )
+
+        coordinator.start()
+        coordinator.stop() // captureCount == 0 → NothingToShow，isActive=false
+
+        coordinator.processBitmap(mockBitmap())
+        delay(10)
+
+        assertEquals("stop 后迟到截图不应计数", 0, coordinator.captureCount)
+        coVerify(exactly = 0) { pipeline.recognizeOcr(any()) }
+    }
+
+    @Test
     fun stop_with_pending_jobs_returns_Processing() = runBlocking {
         coordinator.start()
         coEvery { pipeline.recognizeOcr(any()) } coAnswers {
@@ -235,6 +283,39 @@ class RecordingCoordinatorTest {
 
         assertEquals(3, coordinator.totalQuestions)
         coVerify(exactly = 3) { pipeline.askLlm(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun stop_partial_progress_denominator_uses_max_capture_and_questions() = runBlocking {
+        every { AppConfig.isVisionEnabled() } returns true
+        coordinator.start()
+
+        val vlmResult = VisionFilterResult(
+            hasQuestions = true,
+            questions = listOf(
+                SeparatedQuestion(index = 1, text = "Q1 text", searchKeywords = "kw1"),
+                SeparatedQuestion(index = 2, text = "Q2 text", searchKeywords = "kw2")
+            )
+        )
+        coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vlmResult)
+        // 第一题答案快速返回，第二题延迟（保证 stop 时只有 1 条答案在卡上、1 个 job 在途）
+        val callCount = java.util.concurrent.atomic.AtomicInteger(0)
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            if (callCount.incrementAndGet() == 1) Result.success(listOf(mockAnswer())) else {
+                delay(100)
+                Result.success(listOf(mockAnswer()))
+            }
+        }
+        val progressTotals = mutableListOf<Int>()
+        every { callbacks.onProgressUpdate(any(), capture(progressTotals)) } returns Unit
+
+        coordinator.processBitmap(mockBitmap())
+        delay(10)
+        coordinator.stop()
+        delay(20)
+
+        // 一图多题：分母必须是 maxOf(captureCount=1, totalQuestions=2) = 2，绝不出现 "1" 或 "0"
+        assertTrue("partial 进度分母必须为 2: $progressTotals", progressTotals.isNotEmpty() && progressTotals.all { it == 2 })
     }
 
     @Test
@@ -643,5 +724,95 @@ class RecordingCoordinatorTest {
         // 答案完成后进度必须更新（回归：M12 代码行曾丢失导致 (x/N) 不更新）
         assertTrue("progress should update after answer completes", progressUpdates.any { it.first == 1 })
         assertEquals(0, coordinator.failedCount)
+    }
+
+    @Test
+    fun stop_processing_then_quick_start_still_notifies() = runBlocking {
+        // P0-2: stop 返回 Processing 后快速 start，旧兜底协程不得吞掉新会话通知
+        coEvery { pipeline.recognizeOcr(any()) } coAnswers {
+            delay(200)
+            Result.success("test question")
+        }
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
+            listOf(mockAnswer())
+        )
+
+        // 第一次录制：stop 时 OCR 仍在跑 → Processing
+        coordinator.start()
+        coordinator.processBitmap(mockBitmap())
+        delay(10)
+        val first = coordinator.stop()
+        assertTrue(first is RecordingCoordinator.StopResult.Processing)
+        assertTrue(coordinator.isProcessing)
+
+        // 快速重启（不 cancel）：旧兜底协程此时 join 的是已清空的 jobs
+        coordinator.start()
+        assertFalse("start() 必须复位 isProcessing", coordinator.isProcessing)
+        delay(20)
+
+        // 第二次录制：快速成功并 stop
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("test question 2")
+        val notifyCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val latch = CountDownLatch(1)
+        every { callbacks.onResultsAvailable(any(), any(), any(), any(), any(), any()) } answers {
+            notifyCount.incrementAndGet()
+            latch.countDown()
+        }
+
+        coordinator.processBitmap(mockBitmap())
+        delay(10)
+        val second = coordinator.stop()
+        assertTrue(second is RecordingCoordinator.StopResult.Completed)
+        assertTrue("第二次录制必须收到通知", latch.await(5, TimeUnit.SECONDS))
+        assertEquals(1, notifyCount.get())
+    }
+
+    @Test
+    fun fetchAnswer_timeout_counts_as_failed() = runBlocking {
+        // P1-1: 录制路径外层超时 → 计失败
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("test question")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(10_000)
+            Result.success(listOf(mockAnswer()))
+        }
+        val oldTimeout = RecordingCoordinator.recordingAnswerTimeoutMs
+        try {
+            RecordingCoordinator.recordingAnswerTimeoutMs = 50
+            coordinator.start()
+            coordinator.processBitmap(mockBitmap())
+            // 先等 fetchAnswer 启动（activeJobCount 0→1），再等其超时完成
+            while (coordinator.getActiveJobCount() == 0) { delay(10) }
+            while (coordinator.getActiveJobCount() > 0) { delay(10) }
+            assertEquals(1, coordinator.failedCount)
+        } finally {
+            RecordingCoordinator.recordingAnswerTimeoutMs = oldTimeout
+        }
+    }
+
+    @Test
+    fun final_notify_total_uses_max_capture_and_questions() = runBlocking {
+        // P1-2a: 一图两题最终通知 total 用 maxOf(captureCount=1, totalQuestions=2) = 2
+        every { AppConfig.isVisionEnabled() } returns true
+        coordinator.start()
+        val vlmResult = VisionFilterResult(
+            hasQuestions = true,
+            questions = listOf(
+                SeparatedQuestion(index = 1, text = "Q1", searchKeywords = "kw1"),
+                SeparatedQuestion(index = 2, text = "Q2", searchKeywords = "kw2")
+            )
+        )
+        coEvery { pipeline.recognizeVlm(any()) } returns Result.success(vlmResult)
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(
+            listOf(mockAnswer())
+        )
+        val totals = mutableListOf<Int>()
+        every { callbacks.onResultsAvailable(any(), any(), capture(totals), any(), any(), any()) } returns Unit
+
+        coordinator.processBitmap(mockBitmap())
+        delay(10)
+        coordinator.stop()
+        delay(20)
+
+        assertTrue("final total 必须为 maxOf(1,2)=2: $totals", totals.isNotEmpty() && totals.all { it == 2 })
     }
 }

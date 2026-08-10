@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -68,6 +69,8 @@ class RecordingCoordinator(
     private val activeJobCount = AtomicInteger(0)
     // M9: 结果通知幂等标志（防兜底协程与正常路径重复 notifyResults）
     private val resultsNotified = java.util.concurrent.atomic.AtomicBoolean(false)
+    // P0-2: 保存 stop 兜底通知协程引用，start()/cancel() 时取消，防止快速重启时旧协程吞掉新会话通知
+    @Volatile private var notifyJob: Job? = null
     fun getActiveJobCount(): Int = activeJobCount.get()
     private var llmSemaphore: Semaphore? = null
     private var vlmSemaphore: Semaphore? = null
@@ -84,6 +87,10 @@ class RecordingCoordinator(
         textHashes.clear()
         jobs.clear()
         activeJobCount.set(0)
+        resultsNotified.set(false) // M9: 复位幂等标志，避免连续两次录制时第二次不通知
+        notifyJob?.cancel() // P0-2: 取消上一会话遗留的兜底通知协程，防止其 CAS 抢占新会话通知
+        notifyJob = null
+        isProcessing = false // P0-2: 复位处理中标志，避免快速重启时沿用旧会话的 isProcessing
         val maxConcurrency = AppConfig.getMaxConcurrency()
         llmSemaphore = Semaphore(maxConcurrency)
         // VLM 与 LLM 共用用户配置的并发数；若服务商并发能力不足，
@@ -107,13 +114,14 @@ class RecordingCoordinator(
         if (answers.isNotEmpty()) {
             scope.launch(Dispatchers.Main) {
                 // M11: partial 通知 — 先同步进度计数（状态消息/卡片 header 显示 x/N），再展示答案卡
-                callbacks.onProgressUpdate(answers.size, captureCount)
+                // B3: 分母与完成路径一致（maxOf），避免一图多题时 answers.size > captureCount 出现 "2/1"
+                callbacks.onProgressUpdate(answers.size, maxOf(captureCount, totalQuestions))
                 AppLog.d("REC", "stop: partial results (${answers.size}) shown immediately"); notifyResults(isFinal = false)
             }
         }
         // M9: 兜底——所有 job 去重/失败时 notifyResults 可能永不触发（isProcessing && jobs.isEmpty() 条件不满足），
         //     启动兜底协程：jobs 清空后强制 notifyResults（幂等，防止与正常路径重复触发）
-        scope.launch {
+        notifyJob = scope.launch {
             // M10: 动态 join — stop 后 VLM/OCR job 完成时仍会通过 fetchAnswer 创建新的答案 job，
             //     必须等待全部 job（含后加入的答案 job）完成后才通知，避免"全部完成"提前弹出、
             //     结果卡停留在部分答案
@@ -161,6 +169,12 @@ class RecordingCoordinator(
 
     /** 处理录题截图 — 入口 */
     fun processBitmap(bitmap: Bitmap) {
+        // B7: stop 后丢弃迟到截图，避免答案静默丢失与计数虚增
+        if (!isActive) {
+            AppLog.d("REC", "drop late capture (recording already stopped)")
+            if (!bitmap.isRecycled) bitmap.recycle()
+            return
+        }
         val captureIndex = _captureCount.incrementAndGet()
         AppLog.enter("REC", "recordingProcessBitmap Q$captureIndex")
         val job = scope.launch(Dispatchers.IO) {
@@ -193,6 +207,11 @@ class RecordingCoordinator(
 
     /** 处理录题文本输入（屏幕读取模式 — 与 OCR 同级，文本已就绪） */
     fun processText(text: String) {
+        // B7: stop 后丢弃迟到文本，避免计数虚增
+        if (!isActive) {
+            AppLog.d("REC", "drop late text (recording already stopped)")
+            return
+        }
         val captureIndex = _captureCount.incrementAndGet()
         AppLog.enter("REC", "recordingProcessText Q$captureIndex")
         val wasValid = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -294,12 +313,20 @@ class RecordingCoordinator(
                     }
                     val questionTypes = AppConfig.getQuestionTypes()
                     // 仅工具模式：联网搜索由 LLM 自主调用工具完成（预搜索注入已移除）
-                    val result = pipeline.askLlm(
-                        text, questionTypes, "",
-                        systemPrompt = Constants.buildRecordingSystemPrompt(
-                            captureIndex, captureCount, questionTypes, ""
+                    // P1-1: 录制路径外层超时兜底（放宽至工具循环上限 ~240s，不掐断合法多轮搜索），超时计失败
+                    val result = withTimeoutOrNull(recordingAnswerTimeoutMs) {
+                        pipeline.askLlm(
+                            text, questionTypes, "",
+                            systemPrompt = Constants.buildRecordingSystemPrompt(
+                                captureIndex, captureCount, questionTypes, ""
+                            )
                         )
-                    )
+                    }
+                    if (result == null) {
+                        _failedCount.incrementAndGet()
+                        AppLog.e("REC", "recording answer timed out after ${recordingAnswerTimeoutMs}ms for Q$captureIndex")
+                        return@withPermit
+                    }
                     result.onSuccess { aiAnswers ->
                         if (aiAnswers.isEmpty()) {
                             // 空答案（如工具伪文本解析失败）计入失败，避免静默丢失
@@ -361,7 +388,7 @@ class RecordingCoordinator(
         callbacks.onResultsAvailable(
             answers = answers.sortedBy { it.first },
             copyTexts = copyTexts.sortedBy { it.first },
-            total = captureCount,
+            total = maxOf(captureCount, totalQuestions), // P1-2a: 与进度分母一致，一图多题时 total 用已识别题数
             skipped = skippedCount,
             failed = failedCount,
             isFinal = isFinal
@@ -382,6 +409,8 @@ class RecordingCoordinator(
     }
 
     fun cancel() {
+        notifyJob?.cancel() // P0-2: 取消兜底通知协程
+        notifyJob = null
         jobs.forEach { it.cancel() }
         jobs.clear()
         isActive = false
@@ -400,5 +429,8 @@ class RecordingCoordinator(
 
     companion object {
         fun normalizeForDedupe(text: String): String = DedupNormalizer.normalize(text)
+        // P1-1: 录制路径答题外层超时（放宽至工具循环上限，默认 (MAX_TOOL_ROUNDS+2) × 60s ≈ 240s）
+        @Volatile internal var recordingAnswerTimeoutMs: Long =
+            (OpenAIClient.MAX_TOOL_ROUNDS + 2) * OpenAIClient.WITH_TIMEOUT_MS
     }
 }
