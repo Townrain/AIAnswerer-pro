@@ -84,7 +84,7 @@ fun AboutPage(t: Th, onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(16.dp))
-            Text("AI Answerer", style = DW.TitleLarge.copy(color = t.ob, fontWeight = FontWeight.SemiBold),
+            Text("FloatyAnswer", style = DW.TitleLarge.copy(color = t.ob, fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.align(Alignment.CenterHorizontally))
 
             Spacer(Modifier.height(36.dp))
@@ -92,7 +92,7 @@ fun AboutPage(t: Th, onBack: () -> Unit) {
             // 应用简介
             Glass(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), t) {
                 Text("应用简介", style = DW.LabelSmall.copy(color = t.osv), modifier = Modifier.padding(bottom = 8.dp))
-                Text("AI Answerer 是一款 Android 端智能答题助手，支持截图识别题目、多模型并行作答、联网搜索增强。通过悬浮窗实现一键截屏与答案展示，覆盖单选、多选、填空、问答等题型。",
+                Text("FloatyAnswer 是一款 Android 端智能答题助手，支持截图识别题目、多模型并行作答、联网搜索增强。通过悬浮窗实现一键截屏与答案展示，覆盖单选、多选、填空、问答等题型。",
                     style = DW.BodySmall.copy(color = t.ob, lineHeight = 20.sp))
             }
 
@@ -105,7 +105,7 @@ fun AboutPage(t: Th, onBack: () -> Unit) {
                 Sep(t)
                 AboutRow(t, "Kotlin", "2.0.21")
                 Sep(t)
-                AboutRow(t, "最低支持", "Android 11 (API 30)")
+                AboutRow(t, "最低支持", "Android 10 (API 29)")
             }
 
             // 核心依赖

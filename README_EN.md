@@ -45,7 +45,7 @@ AI Answer Assistant is an Android answering tool based on OCR/vision models and 
 
 ### Installation and Preparation
 
-1. Use a device with Android 11 or above and keep the network connected.
+1. Use a device with Android 10 or above and keep the network connected.
 2. Install the provided APK file; first installation requires allowing apps from unknown sources according to system prompts.
 3. On first launch, follow the on-screen prompts to grant necessary permissions such as floating window, screen recording (or accessibility), and notifications.
 4. Configure your LLM model in Settings (see "Quick Start" below).
