@@ -232,4 +232,35 @@ class JsonAnswerExtractorTest {
         assertEquals(1, result.size)
         assertEquals("B", result[0].answer)
     }
+
+    @Test
+    fun `parseJsonAnswers - answer字段题号前缀被剥离`() {
+        // 模型按录制 prompt 标注题号但放错位置（真实日志：answer:"第2题：C"）
+        val input = """{"question":"以下英雄联盟选手中，没有获得过S冠军的选手是","questionType":"选择题","answer":"第2题：C","options":["A. ning","B. jiejie","C. UZI","D. tian"]}"""
+        val result = JsonAnswerExtractor().parseJsonAnswers(input)
+        assertEquals(1, result.size)
+        assertEquals("C", result[0].answer)
+    }
+
+    @Test
+    fun `parseJsonAnswers - answer字段题号前缀中文冒号与空格变体均剥离`() {
+        val cases = listOf(
+            "{\"question\":\"q\",\"questionType\":\"选择题\",\"answer\":\"第5题：B\"}",
+            "{\"question\":\"q\",\"questionType\":\"选择题\",\"answer\":\"第6题:D\"}",
+            "{\"question\":\"q\",\"questionType\":\"选择题\",\"answer\":\"第 3 题 ： A\"}",
+        )
+        cases.forEach { input ->
+            val result = JsonAnswerExtractor().parseJsonAnswers(input)
+            assertTrue("题号前缀应被剥离: $input", result.isNotEmpty())
+            val ans = result[0].answer
+            assertFalse("answer 不应再含题号前缀: $input → $ans", ans.startsWith("第"))
+        }
+    }
+
+    @Test
+    fun `parseJsonAnswers - 正常答案不受影响`() {
+        val input = "{\"question\":\"q\",\"answer\":\"D 原神\"}"
+        val result = JsonAnswerExtractor().parseJsonAnswers(input)
+        assertEquals("D 原神", result[0].answer)
+    }
 }

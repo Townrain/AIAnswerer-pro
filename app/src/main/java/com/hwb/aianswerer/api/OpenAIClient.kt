@@ -11,6 +11,7 @@ import com.hwb.aianswerer.models.AIAnswer
 import com.hwb.aianswerer.models.ChatMessage
 import com.hwb.aianswerer.models.ChatRequest
 import com.hwb.aianswerer.models.ChatResponse
+import com.hwb.aianswerer.models.ResponseFormat
 import com.hwb.aianswerer.models.ToolCall
 import com.hwb.aianswerer.models.ToolCallFunction
 import com.hwb.aianswerer.utils.AppLog
@@ -158,7 +159,9 @@ class OpenAIClient {
                     stream = true,
                     tools = tools,
                     // 显式 tool_choice:auto，提示部分保守模型主动调用工具（null 时该字段不序列化）
-                    toolChoice = if (tools != null) "auto" else null
+                    toolChoice = if (tools != null) "auto" else null,
+                    // P1: 无工具模式强制 JSON 输出（从源头约束，减少解析漂移）；工具模式不传（与 tools 兼容性未验证）
+                    responseFormat = if (tools == null) ResponseFormat(type = "json_object") else null
                 )
 
                 val requestJson = gson.toJson(chatRequest)
@@ -204,7 +207,6 @@ class OpenAIClient {
                         val searchResult = WebSearchToolExecutor.execute(query, 2)
                         AppLog.d("TOOL", "round $rounds: tool result: chars=${searchResult.length}, blank=${searchResult.isBlank()}")
                         // M-TOOL: 搜索无有效信息时标记强制直接作答；有效结果收集进上下文供重建对话使用
-                        // M-TOOL: 搜索完全无结果时标记强制直接作答；有效结果收集进上下文供重建对话使用
                         if (searchResult.isBlank()) {
                             forceDirectAnswer = true
                         } else {
@@ -247,19 +249,11 @@ class OpenAIClient {
             AppLog.d("API", "AI原始完整响应: $sanitizedAnswer")
             // 解析AI返回的JSON答案
             // 策略：先直接解析原文（AI通常返回干净JSON），失败再提取+修复
-            val result: Result<List<AIAnswer>> = if (containsToolCallMarkers(answerContent) &&
-                !sanitizedAnswer.contains("{") && !sanitizedAnswer.contains("[")
-
-
-            ) {
-                // 伪工具文本剥离后无任何 JSON 负载（如截断前缀只是普通叙述），按空答案处理，
-                // 避免被降级文本提取成垃圾答案条目
-                AppLog.w("API", "sanitized tool-call pseudo text has no JSON payload, treating as empty answer")
-
-
+            val result: Result<List<AIAnswer>> = if (containsToolCallMarkers(answerContent) && sanitizedAnswer.isBlank()) {
+                // 工具伪文本剥离后无任何可用内容 → 按空答案处理，避免被降级文本提取成垃圾答案条目；
+                // 若剥离后仍有文本（如块后的 Markdown 答案），走正常解析（解析器自带空内容/伪文本防护）
+                AppLog.w("API", "sanitized tool-call pseudo text is blank, treating as empty answer")
                 Result.success(emptyList())
-
-
             } else {
                 val parsed = answerExtractor.parseJsonAnswers(sanitizedAnswer).toMutableList()
                 // 降级文本提取的条目可能缺题目（question 为占位文案）：用原始题目文本补全，
@@ -564,32 +558,46 @@ class OpenAIClient {
         const val WRITE_TIMEOUT_SEC = 15L
         const val TEST_TIMEOUT_MS = 30_000L
 
-        // function calling 工具循环：最多执行 2 轮工具调用（加首轮共最多 3 次请求），防止死循环
+        // function calling 工具循环：最多执行 2 轮工具调用（加首轮共最多 3 次请求；封顶重建后最多 4 次），防止死循环
         const val MAX_TOOL_ROUNDS = 2
 
         /**
          * 防伪工具文本：模型在无 tools 参数请求中仍可能输出 <tool_calls> 格式伪文本（受历史工具消息影响）。
-         * 含工具调用标记时截断到首个 '<' 之前；无可用内容则返回空串（交由解析层按失败处理）。
+         * 剥离工具调用标记块（XML/JSON 两种风格），保留其余文本；无可用内容则返回空串（交由解析层按失败处理）。
          */
         fun sanitizeToolCallText(content: String): String {
             val trimmed = content.trim()
-            if (!trimmed.contains("<tool_calls") && !trimmed.contains("</tool_calls>") &&
-                !trimmed.contains("<invoke") && !trimmed.contains("</invoke>")
-            ) {
-                return content
-            }
-            val cut = trimmed.indexOf('<')
-            return if (cut > 0) trimmed.substring(0, cut).trim() else ""
+            if (!containsToolCallMarkers(trimmed)) return content
+            var cleaned = trimmed
+            // XML 风格：<tool_calls>…</tool_calls> / <invoke …>…</invoke> / <parameter …>…</parameter>
+            TOOL_CALL_BLOCK_REGEXES.forEach { cleaned = cleaned.replace(it, "") }
+            // JSON 风格："tool_calls":[…] / "tool_call_id":"…"
+            cleaned = cleaned
+                .replace(Regex(""""tool_calls"\s*:\s*\[[^\]]*]""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex(""""tool_call_id"\s*:\s*"[^"]*"""", RegexOption.IGNORE_CASE), "")
+            val result = cleaned.trim()
+            // 剥离后为空（纯伪文本）→ 返回空串由上层按失败处理
+            return result
         }
+
+        /** 工具调用伪文本块（XML 风格，大小写不敏感，跨行匹配） */
+        private val TOOL_CALL_BLOCK_REGEXES = listOf(
+            Regex("""<tool_calls>\s*</tool_calls>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)),
+            Regex("""<tool_calls>.*?</tool_calls>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)),
+            Regex("""<tool_call>.*?</tool_call>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)),
+            Regex("""<invoke[^>]*>.*?</invoke>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)),
+            Regex("""<parameter[^>]*>.*?</parameter>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)),
+        )
 
         /**
          * 判断内容是否含工具调用标记（伪 <tool_calls> 或 JSON 风格 \"tool_calls\" 字段）。
          */
         fun containsToolCallMarkers(content: String): Boolean {
             val trimmed = content.trim()
-            return trimmed.contains("<tool_calls") || trimmed.contains("</tool_calls>") ||
-                trimmed.contains("<invoke") || trimmed.contains("</invoke>") ||
-                trimmed.contains("tool_call_id") || trimmed.contains("\"tool_calls\"")
+            return trimmed.contains("<tool_calls", ignoreCase = true) || trimmed.contains("</tool_calls>", ignoreCase = true) ||
+                trimmed.contains("<invoke", ignoreCase = true) || trimmed.contains("</invoke>", ignoreCase = true) ||
+                trimmed.contains("<tool_call>", ignoreCase = true) || trimmed.contains("<parameter", ignoreCase = true) ||
+                trimmed.contains("tool_call_id", ignoreCase = true) || trimmed.contains("\"tool_calls\"", ignoreCase = true)
         }
 
         // 使用全局共享的Gson实例

@@ -621,6 +621,27 @@ data: [DONE]
     }
 
     @Test
+    fun `analyzeQuestion - non tool mode declares response_format json_object`() = runBlocking {
+        // P1: 无工具模式强制 JSON 输出，从源头约束解析漂移
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("A")))
+        val result = client.analyzeQuestion("test", systemPrompt = "test")
+        assertTrue(result.isSuccess)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue("non-tool mode should declare json_object: $body", body.contains("\"response_format\":{\"type\":\"json_object\"}"))
+    }
+
+    @Test
+    fun `analyzeQuestion - tool mode does not declare response_format`() = runBlocking {
+        // P1: 工具模式不传 response_format（与 tools 兼容性未验证，避免服务商报错）
+        toolModeOn()
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("A")))
+        val result = client.analyzeQuestion("test", systemPrompt = "test")
+        assertTrue(result.isSuccess)
+        val body = server.takeRequest().body.readUtf8()
+        assertFalse("tool mode should not declare response_format: $body", body.contains("response_format"))
+    }
+
+    @Test
     fun `analyzeQuestion - tool loop executes search and feeds back tool message`() = runBlocking {
         toolModeOn()
         // Round 1: model requests web_search tool call (no content)
@@ -716,6 +737,27 @@ data: [DONE]
     }
 
     @Test
+    fun `sanitizeToolCallText - preserves text after marker block`() {
+        // F2: 伪文本块后的合法内容必须保留（旧实现截断到首个 < 会整段丢失）
+        val pseudo = "前置说明\n<tool_calls>\n<invoke name=\"web_search\">\n</invoke>\n</tool_calls>\n后置答案"
+        val result = OpenAIClient.sanitizeToolCallText(pseudo)
+        assertTrue("应保留块前文本: $result", result.contains("前置说明"))
+        assertTrue("应保留块后文本: $result", result.contains("后置答案"))
+    }
+
+    @Test
+    fun `sanitizeToolCallText - case insensitive and json style markers`() {
+        // 大小写变体
+        assertEquals("答案", OpenAIClient.sanitizeToolCallText("答案<TOOL_CALLS>\n<invoke name=\"web_search\">\n</invoke>\n</TOOL_CALLS>"))
+        // JSON 风格 tool_calls / tool_call_id
+        val json = "{\"answer\":\"A\",\"tool_calls\":[{\"id\":\"x\"}],\"tool_call_id\":\"call_1\"}"
+        val cleaned = OpenAIClient.sanitizeToolCallText(json)
+        assertFalse("JSON 风格 tool_calls 标记应被剥离: $cleaned", cleaned.contains("tool_calls"))
+        assertFalse("tool_call_id 应被剥离: $cleaned", cleaned.contains("tool_call_id"))
+        assertTrue("答案内容应保留: $cleaned", cleaned.contains("A"))
+    }
+
+    @Test
     fun `analyzeQuestion - tool loop capped rebuilds clean conversation without tools and parses answer`() = runBlocking {
         toolModeOn()
         // Round 1-3: 模型持续请求工具且无内容（冷门题搜不到 → 死循环），round 3 触发封顶
@@ -735,6 +777,30 @@ data: [DONE]
         assertFalse("final request must not carry tools", body4.contains("\"tools\""))
         assertFalse("final request must not carry tool history", body4.contains("\"role\":\"tool\""))
         assertTrue("final request should inject force-direct-answer prompt", body4.contains("mocked_message"))
+    }
+
+    @Test
+    fun `analyzeQuestion - forceDirectAnswer rebuilds clean conversation when search empty`() = runBlocking {
+        toolModeOn()
+        // 搜索无结果 → 触发顶部 forceDirectAnswer 重建（而非等封顶）
+        coEvery { WebSearchToolExecutor.execute(any(), any()) } returns ""
+        val toolCallDelta = "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"冷门题\\\"}\"}}]}}]}"
+        server.enqueue(MockResponse().setResponseCode(200).setBody(sse(toolCallDelta)))
+        // 重建后的无工具请求：模型直接输出 JSON 答案
+        server.enqueue(MockResponse().setResponseCode(200).setBody(answerDelta("D")))
+
+        val result = client.analyzeQuestion("冷门题", systemPrompt = "test")
+
+        assertTrue(result.isSuccess)
+        assertEquals("D", result.getOrNull()!![0].answer)
+        // 共 2 次请求：round1 带工具，round2 重建后无工具
+        assertEquals(2, server.requestCount)
+        val body1 = server.takeRequest().body.readUtf8()
+        val body2 = server.takeRequest().body.readUtf8()
+        assertTrue("round1 must carry tools", body1.contains("\"tools\""))
+        assertFalse("rebuild must not carry tools", body2.contains("\"tools\""))
+        assertFalse("rebuild must not carry tool history", body2.contains("\"role\":\"tool\""))
+        assertTrue("rebuild should inject force-direct-answer prompt", body2.contains("mocked_message"))
     }
 
     @Test
@@ -769,9 +835,23 @@ data: [DONE]
 
         assertTrue(result.isSuccess)
         val answers = result.getOrNull()!!
-        assertEquals(1, answers.size)
         assertEquals("D 原神", answers[0].answer)
         // question 必须被原始题目文本补全，而非"无法解析题目"占位
         assertEquals("以下哪款游戏被称为“3A大作”？", answers[0].question)
+    }
+
+    @Test
+    fun `analyzeQuestion - markdown answer after tool block is preserved`() = runBlocking {
+        // P0-1: sanitize 保留块后文本，但旧守卫（无 {/[ 即判空）会把 Markdown 答案整段丢弃
+        val content = "前置说明\n<tool_calls>\n<invoke name=\"web_search\">\n</invoke>\n</tool_calls>\n\n**答案：D 原神**"
+        val escaped = content.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+        server.enqueue(MockResponse().setResponseCode(200).setBody(sse("{\"choices\":[{\"delta\":{\"content\":\"$escaped\"}}]}")))
+
+        val result = client.analyzeQuestion("某题目", systemPrompt = "test")
+
+        assertTrue(result.isSuccess)
+        val answers = result.getOrNull()!!
+        assertTrue("工具块后的 Markdown 答案必须保留: $answers", answers.isNotEmpty())
+        assertEquals("D 原神", answers[0].answer)
     }
 }

@@ -29,10 +29,18 @@ class JsonAnswerExtractor(
             return emptyList()
         }
 
+        // 统一出口：剥离 answer 值中的题号前缀（模型按录制 prompt 标注题号但常放错位置，如 answer:"第2题：C"）
+        fun List<AIAnswer>.sanitized(): List<AIAnswer> = map { ai ->
+            val clean = stripQuestionNumberPrefix(ai.answer)
+            // 不用 copy()：gson 缺失字段时 questionType 可能为 null，copy 会 NPE
+            if (clean == ai.answer) ai
+            else AIAnswer(ai.question, ai.questionType, clean, ai.options)
+        }
+
         // 策略1：直接解析原文（AI 通常返回干净 JSON）
         tryParseAsAnswers(trimmed)?.let {
             AppLog.d("API", "JSON解析: 直接解析成功, size=${it.size}")
-            return it
+            return it.sanitized()
         }
 
         // 策略2：提取 JSON 负载 + 修复
@@ -40,7 +48,7 @@ class JsonAnswerExtractor(
         val fixed = fixMalformedJson(extracted)
         tryParseAsAnswers(fixed)?.let {
             AppLog.d("API", "JSON解析: 提取+修复成功, size=${it.size}")
-            return it
+            return it.sanitized()
         }
 
         // 策略3：正则提取 JSON 数组
@@ -49,7 +57,7 @@ class JsonAnswerExtractor(
             val candidate = fixMalformedJson(match.value)
             tryParseAsAnswers(candidate)?.let {
                 AppLog.d("API", "JSON解析: 正则提取成功, size=${it.size}")
-                return it
+                return it.sanitized()
             }
         }
 
@@ -61,7 +69,7 @@ class JsonAnswerExtractor(
                 val single = gson.fromJson(candidate, AIAnswer::class.java)
                 if (single.question.isNotBlank()) {
                     AppLog.d("API", "JSON解析: 单对象正则提取成功")
-                    return listOf(single)
+                    return listOf(single).sanitized()
                 }
             } catch (_: Exception) {}
         }
@@ -73,8 +81,16 @@ class JsonAnswerExtractor(
             return emptyList()
         }
         AppLog.d("API", "JSON解析: 全部失败, 降级文本提取")
-        return listOf(parseAnswerFromText(content))
+        return listOf(parseAnswerFromText(content)).sanitized()
     }
+
+    /**
+     * 剥离 answer 值开头的题号前缀（如 "第2题：C" → "C"、"第5题：B" → "B"）。
+     * 模型按录制 prompt 要求标注题号，但经常把题号写进 answer 字段而非正文前缀，
+     * 导致结果卡/复制文本出现 "第N题：第M题：C" 的重复题号。
+     */
+    private fun stripQuestionNumberPrefix(answer: String): String =
+        answer.replace(Regex("""^\s*第\s*\d+\s*题\s*[：:]\s*"""), "").trim()
 
     /**
      * 判断文本是否包含工具调用伪语法（<tool_calls>/<invoke> 等）。
