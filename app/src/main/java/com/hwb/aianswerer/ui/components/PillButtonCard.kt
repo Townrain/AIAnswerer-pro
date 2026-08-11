@@ -16,16 +16,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
@@ -50,8 +47,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.hwb.aianswerer.ui.theme.DW
 import com.hwb.aianswerer.ui.theme.ErrorRedLight
 import com.hwb.aianswerer.ui.theme.ImageCollectingPurple
 import com.hwb.aianswerer.ui.theme.ImageCollectingPurpleDark
@@ -156,7 +151,6 @@ internal data class PillVisual(
     val gradient: Brush,
     val border: Color,
     val iconTint: Color,
-    val badge: Pair<String, Color>?
 )
 
 internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCollecting: Boolean, t: Th): PillVisual {
@@ -168,7 +162,6 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = ImageCollectingPurpleLight.copy(alpha = 0.45f),
             iconTint = Color.White.copy(alpha = 0.95f),
-            badge = null
         )
         isRecording -> PillVisual(
             gradient = Brush.linearGradient(
@@ -177,7 +170,6 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = ErrorRedLight.copy(alpha = 0.45f),
             iconTint = Color.White.copy(alpha = 0.95f),
-            badge = null
         )
         status in listOf(
             FloatingStatus.Capturing, FloatingStatus.Recognizing,
@@ -189,7 +181,6 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.w.copy(alpha = 0.12f),
             iconTint = t.w.copy(alpha = 0.95f),
-            badge = null
         )
         status == FloatingStatus.Success -> PillVisual(
             gradient = Brush.linearGradient(
@@ -198,7 +189,6 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.ok.copy(alpha = 0.3f),
             iconTint = t.w.copy(alpha = 0.95f),
-            badge = "\u2713" to Color.White
         )
         status == FloatingStatus.Error -> PillVisual(
             gradient = Brush.linearGradient(
@@ -207,7 +197,6 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.err.copy(alpha = 0.3f),
             iconTint = t.w.copy(alpha = 0.95f),
-            badge = "\u2717" to Color.White
         )
         else -> PillVisual(
             gradient = Brush.linearGradient(
@@ -216,7 +205,6 @@ internal fun pillVisual(status: FloatingStatus, isRecording: Boolean, isImageCol
             ),
             border = t.w.copy(alpha = 0.25f),
             iconTint = t.w.copy(alpha = 0.95f),
-            badge = null
         )
     }
 }
@@ -412,48 +400,21 @@ internal fun PillButton(
                 .padding(horizontal = FWDims.pillHPadding, vertical = FWDims.pillVPadding),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            visual.badge?.let { (label, color) ->
-                if (!isLeftSide) {
-                    Badge2(label, color)
-                    Spacer(Modifier.width(8.dp))
-                }
-            }
             Icon(
                 LocalIcons.Search, "screenshot",
                 tint = visual.iconTint,
                 modifier = Modifier.size(FWDims.pillIconSize)
             )
-            visual.badge?.let { (label, color) ->
-                if (isLeftSide) {
-                    Spacer(Modifier.width(8.dp))
-                    Badge2(label, color)
-                }
-            }
         }
     }
 }
 
 
-// =============================================================================
-// Badge2 (synced from sandbox)
-// =============================================================================
-
-@Composable
-private fun Badge2(label: String, color: Color, alpha: Float = 1f, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .graphicsLayer { this.alpha = alpha }
-            .clip(RoundedCornerShape(6.dp))
-            .background(color.copy(alpha = 0.15f))
-            .padding(horizontal = 5.dp, vertical = 2.dp)
-    ) {
-        Text(label, style = DW.LabelSmall.copy(color = color, fontSize = 10.sp))
-    }
-}
 
 // =============================================================================
 // StatusDot (synced from sandbox)
 // =============================================================================
+
 
 @Composable
 internal fun StatusDot(status: FloatingStatus) {
