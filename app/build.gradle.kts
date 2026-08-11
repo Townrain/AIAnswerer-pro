@@ -91,7 +91,7 @@ android {
                 val outputImpl = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
                 val date = SimpleDateFormat("yyyyMMdd-HHmm").format(Date())
                 outputImpl.outputFileName =
-                    "${date}_AIAnswerer_v${versionNameValue}.apk"
+                    "${date}_FloatyAnswer_v${versionNameValue}.apk"
             } catch (e: Exception) {
                 println("Warning: Could not rename APK output: ${e.message}")
             }

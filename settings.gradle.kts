@@ -28,6 +28,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AI Answerer"
+rootProject.name = "FloatyAnswer"
 include(":app")
  

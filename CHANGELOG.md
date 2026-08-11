@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to AIAnswerer will be documented in this file.
+All notable changes to FloatyAnswer will be documented in this file.
 
 ## [Unreleased]
 

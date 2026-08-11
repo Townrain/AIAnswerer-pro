@@ -167,11 +167,11 @@ jobs:
         VERSION: ${{ steps.get_version.outputs.VERSION }}
       run: |
         if [ -f release_notes_zh.md ]; then
-          { echo "## AIAnswerer ${VERSION}"; echo; echo '### 更新内容'; cat release_notes_zh.md; } > release_body.md
+          { echo "## FloatyAnswer ${VERSION}"; echo; echo '### 更新内容'; cat release_notes_zh.md; } > release_body.md
         elif [ -f release_notes_en.md ]; then
-          { echo "## AIAnswerer ${VERSION}"; echo; echo "### What's Changed"; cat release_notes_en.md; } > release_body.md
+          { echo "## FloatyAnswer ${VERSION}"; echo; echo "### What's Changed"; cat release_notes_en.md; } > release_body.md
         else
-          echo "## AIAnswerer ${VERSION}" > release_body.md
+          echo "## FloatyAnswer ${VERSION}" > release_body.md
           echo >> release_body.md
           echo "No changelog section found for ${VERSION} — update 变更日志.md before tagging." >> release_body.md
         fi
