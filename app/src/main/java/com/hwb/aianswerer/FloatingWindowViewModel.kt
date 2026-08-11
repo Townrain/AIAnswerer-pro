@@ -107,6 +107,9 @@ class FloatingWindowViewModel : ViewModel() {
     /** 已进站截图总数（含识别中/失败的），用于 x/n 显示 */
     var imageCaptureCount = mutableStateOf(0)
     var isProcessingImages = mutableStateOf(false)
+    /** P0-5: 多图结果展示期 — stop 后至关闭/新答题前；普通答题/录制会复位，
+     *   header 据此区分多图答案卡（用进站截图数）与普通答案卡（用答案数） */
+    var isImageResultActive = mutableStateOf(false)
 
     // ===== Paginated answers =====
     var paginatedAnswers = mutableStateOf<List<Pair<Int, String>>>(emptyList())
@@ -134,6 +137,11 @@ class FloatingWindowViewModel : ViewModel() {
         override fun onError(message: String) { ctx?.showErrorToUser(message) }
         override fun onToast(message: String) { ctx?.showToast(message) }
         override fun onResult(answers: List<AIAnswer>) {
+            // P0-5: 仅当多图结果展示期（stop 后至关闭/新答题前）才接受结果，
+            //       防止旧会话结果覆盖后续普通答题的答案卡
+            if (!isImageResultActive.value) {
+                AppLog.d("VM", "drop image result: no active image result window"); return
+            }
             val autoCopy = AppConfig.getAutoCopy()
             // Reuse the existing answer display pipeline
             // NOTE: paginatedAnswers MUST be set BEFORE showAnswer, otherwise
@@ -242,6 +250,8 @@ class FloatingWindowViewModel : ViewModel() {
             }
             // S3: 新捕获开始即递增代次，让仍在途的旧 fetch/录制回调立即失效
             nextGeneration()
+            // m5: 普通截图开始 → 关闭多图结果窗口，与 handleAnswerSuccess/startRecording 对齐
+            isImageResultActive.value = false
             answerText.value = null
             paginatedAnswers.value = emptyList()
             paginatedCopyTexts.value = emptyList()
@@ -276,7 +286,8 @@ class FloatingWindowViewModel : ViewModel() {
     private suspend fun handleAnswerSuccess(aiAnswers: List<AIAnswer>, autoCopy: Boolean) {
         val showQuestion = AppConfig.getShowAnswerCardQuestion()
         val showOptions = AppConfig.getShowAnswerCardOptions()
-
+        // P0-5: 普通答题开始展示 → 关闭多图结果窗口，旧多图结果到达时被 onResult 守卫丢弃
+        isImageResultActive.value = false
         paginatedAnswers.value = aiAnswers.mapIndexed { index, answer ->
             (index + 1) to answer.formatAnswerWithConfig(showQuestion, showOptions)
         }
@@ -319,6 +330,8 @@ class FloatingWindowViewModel : ViewModel() {
         currentFetchJob = null
         // M8: 录制开始 = 新代次，使此前的普通 fetch 结果失效；录制结果回调校验此代次
         recordingGeneration = nextGeneration()
+        // P0-5: 录制开始 → 关闭多图结果窗口，旧多图结果到达时被 onResult 守卫丢弃
+        isImageResultActive.value = false
         recorder.start()
         isRecording.value = true
         recordingCaptureCount.value = 0
@@ -342,7 +355,9 @@ class FloatingWindowViewModel : ViewModel() {
                 ctx?.showToast(ctx?.getString(R.string.recording_no_captures) ?: "")
             }
             is RecordingCoordinator.StopResult.Completed -> {
-                showRecordingResults()
+                // P0-5: 结果由 coordinator 的异步 final 通知展示（stop() 内 ensureResultsNotified 已排队），
+                //       此处同步 showRecordingResults 会读到尚未填充的 recordingAnswers，闪现"无有效答案"错误
+                AppLog.d("VM", "stopRecording: completed, awaiting async final notification")
             }
             is RecordingCoordinator.StopResult.Processing -> {
                 isProcessingRecording.value = true

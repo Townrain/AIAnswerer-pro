@@ -52,6 +52,7 @@ class ImageCollectorTest {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         mockkObject(AppConfig)
         every { AppConfig.getQuestionTypes() } returns setOf("选择题")
+        every { AppConfig.getMaxConcurrency() } returns 3
         collector = ImageCollector(pipeline, scope, callbacks)
     }
 
@@ -353,5 +354,46 @@ class ImageCollectorTest {
         assertEquals(0, collector.getCollectedCount())
         assertFalse(collector.isProcessing)
         assertTrue(collector.isActive)
+    }
+
+    @Test
+    fun `restart_during_submit_drops_stale_result`() {
+        // P0-3: stop 提交在途（去重/答题慢）时快速重启，旧会话结果不得打进新会话
+        // 旧场景：提交协程不被 start() 追踪/取消，onResult 无守卫 → 旧答案覆盖新会话
+        collector.start()
+        collector.processText("第一页")
+
+        // 提交阶段慢（模拟 240s 窗口内的在途提交）
+        coEvery { pipeline.dedupeText(any()) } coAnswers {
+            delay(300)
+            Result.success("干净文本")
+        }
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } coAnswers {
+            delay(300)
+            Result.success(listOf(answer()))
+        }
+
+        val onResults = mutableListOf<List<AIAnswer>>()
+        coEvery { callbacks.onResult(capture(onResults)) } returns Unit
+
+        collector.stop() // 提交协程在途（约 600ms 后 onResult）
+        // 立即重启新会话（不等旧提交完成）
+        collector.start()
+
+        // 新会话立即完成一次采集并提交
+        collector.processText("新会话内容")
+        coEvery { pipeline.dedupeText(any()) } returns Result.success("新干净文本")
+        coEvery { pipeline.askLlm(any(), any(), any(), any()) } returns Result.success(listOf(answer()))
+        collector.stop()
+        awaitProcessingDone()
+
+        // 等旧提交（600ms）也走完 — 若未隔离其 onResult 会污染新会话
+        Thread.sleep(800)
+
+        // 新会话 stop 后 isProcessing 复位，onResult 守卫（isImageResultActive 由 ViewModel 层控制），
+        // 此处验证 collector 层面：旧提交的 onResult 数量被代次守卫丢弃后总数为 1
+        // （旧提交 onResult 被丢弃；新提交正常返回）
+        // 注：callbacks.onResult 是 mock，collector 内部校验 gen 后丢弃旧提交，仅新提交触发
+        assertTrue("只有新会话提交应触发 onResult，实际: ${onResults.size}", onResults.size == 1)
     }
 }

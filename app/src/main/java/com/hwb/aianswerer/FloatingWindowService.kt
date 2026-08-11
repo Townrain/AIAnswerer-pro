@@ -202,6 +202,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                 Constants.ACTION_SHOW_ANSWER -> {
                     val answer = intent.getStringExtra(Constants.EXTRA_ANSWER_TEXT)
                     if (!answer.isNullOrBlank()) {
+                        // P0-5: 普通答题展示 → 关闭多图结果窗口，旧多图结果到达时被 onResult 守卫丢弃
+                        viewModel.isImageResultActive.value = false
                         viewModel.answerText.value = answer
                         // M11: 广播路径必须同步填充 paginatedAnswers，否则 D 窗空白（WindowDContent 只渲染 paginated/recording）
                         viewModel.paginatedAnswers.value = listOf(1 to answer)
@@ -720,6 +722,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         imageCollector.stop()
                         viewModel.isImageCollecting.value = false
                         viewModel.isProcessingImages.value = imageCollector.isProcessing
+                        // P0-5: 进入多图结果展示期 — onResult 守卫放行；普通答题/录制会复位此标志
+                        viewModel.isImageResultActive.value = true
                         settings.imageEnabled.value = false
                         Toast.makeText(this@FloatingWindowService,
                             getString(R.string.image_analyzing),
@@ -732,6 +736,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         viewModel.isImageCollecting.value = true
                         viewModel.imageCollectCount.value = 0
                         viewModel.imageCaptureCount.value = 0
+                        // P0-5: 新多图会话开始 → 关闭旧结果窗口
+                        viewModel.isImageResultActive.value = false
                         viewModel.showAnswer.value = false
                         viewModel.paginatedAnswers.value = emptyList()
                         // Fix A: 立即显示状态消息，让折叠窗马上出现（窗口由 statusMessage 驱动）
@@ -755,6 +761,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                             imageCollector.cancel()
                             viewModel.isImageCollecting.value = false
                             viewModel.isProcessingImages.value = false
+                            viewModel.isImageResultActive.value = false // P0-5: 切录制 → 关闭多图结果窗口
                             settings.imageEnabled.value = false
                         }
                         viewModel.startRecording(recorder)
@@ -932,6 +939,7 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
                         recordingCaptureCount = viewModel.recordingCaptureCount.value,
                         // Fix C: 多图模式答案卡 header 总数用进站截图数（录制模式用 recordingCaptureCount）
                         imageCaptureCount = viewModel.imageCaptureCount.value,
+                        isImageResult = viewModel.isImageResultActive.value,
                         onCopyRecordingAnswer = { text ->
                             ClipboardUtil.copyToClipboard(this@FloatingWindowService, text)
                         },
@@ -1395,6 +1403,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         viewModel.recordingFailedCount.value = 0
         viewModel.recordingProcessedCount.value = 0
         viewModel.isProcessingRecording.value = false
+        // P0-5: 关闭答案 → 复位多图计数与结果窗口，避免残留值污染后续普通答案 header
+        viewModel.imageCollectCount.value = 0
+        viewModel.imageCaptureCount.value = 0
+        viewModel.isImageResultActive.value = false
         viewModel.hasContent = false
     }
 
@@ -1433,6 +1445,10 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         viewModel.recordingSkippedCount.value = 0
         viewModel.recordingFailedCount.value = 0
         viewModel.recordingProcessedCount.value = 0
+        // P0-5: 关闭状态 → 复位多图计数与结果窗口，避免残留值污染后续普通答案 header
+        viewModel.imageCollectCount.value = 0
+        viewModel.imageCaptureCount.value = 0
+        viewModel.isImageResultActive.value = false
     }
 
     // ── Cleanup ─────────────────────────────────────────────────────────

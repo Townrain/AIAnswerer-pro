@@ -64,12 +64,17 @@ class ImageCollector(
     /** 幂等提交锁 — 保证 stop 只触发一次合并分析（双 stop 安全） */
     private val submitScheduled = AtomicBoolean(false)
     private var notifyJob: Job? = null
+    /** P0-3: 会话代次 — start()/cancel() 递增；旧会话识别/提交协程校验代次后丢弃结果，
+     *  防止快速重启时旧结果（最长 240s）打进新会话 */
+    private val sessionGeneration = AtomicInteger(0)
 
     fun getCollectedCount(): Int = collectCount.get()
     fun getActiveJobCount(): Int = jobs.size
 
     /** 开始采集 */
     fun start() {
+        // P0-3: 新会话代次 — 使上一会话遗留协程（识别/提交）全部失效
+        sessionGeneration.incrementAndGet()
         isActive = true
         collectCount.set(0)
         captureCount.set(0)
@@ -79,6 +84,9 @@ class ImageCollector(
         submitScheduled.set(false)
         notifyJob?.cancel() // 取消上一会话遗留的等待协程
         notifyJob = null
+        // P0-3: 取消上一会话遗留识别任务，防止其完成回调把旧文本写入新会话 collectedTexts
+        jobs.forEach { it.cancel() }
+        jobs.clear()
         AppLog.i("IMG", "ImageCollector started")
     }
 
@@ -90,11 +98,28 @@ class ImageCollector(
             if (!bitmap.isRecycled) bitmap.recycle()
             return
         }
+        // P2-1: 并发闸门（与录制分支 maxConcurrency 对齐）— 快速连点时不堆叠识别请求
+        if (jobs.size >= AppConfig.getMaxConcurrency()) {
+            AppLog.d("IMG", "drop capture: concurrency limit reached (${jobs.size})")
+            if (!bitmap.isRecycled) bitmap.recycle()
+            scope.launch(Dispatchers.Main) {
+                callbacks.onToast("识别繁忙，请稍后再试")
+            }
+            return
+        }
         val pageIndex = captureCount.incrementAndGet() // 进站同步取号，杜绝协程内延迟读取的序号竞态
+        val gen = sessionGeneration.get() // P0-3: 捕获进站代次，识别完成回调据此丢弃旧会话结果
         val job = scope.launch(Dispatchers.IO) {
             try {
                 pipeline.recognizeToText(bitmap)
-                    .onSuccess { text -> addCollectedText(pageIndex, text) }
+                    .onSuccess { text ->
+                        // P0-3: 识别完成时代次已变（新会话已启动）→ 丢弃，避免旧文本写入新会话
+                        if (gen != sessionGeneration.get()) {
+                            AppLog.d("IMG", "drop stale recognition result page=$pageIndex")
+                        } else {
+                            addCollectedText(pageIndex, text)
+                        }
+                    }
                     .onFailure { e -> AppLog.e("IMG", "recognize failed for page $pageIndex", e) }
             } catch (e: CancellationException) {
                 throw e
@@ -140,22 +165,30 @@ class ImageCollector(
     private fun addCollectedText(index: Int, text: String) {
         if (text.isBlank()) return
 
-        if (collectCount.get() >= MAX_COLLECT_COUNT) {
+        // P2-2: 先去重再判上限 — 已满后重复页静默跳过，不误报"已达到最大收集数量"
+        val normalized = RecordingCoordinator.normalizeForDedupe(text)
+        var isDuplicate = false
+        var isFull = false
+        var idx = 0
+        synchronized(stateLock) {
+            if (textHashes.contains(normalized)) {
+                isDuplicate = true
+            } else if (collectCount.get() >= MAX_COLLECT_COUNT) {
+                isFull = true
+            } else {
+                textHashes.add(normalized)
+                idx = collectCount.incrementAndGet() // m3: 锁内取号，防止并发超 MAX
+            }
+        }
+        if (isDuplicate) {
+            AppLog.d("IMG", "去重: 与已收集内容重复，跳过"); return
+        }
+        if (isFull) {
             scope.launch(Dispatchers.Main) {
                 callbacks.onToast("已达到最大收集数量 ($MAX_COLLECT_COUNT)")
             }
             return
         }
-
-        val normalized = RecordingCoordinator.normalizeForDedupe(text)
-        synchronized(stateLock) {
-            if (textHashes.contains(normalized)) {
-                AppLog.d("IMG", "去重: 与已收集内容重复，跳过")
-                return
-            }
-            textHashes.add(normalized)
-        }
-        val idx = collectCount.incrementAndGet()
         collectedTexts[index] = text
         scope.launch(Dispatchers.Main) {
             callbacks.onProgressUpdate(idx, captureCount.get())
@@ -194,8 +227,13 @@ class ImageCollector(
             AppLog.d("IMG", "submit already scheduled, skip")
             return
         }
+        val gen = sessionGeneration.get() // P0-3: 捕获提交发起代次，提交期间重启会话则丢弃结果
         scope.launch(Dispatchers.Main) {
             try {
+                // P0-3: 提交执行前代次已变 → 不展示旧会话的任何 UI 回调
+                if (gen != sessionGeneration.get()) {
+                    AppLog.d("IMG", "drop stale submit (session restarted)"); return@launch
+                }
                 callbacks.onProgressUpdate(-1, captureCount.get()) // -1 = 分析中
                 val segments = collectedTexts.values.toList()
                 if (segments.isEmpty()) {
@@ -219,24 +257,31 @@ class ImageCollector(
                         pipeline.askLlm(combinedText, questionTypes, searchContext = "")
                     }
                 }
+                // P0-3: 提交结果返回时代次已变 → 丢弃，绝不展示旧会话答案
+                if (gen != sessionGeneration.get()) {
+                    AppLog.d("IMG", "drop stale submit result (session restarted)"); return@launch
+                }
                 result.onSuccess { answers ->
                     callbacks.onResult(answers)
                 }.onFailure { e ->
                     AppLog.e("IMG", "LLM analysis failed", e)
-                    callbacks.onError("AI分析失败: ${e.message}")
+                    // m4: 仅当前会话的失败才触发错误回调
+                    if (gen == sessionGeneration.get()) callbacks.onError("AI分析失败: ${e.message}")
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                callbacks.onError("分析失败: ${e.message}")
+                if (gen == sessionGeneration.get()) callbacks.onError("分析失败: ${e.message}")
             } finally {
-                isProcessing = false
+                // m4: 仅当前会话才复位 isProcessing，防止旧提交协程覆写新会话状态
+                if (gen == sessionGeneration.get()) isProcessing = false
             }
         }
     }
 
     /** 取消并清理 */
     fun cancel() {
+        sessionGeneration.incrementAndGet() // P0-3: 使在途识别/提交协程全部失效
         isActive = false
         isProcessing = false
         notifyJob?.cancel()

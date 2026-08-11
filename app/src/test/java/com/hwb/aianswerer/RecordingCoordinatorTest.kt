@@ -819,4 +819,55 @@ class RecordingCoordinatorTest {
 
         assertTrue("final total 必须为 maxOf(1,2)=2: $totals", totals.isNotEmpty() && totals.all { it == 2 })
     }
+
+    @Test
+    fun quick_restart_old_answer_jobs_do_not_pollute_new_session() = runBlocking {
+        // P0-3: 快速重启后，旧会话仍在飞的 LLM 请求不得把答案写入新会话
+        // Gen 守卫（fetchAnswer:366）将其丢弃；start() cancel 旧 job 为辅助手段，此处
+        // 用 Thread.sleep（非可取消）模拟 cancel 无法中断的旧 LLM，验证 gen 守卫独立生效
+        val notifyAnswers = java.util.concurrent.CopyOnWriteArrayList<List<Pair<Int, String>>>()
+        val latch = CountDownLatch(1)
+        every { callbacks.onResultsAvailable(capture(notifyAnswers), any(), any(), any(), any(), any()) } answers {
+            latch.countDown()
+        }
+
+        // 第一次录制：OCR 立返（fetchAnswer 立即入 jobs），askLlm 用 Thread.sleep 300ms 阻塞
+        // → stop 时 LLM 已在飞；start B 的 jobs.forEach{cancel} 无法中断 Thread.sleep
+        coEvery { pipeline.recognizeOcr(any()) } returns Result.success("OLD_QUESTION")
+        coEvery { pipeline.askLlm(match { it.contains("OLD_QUESTION") }, any(), any(), any()) } answers {
+            Thread.sleep(300)
+            Result.success(listOf(mockAnswer().copy(question = "OLD_QUESTION")))
+        }
+        coordinator.start()
+        coordinator.processBitmap(mockBitmap())
+        delay(50)
+        val first = coordinator.stop()
+        assertTrue(first is RecordingCoordinator.StopResult.Processing)
+
+        // 快速重启 — cancel 仅发信号，旧 LLM 仍在 Thread.sleep 中运行
+        coordinator.start()
+        delay(50)
+
+        // 新会话：OCR 700ms（保证兜底协程 join 后通知，此时旧 LLM 约 300ms 已走完 gen 守卫并丢弃）
+        coEvery { pipeline.recognizeOcr(any()) } coAnswers {
+            delay(700)
+            Result.success("NEW_QUESTION")
+        }
+        coEvery { pipeline.askLlm(match { it.contains("NEW_QUESTION") }, any(), any(), any()) } returns Result.success(
+            listOf(mockAnswer().copy(question = "NEW_QUESTION"))
+        )
+        coordinator.processBitmap(mockBitmap())
+        delay(20)
+        val second = coordinator.stop()
+        assertTrue(second is RecordingCoordinator.StopResult.Processing)
+
+        // 兜底协程 join 完成约 t=820ms，旧 LLM（约 t=350ms）若未被 gen 守卫拦截则已写入
+        assertTrue("新会话必须收到通知", latch.await(5, TimeUnit.SECONDS))
+        val notified = notifyAnswers.flatten().map { it.second }
+        assertTrue("新会话必须收到通知内容", notified.isNotEmpty())
+        assertTrue(
+            "旧会话答案不得污染新会话，收到: $notified",
+            notified.all { it.contains("NEW_QUESTION") && !it.contains("OLD_QUESTION") }
+        )
+    }
 }

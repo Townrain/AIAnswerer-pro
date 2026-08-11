@@ -316,6 +316,8 @@ fun WindowDContent(
     recordingProcessedCount: Int,
     recordingCaptureCount: Int,
     imageCaptureCount: Int = 0,
+    /** P0-5: 多图结果展示中 — header 总数用进站截图数；普通单图模式用答案数，避免"共 0 题" */
+    isImageResult: Boolean = false,
     onCopyRecordingAnswer: (String) -> Unit,
     onCloseAnswer: () -> Unit,
     onMeasuredHeight: (Float) -> Unit,
@@ -352,9 +354,15 @@ fun WindowDContent(
                 // M11: 处理中（partial 展示）时 header 显示"处理中 (x/N)"，全部完成后才显示"全部完成"
                 isProcessing = isProcessingRecording,
                 processedCount = recordingProcessedCount,
-                // Fix C: 多图模式（paginatedAnswers 非空且非录制）用进站截图数做总数
-                totalCount = if (paginatedAnswers.isNotEmpty() && !isRecording)
-                    imageCaptureCount else recordingCaptureCount,
+                // P0-5: 总数来源与展示内容一致 — 多图结果用进站截图数；
+                //       录制结果（recordingAnswers 非空，stop 后 isRecording=false）用 recordingCaptureCount；
+                //       普通单图答案用答案数，避免 header 显示"共 0 题"或残留计数
+                totalCount = when {
+                    isImageResult -> imageCaptureCount
+                    isRecording -> recordingCaptureCount
+                    recordingAnswers.isNotEmpty() -> recordingCaptureCount
+                    else -> paginatedAnswers.size
+                },
                 onCollapse = onCollapse
             )
         }

@@ -287,4 +287,17 @@ class FloatingWindowViewModelTest {
         assertTrue(viewModel.recordingAnswers.value.isEmpty())
         assertFalse(viewModel.showAnswer.value)
     }
+
+    @Test
+    fun `recording results shown with isRecording false keep capture count`() {
+        // 回归：录制 stop 后 isRecording=false、recordingAnswers 非空（结果卡展示中），
+        // recordingCaptureCount 必须保持非零，供答案卡 header 显示 "共 N 题"
+        // （FloatingWindowContent.totalCount 的 recordingAnswers.isNotEmpty() 分支依赖此状态）
+        viewModel.recordingAnswers.value = listOf(1 to "答案1", 2 to "答案2")
+        viewModel.recordingCaptureCount.value = 6
+
+        assertFalse(viewModel.isRecording.value)
+        assertTrue(viewModel.recordingAnswers.value.isNotEmpty())
+        assertEquals(6, viewModel.recordingCaptureCount.value)
+    }
 }

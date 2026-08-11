@@ -71,11 +71,16 @@ class RecordingCoordinator(
     private val resultsNotified = java.util.concurrent.atomic.AtomicBoolean(false)
     // P0-2: 保存 stop 兜底通知协程引用，start()/cancel() 时取消，防止快速重启时旧协程吞掉新会话通知
     @Volatile private var notifyJob: Job? = null
+    // P0-3: 会话代次 — start()/cancel() 递增；旧会话任务完成回调校验代次后丢弃结果，
+    //       防止快速重启时旧任务（最长 240s）把答案/计数写入新会话
+    private val sessionGeneration = AtomicInteger(0)
     fun getActiveJobCount(): Int = activeJobCount.get()
     private var llmSemaphore: Semaphore? = null
     private var vlmSemaphore: Semaphore? = null
     /** 开始录题 */
     fun start() {
+        // P0-3: 新会话代次 — 使上一会话遗留任务完成回调全部失效
+        sessionGeneration.incrementAndGet()
         isActive = true
         _captureCount.set(0)
         _processedCount.set(0)
@@ -85,6 +90,9 @@ class RecordingCoordinator(
         answers.clear()
         copyTexts.clear()
         textHashes.clear()
+        // P0-3: 取消上一会话遗留任务（对齐 cancel() 的 jobs.forEach{cancel}），
+        //       防止旧 OCR/VLM/LLM job 完成后写入新会话 answers 与计数
+        jobs.forEach { it.cancel() }
         jobs.clear()
         activeJobCount.set(0)
         resultsNotified.set(false) // M9: 复位幂等标志，避免连续两次录制时第二次不通知
@@ -94,13 +102,17 @@ class RecordingCoordinator(
         val maxConcurrency = AppConfig.getMaxConcurrency()
         llmSemaphore = Semaphore(maxConcurrency)
         // VLM 与 LLM 共用用户配置的并发数；若服务商并发能力不足，
-        // 应由设置页「并发测试」提前暴露限流，而非在录制时硬编码限制
+        //     应由设置页「并发测试」提前暴露限流，而非在录制时硬编码限制
         vlmSemaphore = Semaphore(maxConcurrency)
         AppLog.i("REC", "startRecording maxConcurrency=$maxConcurrency")
     }
 
     /** 停止录题 — 返回是否需要等待处理完成的标志 */
     fun stop(): StopResult {
+        // P0-4: 二次 stop 幂等 — 已在处理中时忽略，避免重复 partial 通知与重复兜底协程
+        if (isProcessing) {
+            AppLog.d("REC", "stop ignored: already processing"); return StopResult.Processing(captureCount, processedCount)
+        }
         isActive = false
         AppLog.i("REC", "stopRecording captured=$captureCount processed=$processedCount answers=${answers.size}")
         if (captureCount == 0) return StopResult.NothingToShow
@@ -121,6 +133,8 @@ class RecordingCoordinator(
         }
         // M9: 兜底——所有 job 去重/失败时 notifyResults 可能永不触发（isProcessing && jobs.isEmpty() 条件不满足），
         //     启动兜底协程：jobs 清空后强制 notifyResults（幂等，防止与正常路径重复触发）
+        // P0-4: 替换前先取消旧兜底协程，避免悬挂协程重复通知
+        notifyJob?.cancel()
         notifyJob = scope.launch {
             // M10: 动态 join — stop 后 VLM/OCR job 完成时仍会通过 fetchAnswer 创建新的答案 job，
             //     必须等待全部 job（含后加入的答案 job）完成后才通知，避免"全部完成"提前弹出、
@@ -176,13 +190,14 @@ class RecordingCoordinator(
             return
         }
         val captureIndex = _captureCount.incrementAndGet()
+        val gen = sessionGeneration.get() // P0-3: 捕获启动代次，识别完成回调据此丢弃旧会话结果
         AppLog.enter("REC", "recordingProcessBitmap Q$captureIndex")
         val job = scope.launch(Dispatchers.IO) {
             try {
                 if (AppConfig.isVisionEnabled()) {
-                    processWithVlm(bitmap, captureIndex)
+                    processWithVlm(bitmap, captureIndex, gen)
                 } else {
-                    processWithOcr(bitmap, captureIndex)
+                    processWithOcr(bitmap, captureIndex, gen)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -196,7 +211,8 @@ class RecordingCoordinator(
         job.invokeOnCompletion { cause ->
             jobs.remove(job)
             if (cause != null && cause is CancellationException) return@invokeOnCompletion
-            if (isProcessing) {
+            // P0-3: 仅当前会话的任务完成才更新进度（旧会话任务完成时新会话可能已 stop）
+            if (isProcessing && gen == sessionGeneration.get()) {
                 scope.launch(Dispatchers.Main) {
                     _processedCount.incrementAndGet()
                     checkAndNotifyProgress()
@@ -213,10 +229,14 @@ class RecordingCoordinator(
             return
         }
         val captureIndex = _captureCount.incrementAndGet()
+        val gen = sessionGeneration.get() // P0-3: 捕获启动代次，处理回调据此丢弃旧会话文本
         AppLog.enter("REC", "recordingProcessText Q$captureIndex")
         val wasValid = java.util.concurrent.atomic.AtomicBoolean(false)
         val job = scope.launch(Dispatchers.IO) {
             try {
+                if (gen != sessionGeneration.get()) {
+                    AppLog.d("REC", "drop stale text Q$captureIndex"); return@launch
+                }
                 if (!dedupeAndTrack(text, captureIndex)) {
                     return@launch
                 }
@@ -233,7 +253,8 @@ class RecordingCoordinator(
         job.invokeOnCompletion { cause ->
             jobs.remove(job)
             if (cause != null && cause is CancellationException) return@invokeOnCompletion
-            if (isProcessing && wasValid.get()) {
+            // P0-3: 仅当前会话任务完成才更新进度
+            if (isProcessing && wasValid.get() && gen == sessionGeneration.get()) {
                 scope.launch(Dispatchers.Main) {
                     _processedCount.incrementAndGet()
                     checkAndNotifyProgress()
@@ -242,10 +263,14 @@ class RecordingCoordinator(
         }
     }
 
-    private suspend fun processWithOcr(bitmap: Bitmap, captureIndex: Int) {
+    private suspend fun processWithOcr(bitmap: Bitmap, captureIndex: Int, gen: Int) {
         pipeline.recognizeOcr(bitmap)
             .onSuccess { recognizedText ->
                 bitmap.recycle()
+                // P0-3: 识别完成时代次已变（新会话已启动）→ 丢弃，避免污染新会话去重表与计数
+                if (gen != sessionGeneration.get()) {
+                    AppLog.d("REC", "drop stale OCR result Q$captureIndex"); return@onSuccess
+                }
                 if (!dedupeAndTrack(recognizedText, captureIndex)) return
                 fetchAnswer(recognizedText, captureIndex)
                 _totalQuestions.incrementAndGet()
@@ -256,18 +281,25 @@ class RecordingCoordinator(
             }
     }
 
-    private suspend fun processWithVlm(bitmap: Bitmap, captureIndex: Int) {
+    private suspend fun processWithVlm(bitmap: Bitmap, captureIndex: Int, gen: Int) {
         AppLog.enter("REC", "recordingProcessWithVlm Q$captureIndex")
         val vlmResult = vlmSemaphore?.withPermit { pipeline.recognizeVlm(bitmap) }
         if (vlmResult == null) return
         vlmResult
             .onSuccess { filter ->
                 bitmap.recycle()
+                // P0-3: 识别完成时代次已变（新会话已启动）→ 丢弃，避免旧题进入新会话
+                if (gen != sessionGeneration.get()) {
+                    AppLog.d("REC", "drop stale VLM result Q$captureIndex"); return@onSuccess
+                }
                 if (!filter.hasQuestions) return
                 if (filter.questions.size > 1) {
                     AppLog.i("REC", "VLM found ${filter.questions.size} questions")
                     var skipped = 0
                     filter.questions.forEach { separatedQuestion ->
+                        // P0-3: 循环内补校验 — 外层 gen 检查通过后若会话重启，
+                        //       dedupeAndTrack 会把旧题写入新去重表，fetchAnswer 捕获新代次接受旧答案
+                        if (gen != sessionGeneration.get()) return@forEach
                         if (!dedupeAndTrack(separatedQuestion.text, captureIndex)) { skipped++; return@forEach }
                         fetchAnswer(separatedQuestion.text, captureIndex)
                         _totalQuestions.incrementAndGet()
@@ -286,7 +318,7 @@ class RecordingCoordinator(
                 withContext(Dispatchers.Main) {
                     callbacks.onError(callbacks.getString(R.string.status_vision_fallback))
                 }
-                processWithOcr(bitmap, captureIndex)
+                processWithOcr(bitmap, captureIndex, gen)
             }
     }
 
@@ -303,10 +335,15 @@ class RecordingCoordinator(
 
     private fun fetchAnswer(text: String, captureIndex: Int) {
         activeJobCount.incrementAndGet()
+        val gen = sessionGeneration.get() // P0-3: 捕获发起代次，完成回调据此丢弃旧会话结果
         AppLog.enter("REC", "recordingFetchAnswer Q$captureIndex")
         val job = scope.launch(Dispatchers.IO) {
             llmSemaphore?.withPermit {
                 try {
+                    // P0-3: 发起前代次已变（新会话已启动）→ 不再请求，避免旧请求回填新会话
+                    if (gen != sessionGeneration.get()) {
+                        AppLog.d("REC", "drop stale fetch Q$captureIndex"); return@withPermit
+                    }
                     if (!OpenAIClient.isNetworkAvailable()) {
                         _failedCount.incrementAndGet()
                         return@withPermit
@@ -328,6 +365,10 @@ class RecordingCoordinator(
                         return@withPermit
                     }
                     result.onSuccess { aiAnswers ->
+                        // P0-3: 结果返回时代次已变 → 丢弃，绝不写入新会话 answers
+                        if (gen != sessionGeneration.get()) {
+                            AppLog.d("REC", "drop stale answer Q$captureIndex"); return@onSuccess
+                        }
                         if (aiAnswers.isEmpty()) {
                             // 空答案（如工具伪文本解析失败）计入失败，避免静默丢失
                             _failedCount.incrementAndGet()
@@ -351,9 +392,11 @@ class RecordingCoordinator(
         jobs.add(job)
         job.invokeOnCompletion {
             jobs.remove(job)
-            activeJobCount.decrementAndGet()
+            // P0-3: 钳制防负值 — 旧任务被取消/完成时仍会执行本回调，可能把新会话计数拉负
+            activeJobCount.getAndUpdate { if (it > 0) it - 1 else 0 }
             AppLog.d("REC", "计数器-1(API完成): activeJobs=${activeJobCount.get()}")
-            if (isProcessing) {
+            // P0-3: 仅当前会话任务完成才更新进度
+            if (isProcessing && gen == sessionGeneration.get()) {
                 // M12: 每个答案完成也走进度检查，保证 (x/N) 进度随答案增长更新，
                 //     而不是从 partial 直接跳到"全部完成"
                 scope.launch(Dispatchers.Main) { checkAndNotifyProgress() }
@@ -409,10 +452,12 @@ class RecordingCoordinator(
     }
 
     fun cancel() {
+        sessionGeneration.incrementAndGet() // P0-3: 使所有在途任务完成回调失效
         notifyJob?.cancel() // P0-2: 取消兜底通知协程
         notifyJob = null
         jobs.forEach { it.cancel() }
         jobs.clear()
+        activeJobCount.set(0) // P0-3: 复位后旧任务完成回调的钳制 decrement 不会拉负新会话计数
         isActive = false
         isProcessing = false
         // Clean up state to prevent stale data on next start
