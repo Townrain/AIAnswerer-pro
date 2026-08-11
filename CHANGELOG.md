@@ -70,6 +70,7 @@ All notable changes to AIAnswerer will be documented in this file.
 - Removed Success/Error badges (✓/✗) from floating pill
 - `removeWindowC()` no longer cascades to destroy Window D; their lifecycles are decoupled
 - Window D positioning changed to relative-to-A (instead of relative-to-C), works correctly when C is hidden
+- Floating window answer card now sits flush against the main button: card positioning compensates for the button's centered transparent margin inside Window A (pillEdgeMargin), reducing the visual gap from 16dp to 0
 
 ### Changed
 - FloatingWindowManager fully rewritten for multi-window management: added attachA/B/C/D, detachA/B/C/D, per-window updateLayoutA/B/C/D

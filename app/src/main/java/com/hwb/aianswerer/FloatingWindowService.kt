@@ -1061,7 +1061,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         AppLog.d("FWS", "positionWindowD: aPos=${aParams.x},${aParams.y} aSize=${aParams.width}x${aParams.height}")
 
         val dW = (FWDims.cardWidthDp.value * density).toInt()
-        val gapPx = (8 * density).toInt()
+        // 视觉贴合：补偿按钮在窗口 A 内的居中透明边距（pillEdgeMargin），使卡片紧贴可见按钮边缘
+        val gapPx = ((FWDims.cardVisualGapDp - FWDims.pillEdgeMargin).value * density).toInt()
         val spaceBelow = screenH.toInt() - (aParams.y + aParams.height + gapPx)
         val spaceAbove = aParams.y - gapPx
         val maxH = maxOf(spaceBelow, spaceAbove, 1)
@@ -1242,7 +1243,8 @@ class FloatingWindowService : Service(), LifecycleOwner, ViewModelStoreOwner,
         val defaultH = (FWDims.cardCompactInitHeight.value * density).toInt()
         val cH = (measuredWindowCHeight ?: defaultH.toFloat()).toInt()
 
-        val gapPx = (8 * density).toInt()
+        // 视觉贴合：补偿按钮在窗口 A 内的居中透明边距（pillEdgeMargin），使卡片紧贴可见按钮边缘
+        val gapPx = ((FWDims.cardVisualGapDp - FWDims.pillEdgeMargin).value * density).toInt()
         val cX = aParams.x + (aParams.width - cW) / 2
 
         val spaceBelow = screenH.toInt() - (aParams.y + aParams.height + gapPx)

@@ -46,6 +46,13 @@ internal object FWDims {
     val pillHPadding get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 10 / 36).dp
     val pillVPadding get() = (com.hwb.aianswerer.config.AppConfig.getFloatButtonSize() * 8 / 36).dp
     val pillEdgeMargin = 8.dp
+    /**
+     * 答案卡片与可见按钮之间的视觉缝隙（dp）。0 = 完全贴合。
+     * 按钮在窗口 A 内垂直居中，窗口 A 上下各含 pillEdgeMargin 透明边距；
+     * 窗口间定位 gap 需反向补偿该边距（gapPx = cardVisualGapDp - pillEdgeMargin），
+     * 卡片才能紧贴可见按钮边缘。
+     */
+    val cardVisualGapDp = 0.dp
 
     val cardWidthRatio = 0.88f
     val cardWidthDp = 360.dp  // 三窗口下 Window C 固定宽度
