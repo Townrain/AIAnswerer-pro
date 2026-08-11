@@ -254,10 +254,7 @@ com.hwb.aianswerer/
 
 ### Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) or [变更日志](变更日志.md). Recent highlights:
-- **Unreleased**: Web search unified to LLM Tool Calling mode (pre-search injection removed) + recording-mode reliability fixes (consecutive recordings / quick restart / progress denominator / timeout fallback) + answer-parsing hardening (question-number prefix stripping / enforced JSON output) + floating window collapsible cards & WRAP_CONTENT adaptive height
-- **v1.7.0**: Four-window floating architecture (A/B/C/D independent windows) + C/D lifecycle decoupling + configurable long-press duration + model config detection + pill badge removal + multi-window bug fixes
-- **v1.6.2**: Dark mode button theme responsiveness + multi-version API URL fix (v2/v3/v4 compatibility)
+See [CHANGELOG.md](CHANGELOG.md) or [变更日志](变更日志.md).
 
 ### License
 
