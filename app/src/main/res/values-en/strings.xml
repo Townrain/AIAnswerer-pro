@@ -383,7 +383,7 @@ Output only the cleaned complete text itself, with no explanations, markers, or 
     <string name="capture_mode_accessibility">Screen Reader</string>
     <string name="accessibility_status_enabled">Accessibility service enabled</string>
     <string name="accessibility_status_disabled">Accessibility service not enabled</string>
-    <string name="accessibility_enable_hint">Please enable AI Answerer accessibility service in system settings</string>
+    <string name="accessibility_enable_hint">Please enable FloatyAnswer accessibility service in system settings</string>
     <string name="status_reading_screen">📖 Reading screen content…</string>
     <string name="status_screen_read_failed">Screen reading failed, please ensure accessibility service is enabled</string>
     <string name="accessibility_fallback_to_screenshot">Accessibility service not enabled, switched to screenshot mode</string>

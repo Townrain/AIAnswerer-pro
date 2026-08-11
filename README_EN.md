@@ -1,4 +1,4 @@
-# AI Answer Assistant (FloatyAnswer)
+# FloatyAnswer
 
 <p align="center">
 <a href="https://github.com/Townrain/FloatyAnswer/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/Townrain/FloatyAnswer"></a>
@@ -16,7 +16,7 @@
 
 ### App Introduction
 
-AI Answer Assistant is an Android answering tool based on OCR/vision models and large language models. It captures screenshots through a floating window to recognize questions and calls DeepSeek AI and other OpenAI-compatible models to quickly provide answers. It's suitable for practice, gap-filling, or self-assessment scenarios.
+FloatyAnswer is an Android answering tool based on OCR/vision models and large language models. It captures screenshots through a floating window to recognize questions and calls DeepSeek AI and other OpenAI-compatible models to quickly provide answers. It's suitable for practice, gap-filling, or self-assessment scenarios.
 
 ### Feature Highlights
 
@@ -98,7 +98,7 @@ Combine with **crop modes** (Settings → Answer Settings):
 
 Reads the on-screen text directly through the **accessibility service** — no screenshot needed, faster, and no screen-recording permission required.
 
-How to enable: switch the capture mode card on the home screen to "Screen Reading" → jump to system settings and enable the accessibility service for AI Answer Assistant → return.
+How to enable: switch the capture mode card on the home screen to "Screen Reading" → jump to system settings and enable the accessibility service for FloatyAnswer → return.
 
 > Note: This mode reads text nodes, so it cannot handle image-based questions; enable the Vision Model (VLM) as a supplement in that case.
 

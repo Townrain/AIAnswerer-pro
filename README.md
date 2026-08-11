@@ -1,4 +1,4 @@
-# AI答题助手 (FloatyAnswer)
+# FloatyAnswer
 
 <p align="center">
 <a href="https://github.com/Townrain/FloatyAnswer/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/Townrain/FloatyAnswer"></a>
@@ -16,7 +16,7 @@
 
 ### 应用简介
 
-AI答题助手是一款基于 OCR/视觉模型与大语言模型的安卓答题工具。通过悬浮窗截图识别题目，并调用 DeepSeek AI 等兼容 OpenAI 接口的模型为你快速给出答案，适用于练习、查缺补漏或自测场景。
+FloatyAnswer 是一款基于 OCR/视觉模型与大语言模型的安卓答题工具。通过悬浮窗截图识别题目，并调用 DeepSeek AI 等兼容 OpenAI 接口的模型为你快速给出答案，适用于练习、查缺补漏或自测场景。
 
 ### 功能亮点
 
@@ -97,7 +97,7 @@ AI答题助手是一款基于 OCR/视觉模型与大语言模型的安卓答题�
 
 不截图，通过**无障碍服务直接读取屏幕上的文字**，速度更快、无需截图权限。
 
-启用方法：主页的采集模式卡片切换为「屏幕读取」→ 跳转系统设置开启「AI答题助手」的无障碍服务 → 返回。
+启用方法：主页的采集模式卡片切换为「屏幕读取」→ 跳转系统设置开启「FloatyAnswer」的无障碍服务 → 返回。
 
 > 注意：该模式读取的是页面文字节点，无法处理图片型题目；此时建议开启视觉模型（VLM）作为补充。
 

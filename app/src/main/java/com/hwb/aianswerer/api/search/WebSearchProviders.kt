@@ -166,7 +166,7 @@ class ExaMCPSearchProvider(config: LocalWebSearchConfig) : BaseWebSearchProvider
             addProperty("protocolVersion", MCP_PROTOCOL_VERSION)
             add("capabilities", com.google.gson.JsonObject())
             add("clientInfo", com.google.gson.JsonObject().apply {
-                addProperty("name", "AIAnswerer")
+                addProperty("name", "FloatyAnswer")
                 addProperty("version", "1.0")
             })
         }

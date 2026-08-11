@@ -240,7 +240,7 @@ object ThemeManager {
             val def = CustomThemeDefinition(
                 id = presetId,
                 name = name,
-                author = "AI Answerer",
+                author = "FloatyAnswer",
                 description = "内置主题：$name",
                 light = SerializableThemeColors.fromTh(light),
                 dark = SerializableThemeColors.fromTh(dark),

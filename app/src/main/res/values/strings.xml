@@ -383,7 +383,7 @@
     <string name="capture_mode_accessibility">屏幕读取</string>
     <string name="accessibility_status_enabled">无障碍服务已开启</string>
     <string name="accessibility_status_disabled">无障碍服务未开启</string>
-    <string name="accessibility_enable_hint">请在系统设置中开启 AI答题助手 的无障碍服务</string>
+    <string name="accessibility_enable_hint">请在系统设置中开启 FloatyAnswer 的无障碍服务</string>
     <string name="status_reading_screen">📖 正在读取屏幕内容…</string>
     <string name="status_screen_read_failed">屏幕读取失败，请确保已开启无障碍服务</string>
     <string name="accessibility_fallback_to_screenshot">无障碍服务未开启，已自动切换为截图识别</string>
@@ -478,7 +478,7 @@
     <string name="debug_export_success">日志已导出</string>
     <string name="debug_export_failed">日志导出失败</string>
     <string name="debug_no_logs">暂无日志文件</string>
-    <string name="debug_log_share_title">AI答题助手调试日志</string>
+    <string name="debug_log_share_title">FloatyAnswer 调试日志</string>
 
     <!-- 增强错误信息 -->
     <string name="error_api_empty_stream">AI 未返回有效内容，请检查：
