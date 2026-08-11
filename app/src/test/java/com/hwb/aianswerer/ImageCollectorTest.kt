@@ -53,7 +53,7 @@ class ImageCollectorTest {
         mockkObject(AppConfig)
         every { AppConfig.getQuestionTypes() } returns setOf("选择题")
         every { AppConfig.getMaxConcurrency() } returns 3
-        collector = ImageCollector(pipeline, scope, callbacks)
+        collector = ImageCollector(pipeline, scope, callbacks, UnconfinedTestDispatcher())
     }
 
     @After

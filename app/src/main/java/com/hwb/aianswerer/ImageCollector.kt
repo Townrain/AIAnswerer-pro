@@ -7,6 +7,7 @@ import com.hwb.aianswerer.models.CropRect
 import com.hwb.aianswerer.utils.AppLog
 import com.hwb.aianswerer.utils.ImageCropUtil
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,7 +36,8 @@ import java.util.concurrent.atomic.AtomicInteger
 class ImageCollector(
     private val pipeline: CapturePipeline,
     private val scope: CoroutineScope,
-    private val callbacks: Callbacks
+    private val callbacks: Callbacks,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     interface Callbacks {
         fun onError(message: String)
@@ -246,7 +248,7 @@ class ImageCollector(
                 AppLog.i("IMG", "analysing combined text, ${segments.size} segments, ${combinedText.length} chars")
 
                 val questionTypes = AppConfig.getQuestionTypes()
-                val result = withContext(Dispatchers.IO) {
+                val result = withContext(ioDispatcher) {
                     // 专职去重 LLM：合并重叠、修正识别误差，输出完整干净文本；失败降级为原始拼接
                     val deduped = pipeline.dedupeText(combinedText)
                     if (deduped.isSuccess) {
